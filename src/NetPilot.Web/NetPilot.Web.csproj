@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\NetPilot.Core\NetPilot.Core.csproj" />
+    <ProjectReference Include="..\NetPilot.Data\NetPilot.Data.csproj" />
+    <ProjectReference Include="..\NetPilot.Providers.TpLink\NetPilot.Providers.TpLink.csproj" />
+    <ProjectReference Include="..\NetPilot.Abstractions\NetPilot.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="data\keys\" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+  </PropertyGroup>
+
+</Project>

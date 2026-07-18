@@ -1,0 +1,25 @@
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+COPY src/NetPilot.Abstractions/NetPilot.Abstractions.csproj src/NetPilot.Abstractions/
+COPY src/NetPilot.Core/NetPilot.Core.csproj src/NetPilot.Core/
+COPY src/NetPilot.Data/NetPilot.Data.csproj src/NetPilot.Data/
+COPY src/TpLink.Sdk/TpLink.Sdk.csproj src/TpLink.Sdk/
+COPY src/NetPilot.Providers.TpLink/NetPilot.Providers.TpLink.csproj src/NetPilot.Providers.TpLink/
+COPY src/NetPilot.Agent/NetPilot.Agent.csproj src/NetPilot.Agent/
+RUN dotnet restore src/NetPilot.Agent/NetPilot.Agent.csproj
+
+COPY src/NetPilot.Abstractions/ src/NetPilot.Abstractions/
+COPY src/NetPilot.Core/ src/NetPilot.Core/
+COPY src/NetPilot.Data/ src/NetPilot.Data/
+COPY src/TpLink.Sdk/ src/TpLink.Sdk/
+COPY src/NetPilot.Providers.TpLink/ src/NetPilot.Providers.TpLink/
+COPY src/NetPilot.Agent/ src/NetPilot.Agent/
+RUN dotnet publish src/NetPilot.Agent/NetPilot.Agent.csproj -c Release -o /app
+
+FROM mcr.microsoft.com/dotnet/runtime:10.0 AS final
+WORKDIR /app
+COPY --from=build /app .
+ENV NetPilot__DataDirectory=/data
+VOLUME /data
+ENTRYPOINT ["dotnet", "NetPilot.Agent.dll"]

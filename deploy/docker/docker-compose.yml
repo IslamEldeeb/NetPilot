@@ -1,0 +1,24 @@
+services:
+  netpilot-agent:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.agent
+    volumes:
+      - netpilot-data:/data
+    environment:
+      - ROUTER_HOST=${ROUTER_HOST:-}
+      - ROUTER_PASSWORD=${ROUTER_PASSWORD:-}
+    restart: unless-stopped
+
+  netpilot-web:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.web
+    volumes:
+      - netpilot-data:/data
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+volumes:
+  netpilot-data: # LiteDB file + Data Protection keyring, shared by both containers

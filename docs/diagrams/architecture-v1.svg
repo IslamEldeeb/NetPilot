@@ -1,0 +1,90 @@
+<svg viewBox="0 0 980 760" xmlns="http://www.w3.org/2000/svg" role="img">
+  <title>NetPilot system architecture</title>
+  <desc>Home devices grouped by category feed into the TP-Link Archer AX53 router, which the NetPilot .NET agent talks to via a reverse-engineered API, then enforces per-category speed limits either through the router's native API (unconfirmed at time of writing) or a fallback traffic-shaping bridge.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#888"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="980" height="760" fill="white"/>
+  <text x="490" y="34" text-anchor="middle" font-family="sans-serif" font-size="20" font-weight="600" fill="#1a1a1a">NetPilot — Category-Based Speed Limiting (v1)</text>
+
+  <g font-family="sans-serif">
+    <g>
+      <rect x="40" y="70" width="200" height="70" rx="10" fill="#eef2f7" stroke="#c7ccd4"/>
+      <text x="140" y="98" text-anchor="middle" font-size="15" font-weight="600" fill="#1a1a1a">Mobile Phones</text>
+      <text x="140" y="120" text-anchor="middle" font-size="12" fill="#55606b">target: 20 Mbps</text>
+    </g>
+    <g>
+      <rect x="270" y="70" width="200" height="70" rx="10" fill="#eef2f7" stroke="#c7ccd4"/>
+      <text x="370" y="98" text-anchor="middle" font-size="15" font-weight="600" fill="#1a1a1a">TVs</text>
+      <text x="370" y="120" text-anchor="middle" font-size="12" fill="#55606b">target: unlimited</text>
+    </g>
+    <g>
+      <rect x="500" y="70" width="200" height="70" rx="10" fill="#eef2f7" stroke="#c7ccd4"/>
+      <text x="600" y="98" text-anchor="middle" font-size="15" font-weight="600" fill="#1a1a1a">Cameras</text>
+      <text x="600" y="120" text-anchor="middle" font-size="12" fill="#55606b">target: 2 Mbps</text>
+    </g>
+    <g>
+      <rect x="730" y="70" width="210" height="70" rx="10" fill="#eef2f7" stroke="#c7ccd4"/>
+      <text x="835" y="98" text-anchor="middle" font-size="15" font-weight="600" fill="#1a1a1a">Unknown Devices</text>
+      <text x="835" y="120" text-anchor="middle" font-size="12" fill="#55606b">target: 5 Mbps</text>
+    </g>
+  </g>
+
+  <path d="M140,140 L140,170 L490,170 L490,190" fill="none" stroke="#888" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M370,140 L370,190" fill="none" stroke="#888" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M600,140 L600,190" fill="none" stroke="#888" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M835,140 L835,170 L490,170" fill="none" stroke="#888" stroke-width="1.5"/>
+
+  <rect x="290" y="192" width="400" height="80" rx="10" fill="#dfe7f0" stroke="#7c8794" stroke-width="1.5"/>
+  <text x="490" y="222" text-anchor="middle" font-size="16" font-weight="700" fill="#1a1a1a">TP-Link Archer AX53</text>
+  <text x="490" y="242" text-anchor="middle" font-size="12" fill="#55606b">LuCI-style cgi-bin API · /cgi-bin/luci/;stok=&lt;token&gt;/...</text>
+  <text x="490" y="258" text-anchor="middle" font-size="12" fill="#55606b">RSA+AES session · device/DHCP list · firmware/version</text>
+
+  <path d="M490,272 L490,320" fill="none" stroke="#888" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M420,320 L420,272" fill="none" stroke="#888" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="565" y="300" font-size="11" fill="#808a94">reverse-engineered</text>
+  <text x="335" y="300" font-size="11" fill="#808a94">TpLink.Sdk (.NET)</text>
+
+  <rect x="140" y="322" width="700" height="110" rx="10" fill="none" stroke="#c7ccd4" stroke-dasharray="4 3"/>
+  <text x="160" y="342" font-size="13" font-weight="600" fill="#1a1a1a">NetPilot Agent (.NET, runs on home LAN)</text>
+
+  <rect x="160" y="352" width="205" height="65" rx="8" fill="#eef2f7" stroke="#c7ccd4"/>
+  <text x="262" y="378" text-anchor="middle" font-size="13" font-weight="600" fill="#1a1a1a">Device Classifier</text>
+  <text x="262" y="396" text-anchor="middle" font-size="11" fill="#55606b">MAC OUI + hostname</text>
+
+  <path d="M365,384 L410,384" fill="none" stroke="#888" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="410" y="352" width="205" height="65" rx="8" fill="#eef2f7" stroke="#c7ccd4"/>
+  <text x="512" y="378" text-anchor="middle" font-size="13" font-weight="600" fill="#1a1a1a">Policy Engine</text>
+  <text x="512" y="396" text-anchor="middle" font-size="11" fill="#55606b">category → Mbps rules</text>
+
+  <path d="M615,384 L655,384" fill="none" stroke="#888" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="655" y="352" width="165" height="65" rx="8" fill="#eef2f7" stroke="#c7ccd4"/>
+  <text x="737" y="378" text-anchor="middle" font-size="13" font-weight="600" fill="#1a1a1a">TpLink.Sdk Client</text>
+  <text x="737" y="396" text-anchor="middle" font-size="11" fill="#55606b">auth · session · calls</text>
+
+  <path d="M420,432 L420,462" fill="none" stroke="#888" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M560,432 L560,462" fill="none" stroke="#888" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <text x="490" y="455" text-anchor="middle" font-size="12" font-weight="600" fill="#808a94">Enforcement path — pending live confirmation</text>
+  <rect x="270" y="464" width="250" height="80" rx="10" fill="#eef2f7" stroke="#7c8794" stroke-dasharray="5 4"/>
+  <text x="395" y="492" text-anchor="middle" font-size="14" font-weight="600" fill="#1a1a1a">Router Bandwidth API</text>
+  <text x="395" y="510" text-anchor="middle" font-size="11" fill="#55606b">not exposed in AX53 V1 web UI —</text>
+  <text x="395" y="525" text-anchor="middle" font-size="11" fill="#55606b">needs live probing to confirm</text>
+
+  <rect x="560" y="464" width="250" height="80" rx="10" fill="#eef2f7" stroke="#7c8794" stroke-dasharray="5 4"/>
+  <text x="685" y="492" text-anchor="middle" font-size="14" font-weight="600" fill="#1a1a1a">Traffic-Shaping Bridge</text>
+  <text x="685" y="510" text-anchor="middle" font-size="11" fill="#55606b">fallback: Linux box (tc/nftables)</text>
+  <text x="685" y="525" text-anchor="middle" font-size="11" fill="#55606b">between AX53 LAN and switch</text>
+
+  <rect x="140" y="570" width="700" height="150" rx="10" fill="#f5f7f9" stroke="#c7ccd4"/>
+  <text x="160" y="595" font-size="13" font-weight="700" fill="#1a1a1a">Legend &amp; status</text>
+  <text x="160" y="618" font-size="12" fill="#55606b">Solid border = confirmed via OSS source review (tplinkrouterc6u, tp-link-modem-router)</text>
+  <text x="160" y="638" font-size="12" fill="#55606b">Dashed border = unconfirmed — requires live router probing (blocked: Chrome extension not connected)</text>
+  <text x="160" y="658" font-size="12" fill="#55606b">AX53 V1 web UI has no HomeShield/QoS per-device bandwidth control as of firmware ~1.5.x (TP-Link forum, confirmed)</text>
+  <text x="160" y="678" font-size="12" fill="#55606b">Auth: RSA(512/1024/2048-bit, PKCS1v1.5) + AES-128-CBC session envelope, single-session only, stok/sysauth cookie</text>
+  <text x="160" y="698" font-size="12" fill="#55606b">Superseded by architecture-v2.svg after the Speed Limit correction — kept for history</text>
+</svg>

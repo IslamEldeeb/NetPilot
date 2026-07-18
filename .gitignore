@@ -1,0 +1,21 @@
+## .NET
+bin/
+obj/
+*.user
+
+## Rider / VS
+.vs/
+.idea/
+*.suo
+
+## OS
+.DS_Store
+
+## Secrets
+*.env
+appsettings.*.local.json
+
+## Local runtime data (LiteDB file, Data Protection key ring) — never commit real router
+## credentials or encryption keys, even encrypted-at-rest ones.
+src/NetPilot.Agent/data/
+src/NetPilot.Web/data/

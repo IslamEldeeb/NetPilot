@@ -1,0 +1,294 @@
+@page "/"
+@rendermode InteractiveServer
+@implements IAsyncDisposable
+
+@using NetPilot.Abstractions
+@using NetPilot.Core.Devices
+@using NetPilot.Core.Enforcement
+@using NetPilot.Core.Policy
+@using NetPilot.Core.RouterConnection
+@using NetPilot.Data
+
+@inject IDeviceStore DeviceStore
+@inject IPolicyStore PolicyStore
+@inject IActivityLogStore ActivityLogStore
+@inject IRouterConnectionStore ConnectionStore
+@inject RouterPasswordProtector PasswordProtector
+@inject IRouterProvider RouterProvider
+@inject ILogger<Home> Logger
+
+<PageTitle>NetPilot</PageTitle>
+
+<h1>NetPilot</h1>
+
+<section class="mb-4">
+    <h3>Router connection status</h3>
+    <div class="card p-3">
+        @if (_connection is null)
+        {
+            <p class="text-muted">No router configured yet.</p>
+        }
+        else
+        {
+            <p>
+                <strong>@_connection.ProviderId</strong> @@ @_connection.Host
+                (@(_connection.UseHttps ? "HTTPS" : "HTTP")) — user <code>@_connection.Username</code>
+            </p>
+        }
+        @if (!string.IsNullOrEmpty(_testConnectionResult))
+        {
+            <p class="@(_testConnectionOk ? "text-success" : "text-danger")">@_testConnectionResult</p>
+        }
+
+        <EditForm Model="_editModel" OnValidSubmit="SaveConnectionAsync" class="row g-2 align-items-end">
+            <div class="col-auto">
+                <label class="form-label">Host</label>
+                <InputText class="form-control" @bind-Value="_editModel.Host" />
+            </div>
+            <div class="col-auto">
+                <label class="form-label">Username</label>
+                <InputText class="form-control" @bind-Value="_editModel.Username" />
+            </div>
+            <div class="col-auto">
+                <label class="form-label">Password</label>
+                <InputText type="password" class="form-control" @bind-Value="_editModel.Password" />
+            </div>
+            <div class="col-auto form-check mt-4">
+                <InputCheckbox class="form-check-input" @bind-Value="_editModel.UseHttps" id="useHttps" />
+                <label class="form-check-label" for="useHttps">HTTPS</label>
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-primary">Save</button>
+            </div>
+            <div class="col-auto">
+                <button type="button" class="btn btn-secondary" @onclick="TestConnectionAsync" disabled="@_testing">
+                    @(_testing ? "Testing..." : "Test connection")
+                </button>
+            </div>
+        </EditForm>
+    </div>
+</section>
+
+<section class="mb-4">
+    <h3>Connected devices</h3>
+    @if (_devices.Count == 0)
+    {
+        <p class="text-muted">No devices discovered yet — the Agent populates this once it's connected and has run at least one reconciliation tick.</p>
+    }
+    else
+    {
+        @foreach (var group in _devices.GroupBy(d => d.CategoryKey).OrderBy(g => g.Key))
+        {
+            <h5>@group.Key (@group.Count())</h5>
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th>Hostname</th><th>MAC</th><th>Status</th><th>Effective limit</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var device in group)
+                    {
+                        <tr>
+                            <td>@(device.FriendlyName ?? device.Hostname)</td>
+                            <td><code>@((string)device.Mac)</code></td>
+                            <td>@(device.Connection.IsOnline ? "Online" : "Offline") (@device.Connection.Medium)</td>
+                            <td>@DescribeLimit(EffectiveLimit(device))</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    }
+</section>
+
+<section class="mb-4">
+    <h3>Device type policies</h3>
+    <table class="table table-sm">
+        <thead>
+            <tr><th>Category</th><th>Enabled</th><th>Download (Kbps)</th><th>Upload (Kbps)</th><th>Version</th><th></th></tr>
+        </thead>
+        <tbody>
+            @foreach (var row in _policyRows.OrderBy(r => r.CategoryKey))
+            {
+                <tr>
+                    <td>@row.CategoryKey</td>
+                    <td><input type="checkbox" @bind="row.Enabled" /></td>
+                    <td><input type="number" class="form-control form-control-sm" style="width:8rem" @bind="row.DownloadKbps" /></td>
+                    <td><input type="number" class="form-control form-control-sm" style="width:8rem" @bind="row.UploadKbps" /></td>
+                    <td>@row.DefinitionVersion</td>
+                    <td><button class="btn btn-sm btn-outline-primary" @onclick="() => SavePolicyAsync(row)">Save</button></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</section>
+
+<section class="mb-4">
+    <h3>Activity log</h3>
+    <table class="table table-sm">
+        <thead><tr><th>Time (UTC)</th><th>Type</th><th>Device</th><th>Message</th></tr></thead>
+        <tbody>
+            @foreach (var entry in _activity)
+            {
+                <tr>
+                    <td>@entry.AtUtc.ToString("u")</td>
+                    <td>@entry.Type</td>
+                    <td>@(entry.Mac is null ? "" : (string)entry.Mac.Value)</td>
+                    <td>@entry.Message</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</section>
+
+@code {
+    private RouterConnection? _connection;
+    private List<Device> _devices = [];
+    private List<PolicyRow> _policyRows = [];
+    private IReadOnlyList<ActivityLogEntry> _activity = [];
+    private readonly ConnectionEditModel _editModel = new();
+    private bool _testing;
+    private bool _testConnectionOk;
+    private string? _testConnectionResult;
+    private PeriodicTimer? _timer;
+    private CancellationTokenSource? _refreshCts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await PolicyStore.EnsureSeedCategoriesAsync(CancellationToken.None);
+        await RefreshAsync();
+
+        _refreshCts = new CancellationTokenSource();
+        _timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+        _ = RefreshLoopAsync(_refreshCts.Token);
+    }
+
+    private async Task RefreshLoopAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (await _timer!.WaitForNextTickAsync(ct))
+            {
+                await RefreshAsync();
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // component disposed
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        _connection = await ConnectionStore.GetAsync(CancellationToken.None);
+        if (_connection is not null)
+        {
+            _editModel.Host = _connection.Host;
+            _editModel.Username = _connection.Username;
+            _editModel.UseHttps = _connection.UseHttps;
+        }
+
+        _devices = (await DeviceStore.GetAllAsync(CancellationToken.None)).ToList();
+
+        var policies = await PolicyStore.GetAllAsync(CancellationToken.None);
+        _policyRows = policies.Select(p => new PolicyRow
+        {
+            CategoryKey = p.CategoryKey,
+            Enabled = p.Limit.Enabled,
+            DownloadKbps = p.Limit.DownloadKbps,
+            UploadKbps = p.Limit.UploadKbps,
+            DefinitionVersion = p.DefinitionVersion
+        }).ToList();
+
+        _activity = await ActivityLogStore.GetRecentAsync(50, CancellationToken.None);
+    }
+
+    private SpeedLimit EffectiveLimit(Device device)
+    {
+        if (device.Override is not null)
+            return device.Override;
+
+        var policy = _policyRows.FirstOrDefault(p => p.CategoryKey == device.CategoryKey);
+        return policy is null ? SpeedLimit.Unlimited : new SpeedLimit(policy.Enabled, policy.DownloadKbps, policy.UploadKbps);
+    }
+
+    private static string DescribeLimit(SpeedLimit limit) =>
+        limit.Enabled ? $"{limit.DownloadKbps ?? 0} down / {limit.UploadKbps ?? 0} up Kbps" : "Unlimited";
+
+    private async Task SaveConnectionAsync()
+    {
+        var encrypted = string.IsNullOrEmpty(_editModel.Password)
+            ? _connection?.EncryptedPassword ?? ""
+            : PasswordProtector.Encrypt(_editModel.Password);
+
+        var updated = new RouterConnection(RouterProvider.ProviderId, _editModel.Host, _editModel.UseHttps, _editModel.Username, encrypted);
+        await ConnectionStore.SaveAsync(updated, CancellationToken.None);
+        _connection = updated;
+        _editModel.Password = "";
+    }
+
+    private async Task TestConnectionAsync()
+    {
+        _testing = true;
+        _testConnectionResult = null;
+        try
+        {
+            var password = string.IsNullOrEmpty(_editModel.Password)
+                ? (_connection is null ? throw new InvalidOperationException("No password saved yet — enter one to test.") : PasswordProtector.Decrypt(_connection.EncryptedPassword))
+                : _editModel.Password;
+
+            var settings = new RouterConnectionSettings(_editModel.Host, _editModel.UseHttps, _editModel.Username, password);
+            await RouterProvider.ConnectAsync(settings, CancellationToken.None);
+            var info = await RouterProvider.GetRouterInfoAsync(CancellationToken.None);
+            _testConnectionOk = true;
+            _testConnectionResult = $"Connected — {info.Model} ({info.FirmwareVersion})";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Test connection failed");
+            _testConnectionOk = false;
+            _testConnectionResult = $"Failed: {ex.Message}";
+        }
+        finally
+        {
+            _testing = false;
+        }
+    }
+
+    private async Task SavePolicyAsync(PolicyRow row)
+    {
+        var existing = await PolicyStore.FindByCategoryAsync(row.CategoryKey, CancellationToken.None)
+            ?? new DevicePolicy(row.CategoryKey, SpeedLimit.Unlimited, 1);
+
+        var updated = existing.WithLimit(new SpeedLimit(row.Enabled, row.DownloadKbps, row.UploadKbps));
+        await PolicyStore.UpsertAsync(updated, CancellationToken.None);
+        row.DefinitionVersion = updated.DefinitionVersion;
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        _refreshCts?.Cancel();
+        _timer?.Dispose();
+        _refreshCts?.Dispose();
+        return ValueTask.CompletedTask;
+    }
+
+    private class ConnectionEditModel
+    {
+        public string Host { get; set; } = "192.168.1.1";
+        public string Username { get; set; } = "admin";
+        public string Password { get; set; } = "";
+        public bool UseHttps { get; set; } = true;
+    }
+
+    private class PolicyRow
+    {
+        public string CategoryKey { get; set; } = "";
+        public bool Enabled { get; set; }
+        public int? DownloadKbps { get; set; }
+        public int? UploadKbps { get; set; }
+        public int DefinitionVersion { get; set; }
+    }
+}
