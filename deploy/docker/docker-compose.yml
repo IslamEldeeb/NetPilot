@@ -1,5 +1,6 @@
 services:
   netpilot-agent:
+    image: netpilot/agent:latest
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile.agent
@@ -8,9 +9,15 @@ services:
     environment:
       - ROUTER_HOST=${ROUTER_HOST:-}
       - ROUTER_PASSWORD=${ROUTER_PASSWORD:-}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: unless-stopped
 
   netpilot-web:
+    image: netpilot/web:latest
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile.web
@@ -18,7 +25,14 @@ services:
       - netpilot-data:/data
     ports:
       - "8080:8080"
+      - 
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
     restart: unless-stopped
 
 volumes:
-  netpilot-data: # LiteDB file + Data Protection keyring, shared by both containers
+  netpilot-data:
