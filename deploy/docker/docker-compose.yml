@@ -25,7 +25,6 @@ services:
       - netpilot-data:/data
     ports:
       - "8080:8080"
-      - 
     logging:
       driver: json-file
       options:
