@@ -8,6 +8,7 @@ public class DeviceDocument
     public string Mac { get; set; } = "";
     public string Hostname { get; set; } = "";
     public string? FriendlyName { get; set; }
+    public string IpAddress { get; set; } = "";
     public string CategoryKey { get; set; } = "";
     public string ConnectionMedium { get; set; } = "Unknown";
     public bool IsOnline { get; set; }

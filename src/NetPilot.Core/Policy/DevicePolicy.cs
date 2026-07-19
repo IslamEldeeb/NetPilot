@@ -8,9 +8,8 @@ namespace NetPilot.Core.Policy;
 /// </summary>
 public record DevicePolicy(string CategoryKey, SpeedLimit Limit, int DefinitionVersion)
 {
-    public DevicePolicy WithLimit(SpeedLimit newLimit) => this with
-    {
-        Limit = newLimit,
-        DefinitionVersion = DefinitionVersion + 1
-    };
+    /// <summary>No-op (version unchanged) if newLimit is identical to the current one.</summary>
+    public DevicePolicy WithLimit(SpeedLimit newLimit) => newLimit == Limit
+        ? this
+        : this with { Limit = newLimit, DefinitionVersion = DefinitionVersion + 1 };
 }

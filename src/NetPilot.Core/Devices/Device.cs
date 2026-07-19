@@ -8,6 +8,7 @@ public class Device
     public required MacAddress Mac { get; init; }
     public string Hostname { get; set; } = "";
     public string? FriendlyName { get; set; }
+    public string IpAddress { get; set; } = "";
     public string CategoryKey { get; set; } = DeviceCategory.UnknownKey;
     public ConnectionInfo Connection { get; set; } = new(ConnectionMedium.Unknown, IsOnline: false);
     public SpeedLimit? Override { get; set; }

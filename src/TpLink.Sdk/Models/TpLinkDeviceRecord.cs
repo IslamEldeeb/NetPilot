@@ -28,7 +28,9 @@ public class TpLinkDeviceRecord
 
     [JsonPropertyName("enablePriority")] public bool EnablePriority { get; set; }
     [JsonPropertyName("speedLimitOnline")] public bool? SpeedLimitOnline { get; set; }
-    [JsonPropertyName("timePeriod")] public int TimePeriod { get; set; }
+    [JsonPropertyName("timePeriod")]
+    [JsonConverter(typeof(LenientIntConverter))]
+    public int? TimePeriod { get; set; }
 
     public bool IsOnline => !string.Equals(DeviceTag, "offline", StringComparison.OrdinalIgnoreCase);
 

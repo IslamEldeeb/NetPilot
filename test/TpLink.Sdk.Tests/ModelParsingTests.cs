@@ -67,6 +67,16 @@ public class ModelParsingTests
     }
 
     [Fact]
+    public void LoadDeviceResponse_ParsesStringTimePeriod_FieldSeenLive()
+    {
+        var stringVariant = LoadDeviceFixture.Replace("\"timePeriod\": -1", "\"timePeriod\": \"-1\"");
+
+        var result = JsonSerializer.Deserialize<TpLinkLoadDeviceResponse>(stringVariant)!;
+
+        Assert.Equal(-1, result.Data[0].TimePeriod);
+    }
+
+    [Fact]
     public void DeviceTag_Offline_MarksDeviceOffline()
     {
         var offlineVariant = LoadDeviceFixture.Replace("\"deviceTag\": \"iot_2.4G\"", "\"deviceTag\": \"offline\"");

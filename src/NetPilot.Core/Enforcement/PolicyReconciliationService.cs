@@ -39,6 +39,7 @@ public class PolicyReconciliationService(
             var isNewCategory = await EnsurePolicyExistsAsync(categoryKey, ct);
 
             device.Hostname = snapshot.Hostname;
+            device.IpAddress = snapshot.IpAddress;
             device.CategoryKey = categoryKey;
             device.Connection = snapshot.Connection;
             device.LastSeenAtUtc = DateTimeOffset.UtcNow;

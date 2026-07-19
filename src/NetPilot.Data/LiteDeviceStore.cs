@@ -37,6 +37,7 @@ public class LiteDeviceStore : IDeviceStore
         Mac = new MacAddress(doc.Mac),
         Hostname = doc.Hostname,
         FriendlyName = doc.FriendlyName,
+        IpAddress = doc.IpAddress,
         CategoryKey = doc.CategoryKey,
         Connection = new ConnectionInfo(Enum.Parse<ConnectionMedium>(doc.ConnectionMedium), doc.IsOnline),
         Override = doc.OverrideEnabled is null
@@ -52,6 +53,7 @@ public class LiteDeviceStore : IDeviceStore
         Mac = device.Mac,
         Hostname = device.Hostname,
         FriendlyName = device.FriendlyName,
+        IpAddress = device.IpAddress,
         CategoryKey = device.CategoryKey,
         ConnectionMedium = device.Connection.Medium.ToString(),
         IsOnline = device.Connection.IsOnline,

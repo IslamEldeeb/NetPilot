@@ -15,134 +15,222 @@
 @inject IRouterConnectionStore ConnectionStore
 @inject RouterPasswordProtector PasswordProtector
 @inject IRouterProvider RouterProvider
+@inject PolicyReconciliationService ReconciliationService
 @inject ILogger<Home> Logger
 
 <PageTitle>NetPilot</PageTitle>
 
-<h1>NetPilot</h1>
+<div class="np-page">
+    <h1>NetPilot</h1>
 
-<section class="mb-4">
-    <h3>Router connection status</h3>
-    <div class="card p-3">
-        @if (_connection is null)
+    <div class="np-card mb-3">
+        @if (_connection is not null && !_showConnectionForm)
         {
-            <p class="text-muted">No router configured yet.</p>
+            <div class="d-flex align-items-center gap-3 flex-wrap">
+                <span class="np-pill @(_testConnectionOk == false && !string.IsNullOrEmpty(_testConnectionResult) ? "np-pill-offline" : "np-pill-online")">
+                    <span class="np-pill-dot"></span>
+                    @(_testConnectionOk == false && !string.IsNullOrEmpty(_testConnectionResult) ? "Connection issue" : "Connected")
+                </span>
+                <span class="np-conn-meta">
+                    <strong>@_connection.ProviderId</strong> @@ @_connection.Host
+                    (@(_connection.UseHttps ? "HTTPS" : "HTTP")) — user <code>@_connection.Username</code>
+                </span>
+                <button class="btn btn-sm btn-outline-secondary ms-auto" @onclick="() => _showConnectionForm = true">Edit</button>
+            </div>
         }
         else
         {
-            <p>
-                <strong>@_connection.ProviderId</strong> @@ @_connection.Host
-                (@(_connection.UseHttps ? "HTTPS" : "HTTP")) — user <code>@_connection.Username</code>
-            </p>
-        }
-        @if (!string.IsNullOrEmpty(_testConnectionResult))
-        {
-            <p class="@(_testConnectionOk ? "text-success" : "text-danger")">@_testConnectionResult</p>
-        }
+            @if (_connection is null)
+            {
+                <p class="text-muted mb-2">No router configured yet.</p>
+            }
+            @if (!string.IsNullOrEmpty(_testConnectionResult))
+            {
+                <p class="@(_testConnectionOk ? "text-success" : "text-danger") mb-2">@_testConnectionResult</p>
+            }
 
-        <EditForm Model="_editModel" OnValidSubmit="SaveConnectionAsync" class="row g-2 align-items-end">
-            <div class="col-auto">
-                <label class="form-label">Host</label>
-                <InputText class="form-control" @bind-Value="_editModel.Host" />
+            <EditForm Model="_editModel" OnValidSubmit="SaveConnectionAsync" class="row g-2 align-items-end">
+                <div class="col-auto">
+                    <label class="form-label">Host</label>
+                    <InputText class="form-control" @bind-Value="_editModel.Host" />
+                </div>
+                <div class="col-auto">
+                    <label class="form-label">Username</label>
+                    <InputText class="form-control" @bind-Value="_editModel.Username" />
+                </div>
+                <div class="col-auto">
+                    <label class="form-label">Password</label>
+                    <InputText type="password" class="form-control" @bind-Value="_editModel.Password" />
+                </div>
+                <div class="col-auto form-check mt-4">
+                    <InputCheckbox class="form-check-input" @bind-Value="_editModel.UseHttps" id="useHttps" />
+                    <label class="form-check-label" for="useHttps">HTTPS</label>
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </div>
+                <div class="col-auto">
+                    <button type="button" class="btn btn-secondary" @onclick="TestConnectionAsync" disabled="@_testing">
+                        @(_testing ? "Testing..." : "Test connection")
+                    </button>
+                </div>
+                @if (_connection is not null)
+                {
+                    <div class="col-auto">
+                        <button type="button" class="btn btn-link" @onclick="() => _showConnectionForm = false">Cancel</button>
+                    </div>
+                }
+            </EditForm>
+        }
+    </div>
+
+    <div class="np-tabs">
+        <button type="button" class="np-tab @(_activeTab == Tab.Devices ? "active" : "")" @onclick="() => _activeTab = Tab.Devices">Devices</button>
+        <button type="button" class="np-tab @(_activeTab == Tab.Policies ? "active" : "")" @onclick="() => _activeTab = Tab.Policies">Device type policies</button>
+        <button type="button" class="np-tab @(_activeTab == Tab.Activity ? "active" : "")" @onclick="() => _activeTab = Tab.Activity">Activity log</button>
+    </div>
+
+    @if (_activeTab == Tab.Devices)
+    {
+        <section class="mb-4">
+            <div class="np-toolbar">
+                <button class="btn btn-sm btn-primary" @onclick="RefreshFromRouterAsync" disabled="@(_refreshingDevices || _connection is null)">
+                    @(_refreshingDevices ? "Refreshing..." : "Refresh from router")
+                </button>
+                <label class="np-check">
+                    <input type="checkbox" @bind="_onlineOnly" />
+                    Online devices only
+                </label>
+                @if (!string.IsNullOrEmpty(_refreshError))
+                {
+                    <span class="text-danger">@_refreshError</span>
+                }
             </div>
-            <div class="col-auto">
-                <label class="form-label">Username</label>
-                <InputText class="form-control" @bind-Value="_editModel.Username" />
-            </div>
-            <div class="col-auto">
-                <label class="form-label">Password</label>
-                <InputText type="password" class="form-control" @bind-Value="_editModel.Password" />
-            </div>
-            <div class="col-auto form-check mt-4">
-                <InputCheckbox class="form-check-input" @bind-Value="_editModel.UseHttps" id="useHttps" />
-                <label class="form-check-label" for="useHttps">HTTPS</label>
-            </div>
-            <div class="col-auto">
-                <button type="submit" class="btn btn-primary">Save</button>
-            </div>
-            <div class="col-auto">
-                <button type="button" class="btn btn-secondary" @onclick="TestConnectionAsync" disabled="@_testing">
-                    @(_testing ? "Testing..." : "Test connection")
+            @{
+                var visibleDevices = _onlineOnly ? _devices.Where(d => d.Connection.IsOnline).ToList() : _devices;
+            }
+            @if (_devices.Count == 0)
+            {
+                <p class="np-empty">No devices discovered yet — click "Refresh from router", or wait for the Agent's next reconciliation tick.</p>
+            }
+            else if (visibleDevices.Count == 0)
+            {
+                <p class="np-empty">No online devices right now.</p>
+            }
+            else
+            {
+                @foreach (var group in visibleDevices.GroupBy(d => d.CategoryKey).OrderBy(g => g.Key))
+                {
+                    <div class="np-group">
+                        <div class="np-group-title">
+                            @CategoryIcon(group.Key)
+                            @group.Key.Replace('_', ' ')
+                            <span class="np-count-chip">@group.Count()</span>
+                        </div>
+                        <div class="np-device-list">
+                            @foreach (var device in group.OrderByDescending(d => d.Connection.IsOnline).ThenBy(d => d.FriendlyName ?? d.Hostname))
+                            {
+                                var limit = EffectiveLimit(device);
+                                <div class="np-device-row">
+                                    <div class="np-device-icon">@CategoryIcon(device.CategoryKey)</div>
+                                    <div>
+                                        <div class="np-device-name">@(device.FriendlyName ?? device.Hostname)</div>
+                                        <div class="np-device-sub">
+                                            <code>@((string)device.Mac)</code>
+                                            @if (!string.IsNullOrWhiteSpace(device.IpAddress))
+                                            {
+                                                <span>· @device.IpAddress</span>
+                                            }
+                                        </div>
+                                    </div>
+                                    <div><span class="np-badge-medium">@DescribeMedium(device.Connection.Medium)</span></div>
+                                    <div>
+                                        <span class="np-pill @(device.Connection.IsOnline ? "np-pill-online" : "np-pill-offline")">
+                                            <span class="np-pill-dot"></span>
+                                            @(device.Connection.IsOnline ? "Online" : "Offline")
+                                        </span>
+                                        <div class="np-device-sub mt-1">@DescribeLastSeen(device.LastSeenAtUtc)</div>
+                                    </div>
+                                    <div>
+                                        <span class="np-limit-chip @(limit.Enabled ? "np-limit-limited" : "np-limit-unlimited")">
+                                            @DescribeLimit(limit)
+                                        </span>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            }
+        </section>
+    }
+    else if (_activeTab == Tab.Policies)
+    {
+        <section class="mb-4">
+            <div class="np-section-head"><h3>Device type policies</h3></div>
+
+            <div class="np-bulk-bar">
+                <span class="np-bulk-label">Apply to all categories:</span>
+                <label class="np-switch">
+                    <input type="checkbox" @bind="_bulkEnabled" />
+                    <span class="np-switch-track"></span>
+                </label>
+                <input type="number" step="0.1" min="0" class="np-mbps-input" placeholder="Download Mbps" @bind="_bulkDownloadMbps" style="max-width:9rem" />
+                <input type="number" step="0.1" min="0" class="np-mbps-input" placeholder="Upload Mbps" @bind="_bulkUploadMbps" style="max-width:9rem" />
+                <button class="btn btn-sm btn-outline-primary" @onclick="ApplyBulkToAllRows">Apply to all</button>
+                <button class="np-save-btn" @onclick="SaveAllPoliciesAsync" disabled="@_savingAll">
+                    @(_savingAll ? "Saving..." : "Save all")
                 </button>
             </div>
-        </EditForm>
-    </div>
-</section>
 
-<section class="mb-4">
-    <h3>Connected devices</h3>
-    @if (_devices.Count == 0)
-    {
-        <p class="text-muted">No devices discovered yet — the Agent populates this once it's connected and has run at least one reconciliation tick.</p>
+            <div class="np-policy-grid">
+                @foreach (var row in _policyRows.OrderBy(r => r.CategoryKey))
+                {
+                    <div class="np-policy-row @(row.Enabled ? "enabled" : "")">
+                        <div class="d-flex align-items-center gap-2">
+                            @CategoryIcon(row.CategoryKey)
+                            <span class="text-capitalize">@row.CategoryKey.Replace('_', ' ')</span>
+                        </div>
+                        <label class="np-switch">
+                            <input type="checkbox" @bind="row.Enabled" />
+                            <span class="np-switch-track"></span>
+                        </label>
+                        <input type="number" step="0.1" min="0" class="np-mbps-input" placeholder="Download Mbps" @bind="row.DownloadMbps" />
+                        <input type="number" step="0.1" min="0" class="np-mbps-input" placeholder="Upload Mbps" @bind="row.UploadMbps" />
+                        <span class="np-version-chip">v@(row.DefinitionVersion)</span>
+                        <button class="np-save-btn" @onclick="() => SavePolicyAsync(row)">Save</button>
+                    </div>
+                }
+            </div>
+        </section>
     }
     else
     {
-        @foreach (var group in _devices.GroupBy(d => d.CategoryKey).OrderBy(g => g.Key))
-        {
-            <h5>@group.Key (@group.Count())</h5>
-            <table class="table table-sm">
-                <thead>
-                    <tr>
-                        <th>Hostname</th><th>MAC</th><th>Status</th><th>Effective limit</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var device in group)
-                    {
-                        <tr>
-                            <td>@(device.FriendlyName ?? device.Hostname)</td>
-                            <td><code>@((string)device.Mac)</code></td>
-                            <td>@(device.Connection.IsOnline ? "Online" : "Offline") (@device.Connection.Medium)</td>
-                            <td>@DescribeLimit(EffectiveLimit(device))</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        }
+        <section class="mb-4">
+            <div class="np-section-head"><h3>Activity log</h3></div>
+            <div class="np-activity-list">
+                @foreach (var entry in _activity)
+                {
+                    <div class="np-activity-row">
+                        <div class="np-activity-time">@entry.AtUtc.ToString("MMM d, HH:mm:ss")</div>
+                        <div class="np-activity-dot @ActivityDotClass(entry.Type)"></div>
+                        <div class="np-activity-msg">
+                            @entry.Message
+                            @if (entry.Mac is not null)
+                            {
+                                <span class="np-mac"> — @((string)entry.Mac.Value)</span>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </section>
     }
-</section>
-
-<section class="mb-4">
-    <h3>Device type policies</h3>
-    <table class="table table-sm">
-        <thead>
-            <tr><th>Category</th><th>Enabled</th><th>Download (Kbps)</th><th>Upload (Kbps)</th><th>Version</th><th></th></tr>
-        </thead>
-        <tbody>
-            @foreach (var row in _policyRows.OrderBy(r => r.CategoryKey))
-            {
-                <tr>
-                    <td>@row.CategoryKey</td>
-                    <td><input type="checkbox" @bind="row.Enabled" /></td>
-                    <td><input type="number" class="form-control form-control-sm" style="width:8rem" @bind="row.DownloadKbps" /></td>
-                    <td><input type="number" class="form-control form-control-sm" style="width:8rem" @bind="row.UploadKbps" /></td>
-                    <td>@row.DefinitionVersion</td>
-                    <td><button class="btn btn-sm btn-outline-primary" @onclick="() => SavePolicyAsync(row)">Save</button></td>
-                </tr>
-            }
-        </tbody>
-    </table>
-</section>
-
-<section class="mb-4">
-    <h3>Activity log</h3>
-    <table class="table table-sm">
-        <thead><tr><th>Time (UTC)</th><th>Type</th><th>Device</th><th>Message</th></tr></thead>
-        <tbody>
-            @foreach (var entry in _activity)
-            {
-                <tr>
-                    <td>@entry.AtUtc.ToString("u")</td>
-                    <td>@entry.Type</td>
-                    <td>@(entry.Mac is null ? "" : (string)entry.Mac.Value)</td>
-                    <td>@entry.Message</td>
-                </tr>
-            }
-        </tbody>
-    </table>
-</section>
+</div>
 
 @code {
+    private enum Tab { Devices, Policies, Activity }
+
     private RouterConnection? _connection;
     private List<Device> _devices = [];
     private List<PolicyRow> _policyRows = [];
@@ -151,6 +239,15 @@
     private bool _testing;
     private bool _testConnectionOk;
     private string? _testConnectionResult;
+    private bool _showConnectionForm;
+    private Tab _activeTab = Tab.Devices;
+    private bool _refreshingDevices;
+    private string? _refreshError;
+    private bool _onlineOnly;
+    private bool _bulkEnabled;
+    private double? _bulkDownloadMbps;
+    private double? _bulkUploadMbps;
+    private bool _savingAll;
     private PeriodicTimer? _timer;
     private CancellationTokenSource? _refreshCts;
 
@@ -170,7 +267,11 @@
         {
             while (await _timer!.WaitForNextTickAsync(ct))
             {
-                await RefreshAsync();
+                // Policies are intentionally excluded here — they only ever change through this
+                // page's own Save/Save-all actions, never from outside. Refetching them on a
+                // timer would silently clobber an edit the user hasn't saved yet (bulk-apply or
+                // a single row) the moment 30s elapses.
+                await RefreshLiveDataAsync();
                 await InvokeAsync(StateHasChanged);
             }
         }
@@ -182,6 +283,12 @@
 
     private async Task RefreshAsync()
     {
+        await RefreshLiveDataAsync();
+        await RefreshPoliciesAsync();
+    }
+
+    private async Task RefreshLiveDataAsync()
+    {
         _connection = await ConnectionStore.GetAsync(CancellationToken.None);
         if (_connection is not null)
         {
@@ -191,18 +298,20 @@
         }
 
         _devices = (await DeviceStore.GetAllAsync(CancellationToken.None)).ToList();
+        _activity = await ActivityLogStore.GetRecentAsync(50, CancellationToken.None);
+    }
 
+    private async Task RefreshPoliciesAsync()
+    {
         var policies = await PolicyStore.GetAllAsync(CancellationToken.None);
         _policyRows = policies.Select(p => new PolicyRow
         {
             CategoryKey = p.CategoryKey,
             Enabled = p.Limit.Enabled,
-            DownloadKbps = p.Limit.DownloadKbps,
-            UploadKbps = p.Limit.UploadKbps,
+            DownloadMbps = KbpsToMbps(p.Limit.DownloadKbps),
+            UploadMbps = KbpsToMbps(p.Limit.UploadKbps),
             DefinitionVersion = p.DefinitionVersion
         }).ToList();
-
-        _activity = await ActivityLogStore.GetRecentAsync(50, CancellationToken.None);
     }
 
     private SpeedLimit EffectiveLimit(Device device)
@@ -211,11 +320,64 @@
             return device.Override;
 
         var policy = _policyRows.FirstOrDefault(p => p.CategoryKey == device.CategoryKey);
-        return policy is null ? SpeedLimit.Unlimited : new SpeedLimit(policy.Enabled, policy.DownloadKbps, policy.UploadKbps);
+        return policy is null ? SpeedLimit.Unlimited : new SpeedLimit(policy.Enabled, MbpsToKbps(policy.DownloadMbps), MbpsToKbps(policy.UploadMbps));
     }
 
+    private static string DescribeMedium(ConnectionMedium medium) => medium switch
+    {
+        ConnectionMedium.Wired => "Wired",
+        ConnectionMedium.Wifi24Ghz => "2.4G",
+        ConnectionMedium.Wifi5Ghz => "5G",
+        ConnectionMedium.Guest => "Guest",
+        _ => "Unknown"
+    };
+
     private static string DescribeLimit(SpeedLimit limit) =>
-        limit.Enabled ? $"{limit.DownloadKbps ?? 0} down / {limit.UploadKbps ?? 0} up Kbps" : "Unlimited";
+        limit.Enabled ? $"{KbpsToMbps(limit.DownloadKbps) ?? 0}↓ / {KbpsToMbps(limit.UploadKbps) ?? 0}↑ Mbps" : "Unlimited";
+
+    private static string DescribeLastSeen(DateTimeOffset lastSeenUtc)
+    {
+        var delta = DateTimeOffset.UtcNow - lastSeenUtc;
+        if (delta < TimeSpan.FromMinutes(1)) return "just now";
+        if (delta < TimeSpan.FromMinutes(60)) return $"{(int)delta.TotalMinutes}m ago";
+        if (delta < TimeSpan.FromHours(48)) return $"{(int)delta.TotalHours}h ago";
+        return $"{(int)delta.TotalDays}d ago";
+    }
+
+    private static string ActivityDotClass(ActivityEventType type) => type switch
+    {
+        ActivityEventType.PolicyApplied => "dot-applied",
+        ActivityEventType.DeviceDiscovered => "dot-discovered",
+        ActivityEventType.DeviceCameBackOnline => "dot-discovered",
+        ActivityEventType.PolicySkippedAlreadyCorrect => "dot-skipped",
+        ActivityEventType.WriteFailed => "dot-failed",
+        ActivityEventType.DeviceWentOffline => "dot-offline",
+        _ => "dot-other"
+    };
+
+    private static double? KbpsToMbps(int? kbps) => kbps.HasValue ? Math.Round(kbps.Value / 1000.0, 2) : null;
+
+    private static int? MbpsToKbps(double? mbps) => mbps.HasValue ? (int)Math.Round(mbps.Value * 1000) : null;
+
+    private static MarkupString CategoryIcon(string categoryKey)
+    {
+        var path = categoryKey switch
+        {
+            "mobile" => "<rect x='7' y='2' width='10' height='20' rx='2'/><line x1='11' y1='18' x2='13' y2='18'/>",
+            "tablet" => "<rect x='4' y='3' width='16' height='18' rx='2'/><line x1='11' y1='18' x2='13' y2='18'/>",
+            "laptop" => "<rect x='3' y='4' width='18' height='12' rx='1'/><line x1='2' y1='19' x2='22' y2='19'/>",
+            "desktop" or "computer" => "<rect x='4' y='4' width='16' height='11' rx='1'/><line x1='9' y1='19' x2='15' y2='19'/><line x1='12' y1='15' x2='12' y2='19'/>",
+            "television" => "<rect x='3' y='4' width='18' height='12' rx='1'/><line x1='8' y1='20' x2='16' y2='20'/>",
+            "game_console" => "<rect x='2' y='8' width='20' height='9' rx='4'/><line x1='7' y1='10.5' x2='7' y2='14.5'/><line x1='5' y1='12.5' x2='9' y2='12.5'/><circle cx='16' cy='11' r='1'/><circle cx='18' cy='14' r='1'/>",
+            "ip_camera" => "<rect x='2' y='7' width='14' height='10' rx='2'/><path d='M16 10l5-2v8l-5-2z'/>",
+            "media_player" or "av_receiver" => "<circle cx='12' cy='12' r='9'/><polygon points='10,9 16,12 10,15'/>",
+            "smart_device" => "<path d='M9 18h6M10 21h4M12 3a6 6 0 0 0-3 11.2V16h6v-1.8A6 6 0 0 0 12 3z'/>",
+            "smart_meter" => "<circle cx='12' cy='13' r='8'/><line x1='12' y1='13' x2='15' y2='9'/><line x1='9' y1='4' x2='9.5' y2='6'/><line x1='15' y1='4' x2='14.5' y2='6'/>",
+            "iot_devices" => "<rect x='7' y='7' width='10' height='10' rx='1'/><line x1='7' y1='2' x2='7' y2='5'/><line x1='12' y1='2' x2='12' y2='5'/><line x1='17' y1='2' x2='17' y2='5'/><line x1='7' y1='19' x2='7' y2='22'/><line x1='12' y1='19' x2='12' y2='22'/><line x1='17' y1='19' x2='17' y2='22'/><line x1='2' y1='7' x2='5' y2='7'/><line x1='2' y1='12' x2='5' y2='12'/><line x1='2' y1='17' x2='5' y2='17'/><line x1='19' y1='7' x2='22' y2='7'/><line x1='19' y1='12' x2='22' y2='12'/><line x1='19' y1='17' x2='22' y2='17'/>",
+            _ => "<circle cx='12' cy='12' r='9'/><line x1='12' y1='16' x2='12' y2='16'/><path d='M9.5 9.5a2.5 2.5 0 0 1 5 0c0 1.5-2.5 2-2.5 3.5'/>"
+        };
+        return new MarkupString($"<svg width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'>{path}</svg>");
+    }
 
     private async Task SaveConnectionAsync()
     {
@@ -227,6 +389,7 @@
         await ConnectionStore.SaveAsync(updated, CancellationToken.None);
         _connection = updated;
         _editModel.Password = "";
+        _showConnectionForm = false;
     }
 
     private async Task TestConnectionAsync()
@@ -257,14 +420,67 @@
         }
     }
 
+    private async Task RefreshFromRouterAsync()
+    {
+        if (_connection is null)
+        {
+            _refreshError = "No router configured yet.";
+            return;
+        }
+
+        _refreshingDevices = true;
+        _refreshError = null;
+        try
+        {
+            var password = PasswordProtector.Decrypt(_connection.EncryptedPassword);
+            var settings = new RouterConnectionSettings(_connection.Host, _connection.UseHttps, _connection.Username, password);
+            await RouterProvider.ConnectAsync(settings, CancellationToken.None);
+            await ReconciliationService.ReconcileAsync(RouterProvider, CancellationToken.None);
+            await RefreshLiveDataAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Manual device refresh failed");
+            _refreshError = $"Refresh failed: {ex.Message}";
+        }
+        finally
+        {
+            _refreshingDevices = false;
+        }
+    }
+
     private async Task SavePolicyAsync(PolicyRow row)
     {
         var existing = await PolicyStore.FindByCategoryAsync(row.CategoryKey, CancellationToken.None)
             ?? new DevicePolicy(row.CategoryKey, SpeedLimit.Unlimited, 1);
 
-        var updated = existing.WithLimit(new SpeedLimit(row.Enabled, row.DownloadKbps, row.UploadKbps));
+        var updated = existing.WithLimit(new SpeedLimit(row.Enabled, MbpsToKbps(row.DownloadMbps), MbpsToKbps(row.UploadMbps)));
         await PolicyStore.UpsertAsync(updated, CancellationToken.None);
         row.DefinitionVersion = updated.DefinitionVersion;
+    }
+
+    private void ApplyBulkToAllRows()
+    {
+        foreach (var row in _policyRows)
+        {
+            row.Enabled = _bulkEnabled;
+            row.DownloadMbps = _bulkDownloadMbps;
+            row.UploadMbps = _bulkUploadMbps;
+        }
+    }
+
+    private async Task SaveAllPoliciesAsync()
+    {
+        _savingAll = true;
+        try
+        {
+            foreach (var row in _policyRows)
+                await SavePolicyAsync(row);
+        }
+        finally
+        {
+            _savingAll = false;
+        }
     }
 
     public ValueTask DisposeAsync()
@@ -287,8 +503,8 @@
     {
         public string CategoryKey { get; set; } = "";
         public bool Enabled { get; set; }
-        public int? DownloadKbps { get; set; }
-        public int? UploadKbps { get; set; }
+        public double? DownloadMbps { get; set; }
+        public double? UploadMbps { get; set; }
         public int DefinitionVersion { get; set; }
     }
 }

@@ -69,10 +69,16 @@ public class TpLinkRouterProvider : IRouterProvider, IDisposable
     private static RouterDeviceSnapshot ToSnapshot(TpLinkDeviceRecord record) => new(
         MacAddress: record.Mac,
         IpAddress: record.Ip,
-        Hostname: string.IsNullOrWhiteSpace(record.Host) ? record.DeviceName ?? "" : record.Host,
+        Hostname: HasRealHostname(record.Host) ? record.Host : record.DeviceName ?? "",
         RawCategory: record.DeviceType,
         Connection: ToConnectionInfo(record),
         CurrentLimit: new SpeedLimitState(record.IsLimitEnabled, record.DownloadLimit, record.UploadLimit, record.SpeedLimitOnline));
+
+    // Confirmed live: this firmware reports the literal string "NON_HOST" (not blank) for any
+    // client that didn't send a DHCP hostname — router's own admin UI falls back to the
+    // user-assigned deviceName alias in that case, so we do the same.
+    private static bool HasRealHostname(string? host) =>
+        !string.IsNullOrWhiteSpace(host) && !string.Equals(host, "NON_HOST", StringComparison.OrdinalIgnoreCase);
 
     private TpLinkRouterClient RequireClient() =>
         _client ?? throw new InvalidOperationException("ConnectAsync must be called before using this provider.");

@@ -19,3 +19,6 @@ appsettings.*.local.json
 ## credentials or encryption keys, even encrypted-at-rest ones.
 src/NetPilot.Agent/data/
 src/NetPilot.Web/data/
+## Repo-root data/ — used for local (non-Docker) runs where Agent+Web share one absolute
+## NetPilot__DataDirectory path instead of Docker's mounted volume.
+/data/
