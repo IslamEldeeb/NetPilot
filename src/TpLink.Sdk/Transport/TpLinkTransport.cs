@@ -39,7 +39,23 @@ public sealed class TpLinkTransport : IDisposable
                 request.RequestUri is not null && request.RequestUri.Host.Equals(host, StringComparison.OrdinalIgnoreCase);
         }
 
-        _http = new HttpClient(handler) { BaseAddress = _baseUri };
+        _http = new HttpClient(handler)
+        {
+            BaseAddress = _baseUri,
+            // .NET's HttpClient negotiates HTTP/2 via TLS ALPN by default; the reference
+            // tplinkrouterc6u Python library (confirmed working against this exact router)
+            // and curl both stay on HTTP/1.1. Embedded router HTTP servers are frequently
+            // HTTP/1.1-only under the hood even if they don't hard-reject h2 — pin to 1.1 to
+            // rule this out as a source of body/framing corruption on POST requests.
+            DefaultRequestVersion = new Version(1, 1),
+            DefaultVersionPolicy = System.Net.Http.HttpVersionPolicy.RequestVersionExact,
+        };
+
+        // Matches the reference library's confirmed-working request: Referer required (a
+        // request without it was rejected as a generic "login failed"), no Origin header on
+        // the login call (adding one did not by itself break a working request, but stay
+        // aligned with the confirmed-good shape rather than guessing further).
+        _http.DefaultRequestHeaders.Referrer = new Uri($"{_baseUri}webpages/index.html");
     }
 
     /// <summary>POSTs a form body to `/cgi-bin/luci/;stok=&lt;stok&gt;/{path}` and parses the JSON response.</summary>

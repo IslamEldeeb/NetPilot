@@ -15,7 +15,7 @@ public sealed class TpLinkRouterClient : IDisposable
 {
     private const string GameAcceleratorForm = "admin/smart_network?form=game_accelerator";
     private const string ClientSpeedLimitForm = "admin/smart_network?form=client_speed_limit";
-    private const string LoginAuthPath = "/login?form=auth";
+    private const string LoginKeysPath = "/login?form=keys";
     private const string LoginPath = "/login?form=login";
 
     private readonly TpLinkTransport _transport;
@@ -29,20 +29,20 @@ public sealed class TpLinkRouterClient : IDisposable
     public bool IsAuthenticated => _session is not null;
 
     /// <summary>
-    /// Two-call handshake confirmed live: one `form=auth`/`operation=read` call returns
-    /// both the RSA key and `seq` in one shot, then `form=login` with the RSA-encrypted
-    /// password. No AES envelope, no signing, no `confirm` field on this firmware.
+    /// Two-call handshake used by the working Archer client: `form=keys`/`operation=read`
+    /// returns the RSA key in `data.password`, then `form=login` receives only the
+    /// RSA-encrypted password. No AES envelope, signing, or `confirm` field is used.
     /// </summary>
     public async Task LoginAsync(string password, CancellationToken ct = default)
     {
-        var authResponse = await _transport.PostFormAsync<TpLinkAuthReadResponse>(
-            stok: "", path: LoginAuthPath, formBody: "operation=read", ct);
+        var keyResponse = await _transport.PostFormAsync<TpLinkPasswordKeyResponse>(
+            stok: "", path: LoginKeysPath, formBody: "operation=read", ct);
 
-        if (!authResponse.Success || authResponse.Data is null || authResponse.Data.Key.Count != 2)
-            throw new TpLinkProtocolException("form=auth did not return a usable RSA key.");
+        if (!keyResponse.Success || keyResponse.Data is null || keyResponse.Data.Password.Count != 2)
+            throw new TpLinkProtocolException("form=keys did not return a usable RSA key.");
 
-        var key = new RsaPublicKey(authResponse.Data.Key[0], authResponse.Data.Key[1]);
-        var encryptedPassword = RsaPasswordEncryptor.Encrypt(password, authResponse.Data.Seq, key);
+        var key = new RsaPublicKey(keyResponse.Data.Password[0], keyResponse.Data.Password[1]);
+        var encryptedPassword = RsaPasswordEncryptor.Encrypt(password, key);
 
         var loginResponse = await _transport.PostFormAsync<TpLinkLoginResponse>(
             stok: "", path: LoginPath, formBody: $"operation=login&password={encryptedPassword}", ct);

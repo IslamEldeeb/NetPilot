@@ -93,14 +93,14 @@ public class ModelParsingTests
     }
 
     [Fact]
-    public void AuthReadResponse_ParsesKeyAndSeq_ConfirmedShape()
+    public void PasswordKeyResponse_ParsesReferenceClientShape()
     {
-        var json = """{"success":true,"data":{"key":["deadbeef","010001"],"seq":12345}}""";
-        var result = JsonSerializer.Deserialize<TpLinkAuthReadResponse>(json)!;
+        var json = """{"success":true,"data":{"password":["deadbeef","010001"]}}""";
+        var result = JsonSerializer.Deserialize<TpLinkPasswordKeyResponse>(json)!;
 
         Assert.True(result.Success);
-        Assert.Equal(2, result.Data!.Key.Count);
-        Assert.Equal(12345, result.Data.Seq);
+        Assert.Equal(2, result.Data!.Password.Count);
+        Assert.Equal("deadbeef", result.Data.Password[0]);
     }
 
     [Fact]

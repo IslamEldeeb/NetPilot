@@ -59,16 +59,15 @@ public class TpLinkMaxValuesResponse
     [JsonPropertyName("data")] public TpLinkMaxValuesData? Data { get; set; }
 }
 
-public class TpLinkAuthReadData
+public class TpLinkPasswordKeyData
 {
-    [JsonPropertyName("key")] public List<string> Key { get; set; } = [];
-    [JsonPropertyName("seq")] public long Seq { get; set; }
+    [JsonPropertyName("password")] public List<string> Password { get; set; } = [];
 }
 
-public class TpLinkAuthReadResponse
+public class TpLinkPasswordKeyResponse
 {
     [JsonPropertyName("success")] public bool Success { get; set; }
-    [JsonPropertyName("data")] public TpLinkAuthReadData? Data { get; set; }
+    [JsonPropertyName("data")] public TpLinkPasswordKeyData? Data { get; set; }
 }
 
 public class TpLinkLoginData

@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace TpLink.Sdk.Auth;
 
-/// <summary>Public key returned by <c>form=auth</c>/<c>operation=read</c> — modulus and exponent as hex strings.</summary>
+/// <summary>Public key returned by <c>form=keys</c>/<c>operation=read</c> — modulus and exponent as hex strings.</summary>
 public record RsaPublicKey(string ModulusHex, string ExponentHex)
 {
     public BigInteger Modulus => ParseUnsignedHex(ModulusHex);

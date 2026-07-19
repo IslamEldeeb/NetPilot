@@ -3,23 +3,34 @@ using System.Security.Cryptography;
 namespace TpLink.Sdk.Auth;
 
 /// <summary>
-/// Encrypts the login password against the router's RSA key.
+/// Encrypts the login password against the router's RSA key for the
+/// <c>POST /login?form=login</c> body's <c>password</c> field.
 ///
-/// CONFIRMED LIVE 2026-07-17: raw/textbook RSA (no padding) was tried first and rejected by
-/// the real router twice (with and without seq appended). Switched to PKCS#1 v1.5 padding,
-/// password only (no seq) — this matches NetPilot_Research_Findings_and_Architecture.md §3.2's
-/// documented TP-Link crypto primitive ("RSA, PKCS#1 v1.5 padding") directly, which the earlier
-/// no-padding choice ignored based on a flawed inference (RSA ciphertext is always exactly the
-/// modulus byte width regardless of padding scheme, so the live-captured 512-hex-char length
-/// never actually distinguished padded from unpadded — that reasoning was wrong).
-/// seq is not appended: NetPilot_Research_Findings_and_Architecture.md §3.1 step 3 describes
-/// password encryption as RSA_PKCS1v1.5(password) alone; seq only enters the legacy
-/// AES-envelope signing steps (4-8) that this firmware's simplified 2-call handshake skips
-/// entirely per phase1-live-findings.md.
+/// SCHEME CONFIRMED BY STATIC ANALYSIS of the router's own front-end JS bundles (2026-07-18,
+/// fetched from the live AX53). The returning-user "Local Password" login component
+/// (<c>LocalLogin</c>) calls <c>ea(rawPassword, encryptKey)</c> → <c>v.encrypt(pw, N, E)</c>.
+/// The OAEP opt-in argument is absent (the injected <c>encryptKey</c> is the 2-element
+/// <c>["N","E"]</c> array from <c>form=keys</c>), so the OAEP branch is never taken; execution
+/// falls to <c>new Oi().setPublic(N,E).encrypt(pw)</c>. <c>Oi</c> is jsbn's RSAKey — its
+/// <c>encrypt()</c> body was read directly (not assumed): it builds
+/// <c>00 02 [random nonzero pad] 00 [UTF-8 message]</c> then does <c>m^e mod n</c>. That is
+/// textbook RSAES-PKCS#1 v1.5 (type 2) padding of the RAW password (UTF-8 bytes) — no seq, no
+/// pre-hash. The SHA256("admin"+pwd) hash seen elsewhere in the bundle feeds only the
+/// post-login session envelope (Ze/m.init), which this firmware's simplified 2-call handshake
+/// does not use.
+///
+/// UNRESOLVED CONTRADICTION: this scheme (PKCS1v1.5, raw password, no seq) was reportedly
+/// rejected in earlier live attempts (see the login-research handoff). Static analysis
+/// conclusively identifies the scheme but cannot explain the rejection; the cause is most
+/// likely operational (rate-limit lockout false-negative, a harness password-string/encoding
+/// defect, or a cookie binding between form=keys and form=login not preserved by the test
+/// client), NOT the padding scheme. Do NOT change this away from PKCS1v1.5 without a
+/// discriminating live capture (the exact errorcode/remainTime/failureCount from a PKCS1
+/// attempt, or a DevTools breakpoint on Oi.prototype.encrypt showing the exact plaintext bytes).
 /// </summary>
 public static class RsaPasswordEncryptor
 {
-    public static string Encrypt(string password, long seq, RsaPublicKey key)
+    public static string Encrypt(string password, RsaPublicKey key)
     {
         using var rsa = RSA.Create();
         rsa.ImportParameters(new RSAParameters
@@ -28,7 +39,9 @@ public static class RsaPasswordEncryptor
             Exponent = ToUnsignedBytes(key.ExponentHex, (key.ExponentHex.Length + 1) / 2)
         });
 
-        var plaintextBytes = System.Text.Encoding.ASCII.GetBytes(password);
+        // UTF-8 to match jsbn's pkcs1pad2, which encodes each char via charCodeAt with UTF-8
+        // multi-byte expansion. Identical to ASCII for ASCII-only passwords; correct for the rest.
+        var plaintextBytes = System.Text.Encoding.UTF8.GetBytes(password);
         var ciphertext = rsa.Encrypt(plaintextBytes, RSAEncryptionPadding.Pkcs1);
 
         return Convert.ToHexString(ciphertext).ToLowerInvariant();

@@ -5,17 +5,18 @@ namespace TpLink.Sdk.Tests;
 
 /// <summary>
 /// Verifies PKCS#1 v1.5 password encryption round-trips correctly using a real 2048-bit
-/// keypair. Confirmed live 2026-07-17 against a real AX53: PKCS1 padding, password only
-/// (no seq) is what the router actually accepts — raw/textbook RSA (with and without seq
-/// appended) was tried first and rejected. See RsaPasswordEncryptor's XML doc for the
-/// full history.
+/// keypair. This only proves internal consistency (encrypt then decrypt with the same padding),
+/// NOT correctness against the real router — the router's private key isn't available here.
+/// The scheme itself (PKCS1 v1.5, raw UTF-8 password, no seq) was confirmed by static analysis
+/// of the router's own login JS; see RsaPasswordEncryptor's XML doc for that analysis and the
+/// still-unresolved contradiction with earlier live rejections.
 /// </summary>
 public class RsaPasswordEncryptorTests
 {
     [Theory]
-    [InlineData("admin123", 12345L)]
-    [InlineData("a-longer-test-password-1234567890", 1L)]
-    public void Encrypt_RoundTrips_WithRealKeypair(string password, long seq)
+    [InlineData("admin123")]
+    [InlineData("a-longer-test-password-1234567890")]
+    public void Encrypt_RoundTrips_WithRealKeypair(string password)
     {
         using var rsa = RSA.Create(2048);
         var parameters = rsa.ExportParameters(includePrivateParameters: true);
@@ -24,7 +25,7 @@ public class RsaPasswordEncryptorTests
             Convert.ToHexString(parameters.Modulus!),
             Convert.ToHexString(parameters.Exponent!));
 
-        var ciphertextHex = RsaPasswordEncryptor.Encrypt(password, seq, key);
+        var ciphertextHex = RsaPasswordEncryptor.Encrypt(password, key);
 
         // Ciphertext must be a fixed-width hex string matching the modulus byte length —
         // confirmed live: 512 hex chars for this router's 2048-bit/256-byte key.
@@ -32,8 +33,8 @@ public class RsaPasswordEncryptorTests
 
         using var decryptor = RSA.Create();
         decryptor.ImportParameters(parameters);
-        var recoveredBytes = decryptor.Decrypt(Convert.FromHexString(ciphertextHex), RSAEncryptionPadding.OaepSHA1);
-        var recovered = System.Text.Encoding.ASCII.GetString(recoveredBytes);
+        var recoveredBytes = decryptor.Decrypt(Convert.FromHexString(ciphertextHex), RSAEncryptionPadding.Pkcs1);
+        var recovered = System.Text.Encoding.UTF8.GetString(recoveredBytes);
 
         Assert.Equal(password, recovered);
     }
