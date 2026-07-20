@@ -5,4 +5,5 @@ public record RouterCapabilities(
     bool SupportsDeviceCategorization,
     bool SupportsPriorityQos,
     bool SupportsGuestNetworkInfo,
-    bool SupportsUsageTracking);
+    bool SupportsUsageTracking,
+    bool SupportsReboot);

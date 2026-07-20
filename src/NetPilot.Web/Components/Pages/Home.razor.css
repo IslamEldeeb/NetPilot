@@ -172,7 +172,7 @@
 
 .np-device-row {
     display: grid;
-    grid-template-columns: 40px 1.6fr 1fr 0.9fr 1.1fr;
+    grid-template-columns: 40px 1.4fr 0.9fr 0.9fr 1.1fr 1.1fr;
     align-items: center;
     gap: 0.9rem;
     background: #fff;

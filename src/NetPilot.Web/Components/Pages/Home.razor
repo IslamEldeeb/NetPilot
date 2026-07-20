@@ -92,6 +92,7 @@
         <button type="button" class="np-tab @(_activeTab == Tab.Policies ? "active" : "")" @onclick="() => _activeTab = Tab.Policies">Device type policies</button>
         <button type="button" class="np-tab @(_activeTab == Tab.Activity ? "active" : "")" @onclick="() => _activeTab = Tab.Activity">Activity log</button>
         <button type="button" class="np-tab @(_activeTab == Tab.Usage ? "active" : "")" @onclick="() => _activeTab = Tab.Usage">Usage</button>
+        <button type="button" class="np-tab @(_activeTab == Tab.Management ? "active" : "")" @onclick="() => _activeTab = Tab.Management">Management</button>
     </div>
 
     @if (_activeTab == Tab.Devices)
@@ -126,6 +127,8 @@
                         || (d.FriendlyName ?? d.Hostname).Contains(_searchText, StringComparison.OrdinalIgnoreCase)
                         || ((string)d.Mac).Contains(_searchText, StringComparison.OrdinalIgnoreCase))
                     .ToList();
+                var todayUsageByMac = UsageQuery.BytesByDevice(UsagePeriodType.Day, DateTimeOffset.UtcNow.ToString("yyyy-MM-dd"), isCurrentPeriod: true, _usageStates, _monthlyHistory, _dailyHistory);
+                var monthUsageByMac = UsageQuery.BytesByDevice(UsagePeriodType.Month, DateTimeOffset.UtcNow.ToString("yyyy-MM"), isCurrentPeriod: true, _usageStates, _monthlyHistory, _dailyHistory);
             }
             @if (_devices.Count == 0)
             {
@@ -176,6 +179,10 @@
                                             @DescribeLimit(limit)
                                         </span>
                                         <div class="np-device-sub mt-1 @(isDrift ? "np-drift-text" : "")">@routerText</div>
+                                    </div>
+                                    <div>
+                                        <span class="np-badge-medium">@FormatBytes(todayUsageByMac.GetValueOrDefault((string)device.Mac)) today</span>
+                                        <div class="np-device-sub mt-1">@FormatBytes(monthUsageByMac.GetValueOrDefault((string)device.Mac)) this month</div>
                                     </div>
                                 </div>
                             }
@@ -257,7 +264,7 @@
             </div>
         </section>
     }
-    else
+    else if (_activeTab == Tab.Usage)
     {
         <section class="mb-4">
             <div class="np-section-head"><h3>Usage</h3></div>
@@ -329,10 +336,49 @@
             }
         </section>
     }
+    else
+    {
+        <section class="mb-4">
+            <div class="np-section-head"><h3>Management</h3></div>
+
+            <div class="np-card mb-3">
+                <div class="np-device-name mb-1">Reboot router</div>
+                <p class="np-device-sub mb-3">
+                    Restarts the router. All devices on the network — including this one — will lose connectivity for a minute or two while it comes back up.
+                </p>
+
+                @if (_connection is null)
+                {
+                    <p class="np-empty mb-0">Configure a router connection above before rebooting.</p>
+                }
+                else if (!_showRebootConfirm)
+                {
+                    <button class="btn btn-outline-danger btn-sm" @onclick="() => _showRebootConfirm = true" disabled="@_rebooting">
+                        Reboot router
+                    </button>
+                }
+                else
+                {
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <span class="text-danger fw-semibold">Are you sure? This will disconnect every device on the network.</span>
+                        <button class="btn btn-danger btn-sm" @onclick="RebootRouterAsync" disabled="@_rebooting">
+                            @(_rebooting ? "Rebooting..." : "Yes, reboot now")
+                        </button>
+                        <button class="btn btn-link btn-sm" @onclick="() => _showRebootConfirm = false" disabled="@_rebooting">Cancel</button>
+                    </div>
+                }
+
+                @if (!string.IsNullOrEmpty(_rebootResult))
+                {
+                    <p class="@(_rebootOk ? "text-success" : "text-danger") mt-3 mb-0">@_rebootResult</p>
+                }
+            </div>
+        </section>
+    }
 </div>
 
 @code {
-    private enum Tab { Devices, Policies, Activity, Usage }
+    private enum Tab { Devices, Policies, Activity, Usage, Management }
 
     private RouterConnection? _connection;
     private List<Device> _devices = [];
@@ -360,6 +406,10 @@
     private double? _bulkDownloadMbps;
     private double? _bulkUploadMbps;
     private bool _savingAll;
+    private bool _showRebootConfirm;
+    private bool _rebooting;
+    private bool _rebootOk;
+    private string? _rebootResult;
     private PeriodicTimer? _timer;
     private CancellationTokenSource? _refreshCts;
 
@@ -487,6 +537,7 @@
         ActivityEventType.PolicySkippedAlreadyCorrect => "dot-skipped",
         ActivityEventType.WriteFailed => "dot-failed",
         ActivityEventType.DeviceWentOffline => "dot-offline",
+        ActivityEventType.RouterRebooted => "dot-other",
         _ => "dot-other"
     };
 
@@ -647,6 +698,40 @@
         catch (Exception ex)
         {
             Logger.LogWarning(ex, "Force re-apply couldn't push immediately — will retry on the Agent's next tick");
+        }
+    }
+
+    private async Task RebootRouterAsync()
+    {
+        if (_connection is null)
+            return;
+
+        _rebooting = true;
+        _rebootResult = null;
+        try
+        {
+            var password = PasswordProtector.Decrypt(_connection.EncryptedPassword);
+            var settings = new RouterConnectionSettings(_connection.Host, _connection.UseHttps, _connection.Username, password);
+            await RouterProvider.ConnectAsync(settings, CancellationToken.None);
+            await RouterProvider.RebootAsync(CancellationToken.None);
+
+            _rebootOk = true;
+            _rebootResult = "Reboot command sent — the router should be back online in a minute or two.";
+            await ActivityLogStore.AppendAsync(
+                new ActivityLogEntry(DateTimeOffset.UtcNow, ActivityEventType.RouterRebooted, Mac: null, Message: "Router reboot triggered from the dashboard"),
+                CancellationToken.None);
+            _activity = await ActivityLogStore.GetRecentAsync(50, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Router reboot failed");
+            _rebootOk = false;
+            _rebootResult = $"Reboot failed: {ex.Message}";
+        }
+        finally
+        {
+            _rebooting = false;
+            _showRebootConfirm = false;
         }
     }
 

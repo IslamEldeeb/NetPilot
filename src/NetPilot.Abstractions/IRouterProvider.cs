@@ -17,4 +17,6 @@ public interface IRouterProvider
     Task SetSpeedLimitAsync(string macAddress, SpeedLimit limit, CancellationToken ct);
 
     Task<RouterInfo> GetRouterInfoAsync(CancellationToken ct);
+
+    Task RebootAsync(CancellationToken ct);
 }
