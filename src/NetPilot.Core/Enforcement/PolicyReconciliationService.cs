@@ -42,6 +42,7 @@ public class PolicyReconciliationService(
             device.IpAddress = snapshot.IpAddress;
             device.CategoryKey = categoryKey;
             device.Connection = snapshot.Connection;
+            device.RouterReportedLimit = snapshot.CurrentLimit;
             device.LastSeenAtUtc = DateTimeOffset.UtcNow;
 
             if (isNewDevice)
@@ -87,7 +88,7 @@ public class PolicyReconciliationService(
         if (existing is not null)
             return false;
 
-        var fallback = new DevicePolicy(categoryKey, SpeedLimit.Unlimited, DefinitionVersion: 1);
+        var fallback = new DevicePolicy(categoryKey, SpeedLimit.Unlimited, DefinitionVersion: 1, IsUserConfigured: false);
         await policyStore.UpsertAsync(fallback, ct);
         return true;
     }
@@ -96,6 +97,15 @@ public class PolicyReconciliationService(
     {
         var policy = await policyStore.FindByCategoryAsync(device.CategoryKey, ct)
             ?? throw new InvalidOperationException($"Policy for category '{device.CategoryKey}' should exist by now.");
+
+        // No human has ever set a per-device override or saved this category's policy through
+        // the dashboard — never write to the router for it. Without this, a fresh/empty local
+        // database (e.g. running the app locally against the same router while a server
+        // deployment already has real limits configured) would auto-seed every never-seen
+        // category with a disabled Unlimited fallback and push it live, silently wiping out
+        // whatever was actually configured elsewhere.
+        if (device.Override is null && !policy.IsUserConfigured)
+            return;
 
         var desiredLimit = device.Override ?? policy.Limit;
         var desiredFingerprint = PolicyFingerprint.Compute(device.CategoryKey, device.Override, policy.DefinitionVersion);

@@ -41,7 +41,7 @@ public class InMemoryPolicyStore : IPolicyStore
     public Task EnsureSeedCategoriesAsync(CancellationToken ct)
     {
         foreach (var category in DeviceCategory.SeedCategories)
-            _policies.TryAdd(category.Key, new DevicePolicy(category.Key, Abstractions.SpeedLimit.Unlimited, 1));
+            _policies.TryAdd(category.Key, new DevicePolicy(category.Key, Abstractions.SpeedLimit.Unlimited, 1, IsUserConfigured: false));
         return Task.CompletedTask;
     }
 }

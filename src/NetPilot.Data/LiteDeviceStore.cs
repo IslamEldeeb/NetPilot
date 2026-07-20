@@ -43,6 +43,9 @@ public class LiteDeviceStore : IDeviceStore
         Override = doc.OverrideEnabled is null
             ? null
             : new SpeedLimit(doc.OverrideEnabled.Value, doc.OverrideDownloadKbps, doc.OverrideUploadKbps),
+        RouterReportedLimit = doc.RouterLimitEnabled is null
+            ? null
+            : new SpeedLimitState(doc.RouterLimitEnabled.Value, doc.RouterDownloadKbps, doc.RouterUploadKbps, doc.RouterLimitCurrentlyEnforced),
         LastAppliedFingerprint = doc.LastAppliedFingerprint,
         FirstSeenAtUtc = doc.FirstSeenAtUtc,
         LastSeenAtUtc = doc.LastSeenAtUtc
@@ -60,6 +63,10 @@ public class LiteDeviceStore : IDeviceStore
         OverrideEnabled = device.Override?.Enabled,
         OverrideDownloadKbps = device.Override?.DownloadKbps,
         OverrideUploadKbps = device.Override?.UploadKbps,
+        RouterLimitEnabled = device.RouterReportedLimit?.Enabled,
+        RouterDownloadKbps = device.RouterReportedLimit?.DownloadKbps,
+        RouterUploadKbps = device.RouterReportedLimit?.UploadKbps,
+        RouterLimitCurrentlyEnforced = device.RouterReportedLimit?.IsCurrentlyEnforced,
         LastAppliedFingerprint = device.LastAppliedFingerprint,
         FirstSeenAtUtc = device.FirstSeenAtUtc,
         LastSeenAtUtc = device.LastSeenAtUtc

@@ -12,6 +12,12 @@ public class Device
     public string CategoryKey { get; set; } = DeviceCategory.UnknownKey;
     public ConnectionInfo Connection { get; set; } = new(ConnectionMedium.Unknown, IsOnline: false);
     public SpeedLimit? Override { get; set; }
+
+    /// <summary>What the router itself last reported, independent of what NetPilot wants —
+    /// refreshed every reconciliation tick regardless of whether a policy is enforced for
+    /// this device. Null only before the device has ever been polled once.</summary>
+    public SpeedLimitState? RouterReportedLimit { get; set; }
+
     public string? LastAppliedFingerprint { get; set; }
     public DateTimeOffset FirstSeenAtUtc { get; init; }
     public DateTimeOffset LastSeenAtUtc { get; set; }

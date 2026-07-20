@@ -148,6 +148,8 @@
                             @foreach (var device in group.OrderByDescending(d => d.Connection.IsOnline).ThenBy(d => d.FriendlyName ?? d.Hostname))
                             {
                                 var limit = EffectiveLimit(device);
+                                var isManaged = device.Override is not null || (_policyRows.FirstOrDefault(p => p.CategoryKey == device.CategoryKey)?.IsConfigured ?? false);
+                                var (routerText, isDrift) = DescribeRouterLimit(device.RouterReportedLimit, limit, isManaged);
                                 <div class="np-device-row">
                                     <div class="np-device-icon">@CategoryIcon(device.CategoryKey)</div>
                                     <div>
@@ -172,6 +174,7 @@
                                         <span class="np-limit-chip @(limit.Enabled ? "np-limit-limited" : "np-limit-unlimited")">
                                             @DescribeLimit(limit)
                                         </span>
+                                        <div class="np-device-sub mt-1 @(isDrift ? "np-drift-text" : "")">@routerText</div>
                                     </div>
                                 </div>
                             }
@@ -199,6 +202,7 @@
                     @(_savingAll ? "Saving..." : "Save all")
                 </button>
             </div>
+            <p class="np-device-sub mb-3">Categories marked <strong>Not applied</strong> have never been saved — NetPilot leaves whatever the router already has alone until you hit Save. Use ↻ to force-push a category right now, even if the numbers look unchanged.</p>
 
             <div class="np-policy-grid">
                 @foreach (var row in _policyRows.OrderBy(r => r.CategoryKey))
@@ -214,8 +218,17 @@
                         </label>
                         <input type="number" step="0.1" min="0" class="np-mbps-input" placeholder="Download Mbps" @bind="row.DownloadMbps" />
                         <input type="number" step="0.1" min="0" class="np-mbps-input" placeholder="Upload Mbps" @bind="row.UploadMbps" />
-                        <span class="np-version-chip">v@(row.DefinitionVersion)</span>
-                        <button class="np-save-btn" @onclick="() => SavePolicyAsync(row)">Save</button>
+                        <div class="d-flex flex-column align-items-center gap-1">
+                            <span class="np-version-chip">v@(row.DefinitionVersion)</span>
+                            @if (!row.IsConfigured)
+                            {
+                                <span class="np-unconfigured-badge">Not applied</span>
+                            }
+                        </div>
+                        <div class="d-flex gap-1">
+                            <button class="np-save-btn" @onclick="() => SavePolicyAsync(row)">Save</button>
+                            <button class="np-reapply-btn" title="Force re-apply this policy to the router now, even if nothing here changed" disabled="@(_connection is null)" @onclick="() => ReapplyPolicyAsync(row)">↻</button>
+                        </div>
                     </div>
                 }
             </div>
@@ -411,7 +424,8 @@
             Enabled = p.Limit.Enabled,
             DownloadMbps = KbpsToMbps(p.Limit.DownloadKbps),
             UploadMbps = KbpsToMbps(p.Limit.UploadKbps),
-            DefinitionVersion = p.DefinitionVersion
+            DefinitionVersion = p.DefinitionVersion,
+            IsConfigured = p.IsUserConfigured
         }).ToList();
     }
 
@@ -422,6 +436,25 @@
 
         var policy = _policyRows.FirstOrDefault(p => p.CategoryKey == device.CategoryKey);
         return policy is null ? SpeedLimit.Unlimited : new SpeedLimit(policy.Enabled, MbpsToKbps(policy.DownloadMbps), MbpsToKbps(policy.UploadMbps));
+    }
+
+    /// <summary>Router's own state vs. what NetPilot wants — only flagged as drift when this
+    /// device is actually managed (an override, or an explicitly-saved category policy);
+    /// otherwise a mismatch is expected and normal, not a problem.</summary>
+    private (string Text, bool IsDrift) DescribeRouterLimit(SpeedLimitState? reported, SpeedLimit desired, bool isManaged)
+    {
+        if (reported is null)
+            return ("Router: no data yet", false);
+
+        var reportedLimit = new SpeedLimit(reported.Enabled, reported.DownloadKbps, reported.UploadKbps);
+        var reportedText = DescribeLimit(reportedLimit);
+
+        if (!isManaged)
+            return ($"Router: {reportedText} (not managed)", false);
+
+        return RouterLimitDrift.Matches(reportedLimit, desired)
+            ? ($"Router: {reportedText}", false)
+            : ($"Router: {reportedText} — expected {DescribeLimit(desired)}", true);
     }
 
     private static string DescribeMedium(ConnectionMedium medium) => medium switch
@@ -566,11 +599,53 @@
     private async Task SavePolicyAsync(PolicyRow row)
     {
         var existing = await PolicyStore.FindByCategoryAsync(row.CategoryKey, CancellationToken.None)
-            ?? new DevicePolicy(row.CategoryKey, SpeedLimit.Unlimited, 1);
+            ?? new DevicePolicy(row.CategoryKey, SpeedLimit.Unlimited, 1, IsUserConfigured: false);
 
-        var updated = existing.WithLimit(new SpeedLimit(row.Enabled, MbpsToKbps(row.DownloadMbps), MbpsToKbps(row.UploadMbps)));
+        var updated = existing.WithLimit(new SpeedLimit(row.Enabled, MbpsToKbps(row.DownloadMbps), MbpsToKbps(row.UploadMbps)))
+            with { IsUserConfigured = true };
         await PolicyStore.UpsertAsync(updated, CancellationToken.None);
         row.DefinitionVersion = updated.DefinitionVersion;
+        row.IsConfigured = true;
+    }
+
+    /// <summary>
+    /// Unlike Save, this bumps DefinitionVersion unconditionally — even if the numbers here
+    /// match what's already stored — so every device in the category gets re-diffed and
+    /// rewritten on the next tick regardless of local fingerprint state. That's the one case
+    /// Save alone can't fix: something changed the router directly (outside NetPilot), so the
+    /// stored fingerprint still matches and Save's no-op-on-unchanged-value check would skip
+    /// it. Also pushes immediately via this Web instance rather than waiting for the Agent.
+    /// </summary>
+    private async Task ReapplyPolicyAsync(PolicyRow row)
+    {
+        var existing = await PolicyStore.FindByCategoryAsync(row.CategoryKey, CancellationToken.None)
+            ?? new DevicePolicy(row.CategoryKey, SpeedLimit.Unlimited, 1, IsUserConfigured: false);
+
+        var updated = existing with
+        {
+            Limit = new SpeedLimit(row.Enabled, MbpsToKbps(row.DownloadMbps), MbpsToKbps(row.UploadMbps)),
+            DefinitionVersion = existing.DefinitionVersion + 1,
+            IsUserConfigured = true
+        };
+        await PolicyStore.UpsertAsync(updated, CancellationToken.None);
+        row.DefinitionVersion = updated.DefinitionVersion;
+        row.IsConfigured = true;
+
+        if (_connection is null)
+            return;
+
+        try
+        {
+            var password = PasswordProtector.Decrypt(_connection.EncryptedPassword);
+            var settings = new RouterConnectionSettings(_connection.Host, _connection.UseHttps, _connection.Username, password);
+            await RouterProvider.ConnectAsync(settings, CancellationToken.None);
+            await ReconciliationService.ReconcileAsync(RouterProvider, CancellationToken.None);
+            await RefreshLiveDataAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Force re-apply couldn't push immediately — will retry on the Agent's next tick");
+        }
     }
 
     private void ApplyBulkToAllRows()
@@ -620,5 +695,6 @@
         public double? DownloadMbps { get; set; }
         public double? UploadMbps { get; set; }
         public int DefinitionVersion { get; set; }
+        public bool IsConfigured { get; set; }
     }
 }

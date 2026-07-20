@@ -46,15 +46,19 @@ public class LitePolicyStore : IPolicyStore
                 LimitEnabled = false,
                 DownloadKbps = null,
                 UploadKbps = null,
-                DefinitionVersion = 1
+                DefinitionVersion = 1,
+                IsUserConfigured = false
             });
         }
 
         return Task.CompletedTask;
     }
 
-    private static DevicePolicy ToDomain(PolicyDocument doc) =>
-        new(doc.CategoryKey, new SpeedLimit(doc.LimitEnabled, doc.DownloadKbps, doc.UploadKbps), doc.DefinitionVersion);
+    private static DevicePolicy ToDomain(PolicyDocument doc) => new(
+        doc.CategoryKey,
+        new SpeedLimit(doc.LimitEnabled, doc.DownloadKbps, doc.UploadKbps),
+        doc.DefinitionVersion,
+        doc.IsUserConfigured ?? DevicePolicy.InferConfiguredFromLegacy(doc.LimitEnabled, doc.DefinitionVersion));
 
     private static PolicyDocument ToDocument(DevicePolicy policy) => new()
     {
@@ -62,6 +66,7 @@ public class LitePolicyStore : IPolicyStore
         LimitEnabled = policy.Limit.Enabled,
         DownloadKbps = policy.Limit.DownloadKbps,
         UploadKbps = policy.Limit.UploadKbps,
-        DefinitionVersion = policy.DefinitionVersion
+        DefinitionVersion = policy.DefinitionVersion,
+        IsUserConfigured = policy.IsUserConfigured
     };
 }

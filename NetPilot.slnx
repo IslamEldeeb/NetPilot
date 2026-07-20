@@ -10,6 +10,7 @@
   </Folder>
   <Folder Name="/test/">
     <Project Path="test/NetPilot.Core.Tests/NetPilot.Core.Tests.csproj" />
+    <Project Path="test/NetPilot.Data.Tests/NetPilot.Data.Tests.csproj" />
     <Project Path="test/TpLink.Sdk.Tests/TpLink.Sdk.Tests.csproj" />
   </Folder>
 </Solution>
