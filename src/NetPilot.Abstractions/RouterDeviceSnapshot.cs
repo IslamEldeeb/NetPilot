@@ -7,4 +7,5 @@ public record RouterDeviceSnapshot(
     string Hostname,
     string? RawCategory,
     ConnectionInfo Connection,
-    SpeedLimitState CurrentLimit);
+    SpeedLimitState CurrentLimit,
+    UsageSnapshot? Usage);   // null if unsupported/unparseable this tick

@@ -32,6 +32,14 @@ public class TpLinkDeviceRecord
     [JsonConverter(typeof(LenientIntConverter))]
     public int? TimePeriod { get; set; }
 
+    [JsonPropertyName("trafficUsage")]
+    [JsonConverter(typeof(LenientStringConverter))]
+    public string? TrafficUsageRaw { get; set; }
+
+    [JsonPropertyName("onlineTime")]
+    [JsonConverter(typeof(LenientStringConverter))]
+    public string? OnlineTimeRaw { get; set; }
+
     public bool IsOnline => !string.Equals(DeviceTag, "offline", StringComparison.OrdinalIgnoreCase);
 
     public bool IsLimitEnabled => string.Equals(EnableLimit, "on", StringComparison.OrdinalIgnoreCase);

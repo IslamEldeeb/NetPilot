@@ -7,11 +7,13 @@
 @using NetPilot.Core.Enforcement
 @using NetPilot.Core.Policy
 @using NetPilot.Core.RouterConnection
+@using NetPilot.Core.Usage
 @using NetPilot.Data
 
 @inject IDeviceStore DeviceStore
 @inject IPolicyStore PolicyStore
 @inject IActivityLogStore ActivityLogStore
+@inject IUsageStore UsageStore
 @inject IRouterConnectionStore ConnectionStore
 @inject RouterPasswordProtector PasswordProtector
 @inject IRouterProvider RouterProvider
@@ -88,6 +90,7 @@
         <button type="button" class="np-tab @(_activeTab == Tab.Devices ? "active" : "")" @onclick="() => _activeTab = Tab.Devices">Devices</button>
         <button type="button" class="np-tab @(_activeTab == Tab.Policies ? "active" : "")" @onclick="() => _activeTab = Tab.Policies">Device type policies</button>
         <button type="button" class="np-tab @(_activeTab == Tab.Activity ? "active" : "")" @onclick="() => _activeTab = Tab.Activity">Activity log</button>
+        <button type="button" class="np-tab @(_activeTab == Tab.Usage ? "active" : "")" @onclick="() => _activeTab = Tab.Usage">Usage</button>
     </div>
 
     @if (_activeTab == Tab.Devices)
@@ -204,7 +207,7 @@
             </div>
         </section>
     }
-    else
+    else if (_activeTab == Tab.Activity)
     {
         <section class="mb-4">
             <div class="np-section-head"><h3>Activity log</h3></div>
@@ -226,15 +229,51 @@
             </div>
         </section>
     }
+    else
+    {
+        <section class="mb-4">
+            <div class="np-section-head"><h3>Usage this month</h3></div>
+            @{
+                var usageRows = _devices
+                    .Select(d => (Device: d, State: _usageStates.GetValueOrDefault((string)d.Mac)))
+                    .Where(r => r.State is not null)
+                    .OrderByDescending(r => r.State!.CurrentMonthBytes)
+                    .ToList();
+            }
+            @if (usageRows.Count == 0)
+            {
+                <p class="np-empty">No usage data yet — the Agent records it on its next reconciliation tick.</p>
+            }
+            else
+            {
+                <div class="np-group">
+                    <div class="np-device-list">
+                        @foreach (var (device, state) in usageRows)
+                        {
+                            <div class="np-device-row">
+                                <div class="np-device-icon">@CategoryIcon(device.CategoryKey)</div>
+                                <div>
+                                    <div class="np-device-name">@(device.FriendlyName ?? device.Hostname)</div>
+                                    <div class="np-device-sub"><code>@((string)device.Mac)</code></div>
+                                </div>
+                                <div><span class="np-badge-medium">@FormatBytes(state!.CurrentMonthBytes)</span></div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </section>
+    }
 </div>
 
 @code {
-    private enum Tab { Devices, Policies, Activity }
+    private enum Tab { Devices, Policies, Activity, Usage }
 
     private RouterConnection? _connection;
     private List<Device> _devices = [];
     private List<PolicyRow> _policyRows = [];
     private IReadOnlyList<ActivityLogEntry> _activity = [];
+    private Dictionary<string, DeviceUsageState> _usageStates = [];
     private readonly ConnectionEditModel _editModel = new();
     private bool _testing;
     private bool _testConnectionOk;
@@ -299,6 +338,7 @@
 
         _devices = (await DeviceStore.GetAllAsync(CancellationToken.None)).ToList();
         _activity = await ActivityLogStore.GetRecentAsync(50, CancellationToken.None);
+        _usageStates = (await UsageStore.GetAllStatesAsync(CancellationToken.None)).ToDictionary(s => (string)s.Mac);
     }
 
     private async Task RefreshPoliciesAsync()
@@ -356,6 +396,19 @@
     };
 
     private static double? KbpsToMbps(int? kbps) => kbps.HasValue ? Math.Round(kbps.Value / 1000.0, 2) : null;
+
+    private static string FormatBytes(long bytes)
+    {
+        string[] units = ["B", "KB", "MB", "GB", "TB"];
+        double value = bytes;
+        var unitIndex = 0;
+        while (value >= 1024 && unitIndex < units.Length - 1)
+        {
+            value /= 1024;
+            unitIndex++;
+        }
+        return $"{Math.Round(value, 1)} {units[unitIndex]}";
+    }
 
     private static int? MbpsToKbps(double? mbps) => mbps.HasValue ? (int)Math.Round(mbps.Value * 1000) : null;
 

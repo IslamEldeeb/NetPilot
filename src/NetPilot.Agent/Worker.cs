@@ -2,6 +2,7 @@ using NetPilot.Abstractions;
 using NetPilot.Core.Enforcement;
 using NetPilot.Core.Policy;
 using NetPilot.Core.RouterConnection;
+using NetPilot.Core.Usage;
 using NetPilot.Data;
 
 namespace NetPilot.Agent;
@@ -19,7 +20,8 @@ public class Worker(
     IRouterConnectionStore connectionStore,
     RouterPasswordProtector passwordProtector,
     IRouterProvider routerProvider,
-    PolicyReconciliationService reconciliationService) : BackgroundService
+    PolicyReconciliationService reconciliationService,
+    UsageTrackingService usageTrackingService) : BackgroundService
 {
     private bool _connected;
 
@@ -42,7 +44,8 @@ public class Worker(
                 }
                 else
                 {
-                    await reconciliationService.ReconcileAsync(routerProvider, stoppingToken);
+                    var snapshots = await reconciliationService.ReconcileAsync(routerProvider, stoppingToken);
+                    await usageTrackingService.TrackAsync(snapshots, stoppingToken);
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)

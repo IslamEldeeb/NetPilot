@@ -14,7 +14,7 @@ public class PolicyReconciliationService(
     IActivityLogStore activityLog,
     IDeviceClassifier fallbackClassifier)
 {
-    public async Task ReconcileAsync(IRouterProvider provider, CancellationToken ct)
+    public async Task<IReadOnlyList<RouterDeviceSnapshot>> ReconcileAsync(IRouterProvider provider, CancellationToken ct)
     {
         var snapshots = await provider.GetDevicesAsync(ct);
         var seenMacs = new HashSet<string>();
@@ -69,6 +69,7 @@ public class PolicyReconciliationService(
         }
 
         await MarkMissingDevicesOfflineAsync(seenMacs, ct);
+        return snapshots;
     }
 
     private string ResolveCategoryKey(RouterDeviceSnapshot snapshot, RouterCapabilities capabilities, MacAddress mac)

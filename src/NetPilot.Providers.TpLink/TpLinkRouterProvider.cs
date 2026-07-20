@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using NetPilot.Abstractions;
 using TpLink.Sdk;
 using TpLink.Sdk.Models;
@@ -8,7 +9,7 @@ namespace NetPilot.Providers.TpLink;
 /// Thin adapter — translates TpLink.Sdk's models into NetPilot.Abstractions' shape. This is
 /// the template every future brand's provider copies; NetPilot.Core never sees TpLink.Sdk directly.
 /// </summary>
-public class TpLinkRouterProvider : IRouterProvider, IDisposable
+public class TpLinkRouterProvider(ILogger<TpLinkRouterProvider> logger) : IRouterProvider, IDisposable
 {
     private TpLinkRouterClient? _client;
     private string _host = "";
@@ -20,7 +21,8 @@ public class TpLinkRouterProvider : IRouterProvider, IDisposable
         SupportsSpeedLimit: true,
         SupportsDeviceCategorization: true, // deviceType confirmed live — likely Fing-backed, see phase1-live-findings.md
         SupportsPriorityQos: false,         // enablePriority write path unconfirmed — phase1-live-findings.md "Remaining open items" #1
-        SupportsGuestNetworkInfo: true);    // isGuest confirmed present on every device record
+        SupportsGuestNetworkInfo: true,     // isGuest confirmed present on every device record
+        SupportsUsageTracking: true);       // trafficUsage confirmed present on every device record, see phase2-usage-tracking-plan.md
 
     public async Task ConnectAsync(RouterConnectionSettings settings, CancellationToken ct)
     {
@@ -66,13 +68,25 @@ public class TpLinkRouterProvider : IRouterProvider, IDisposable
         return new ConnectionInfo(medium, record.IsOnline);
     }
 
-    private static RouterDeviceSnapshot ToSnapshot(TpLinkDeviceRecord record) => new(
+    private RouterDeviceSnapshot ToSnapshot(TpLinkDeviceRecord record) => new(
         MacAddress: record.Mac,
         IpAddress: record.Ip,
         Hostname: HasRealHostname(record.Host) ? record.Host : record.DeviceName ?? "",
         RawCategory: record.DeviceType,
         Connection: ToConnectionInfo(record),
-        CurrentLimit: new SpeedLimitState(record.IsLimitEnabled, record.DownloadLimit, record.UploadLimit, record.SpeedLimitOnline));
+        CurrentLimit: new SpeedLimitState(record.IsLimitEnabled, record.DownloadLimit, record.UploadLimit, record.SpeedLimitOnline),
+        Usage: ToUsage(record));
+
+    private UsageSnapshot? ToUsage(TpLinkDeviceRecord record)
+    {
+        if (!TpLinkUsageParser.TryParseBytes(record.TrafficUsageRaw, out var bytes))
+        {
+            if (record.TrafficUsageRaw is not null)
+                logger.LogDebug("Could not parse trafficUsage {Raw} for {Mac}", record.TrafficUsageRaw, record.Mac);
+            return null;
+        }
+        return new UsageSnapshot(bytes);
+    }
 
     // Confirmed live: this firmware reports the literal string "NON_HOST" (not blank) for any
     // client that didn't send a DHCP hostname — router's own admin UI falls back to the

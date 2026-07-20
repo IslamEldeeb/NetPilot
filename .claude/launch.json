@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "netpilot-web",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "src/NetPilot.Web", "--launch-profile", "http"],
+      "port": 5036
+    }
+  ]
+}

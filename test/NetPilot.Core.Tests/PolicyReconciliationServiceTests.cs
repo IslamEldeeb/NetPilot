@@ -9,17 +9,18 @@ namespace NetPilot.Core.Tests;
 public class PolicyReconciliationServiceTests
 {
     private static readonly RouterCapabilities FullCapabilities = new(
-        SupportsSpeedLimit: true, SupportsDeviceCategorization: true, SupportsPriorityQos: true, SupportsGuestNetworkInfo: true);
+        SupportsSpeedLimit: true, SupportsDeviceCategorization: true, SupportsPriorityQos: true, SupportsGuestNetworkInfo: true, SupportsUsageTracking: true);
 
     private static RouterDeviceSnapshot MakeSnapshot(
         string mac = "AA-BB-CC-DD-EE-01", string hostname = "phone-1", string? rawCategory = "Mobile", bool online = true,
-        SpeedLimitState? currentLimit = null) =>
+        SpeedLimitState? currentLimit = null, UsageSnapshot? usage = null) =>
         new(mac, "192.168.1.50", hostname, rawCategory,
             new ConnectionInfo(ConnectionMedium.Wifi24Ghz, online),
             // Mismatches the default Unlimited fallback policy on purpose, so tests using the
             // default exercise the write path rather than silently hitting the new
             // already-correct-on-first-discovery skip.
-            currentLimit ?? new SpeedLimitState(true, 9999, 9999, null));
+            currentLimit ?? new SpeedLimitState(true, 9999, 9999, null),
+            usage);
 
     private static (PolicyReconciliationService Service, FakeRouterProvider Provider, InMemoryDeviceStore Devices,
         InMemoryPolicyStore Policies, InMemoryActivityLogStore Log) Build(IDeviceClassifier? classifier = null)

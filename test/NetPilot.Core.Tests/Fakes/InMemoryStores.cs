@@ -1,6 +1,7 @@
 using NetPilot.Core.Devices;
 using NetPilot.Core.Enforcement;
 using NetPilot.Core.Policy;
+using NetPilot.Core.Usage;
 
 namespace NetPilot.Core.Tests.Fakes;
 
@@ -63,4 +64,32 @@ public class InMemoryActivityLogStore : IActivityLogStore
 public class FixedCategoryClassifier(string categoryKey) : IDeviceClassifier
 {
     public string ClassifyKey(string hostname, MacAddress mac) => categoryKey;
+}
+
+public class InMemoryUsageStore : IUsageStore
+{
+    private readonly Dictionary<string, DeviceUsageState> _states = [];
+    public List<UsageHistoryEntry> History { get; } = [];
+
+    public Task<DeviceUsageState?> FindStateAsync(MacAddress mac, CancellationToken ct) =>
+        Task.FromResult(_states.GetValueOrDefault((string)mac));
+
+    public Task<IReadOnlyList<DeviceUsageState>> GetAllStatesAsync(CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<DeviceUsageState>>(_states.Values.ToList());
+
+    public Task UpsertStateAsync(DeviceUsageState state, CancellationToken ct)
+    {
+        _states[(string)state.Mac] = state;
+        return Task.CompletedTask;
+    }
+
+    public Task AppendHistoryAsync(UsageHistoryEntry entry, CancellationToken ct)
+    {
+        History.Add(entry);
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<UsageHistoryEntry>> GetHistoryAsync(MacAddress mac, int monthsBack, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<UsageHistoryEntry>>(
+            History.Where(h => h.Mac == mac).OrderByDescending(h => h.MonthKey).Take(monthsBack).ToList());
 }

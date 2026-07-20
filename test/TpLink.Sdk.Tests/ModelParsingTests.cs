@@ -51,6 +51,8 @@ public class ModelParsingTests
         Assert.Equal(2048, device.UploadLimit);
         Assert.True(device.IsLimitEnabled);
         Assert.True(device.IsOnline);
+        Assert.Equal("200", device.TrafficUsageRaw);
+        Assert.Equal("100", device.OnlineTimeRaw);
     }
 
     [Fact]

@@ -8,5 +8,6 @@ public enum ActivityEventType
     PolicyApplied,
     PolicySkippedAlreadyCorrect,
     WriteFailed,
-    NewCategorySeen
+    NewCategorySeen,
+    UsageCounterReset
 }

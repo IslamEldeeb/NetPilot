@@ -1,5 +1,6 @@
 using NetPilot.Agent;
 using NetPilot.Core.Enforcement;
+using NetPilot.Core.Usage;
 using NetPilot.Data;
 using NetPilot.Providers.TpLink;
 
@@ -13,6 +14,7 @@ var keyRingPath = Path.Combine(dataDir, "keys");
 builder.Services.AddNetPilotData(dbPath, keyRingPath);
 builder.Services.AddTpLinkProvider();
 builder.Services.AddSingleton<PolicyReconciliationService>();
+builder.Services.AddSingleton<UsageTrackingService>();
 builder.Services.AddHostedService<Worker>();
 
 var host = builder.Build();

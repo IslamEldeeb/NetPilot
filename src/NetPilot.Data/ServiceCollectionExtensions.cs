@@ -4,6 +4,7 @@ using NetPilot.Core.Devices;
 using NetPilot.Core.Enforcement;
 using NetPilot.Core.Policy;
 using NetPilot.Core.RouterConnection;
+using NetPilot.Core.Usage;
 
 namespace NetPilot.Data;
 
@@ -26,6 +27,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IPolicyStore, LitePolicyStore>();
         services.AddSingleton<IActivityLogStore, LiteActivityLogStore>();
         services.AddSingleton<IRouterConnectionStore, LiteRouterConnectionStore>();
+        services.AddSingleton<IUsageStore, LiteUsageStore>();
         services.AddSingleton<IDeviceClassifier, HeuristicDeviceClassifier>();
         services.AddSingleton<RouterPasswordProtector>();
         return services;
