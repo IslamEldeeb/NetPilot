@@ -126,6 +126,8 @@
                         || (d.FriendlyName ?? d.Hostname).Contains(_searchText, StringComparison.OrdinalIgnoreCase)
                         || ((string)d.Mac).Contains(_searchText, StringComparison.OrdinalIgnoreCase))
                     .ToList();
+                var todayUsageByMac = UsageQuery.BytesByDevice(UsagePeriodType.Day, DateTimeOffset.UtcNow.ToString("yyyy-MM-dd"), isCurrentPeriod: true, _usageStates, _monthlyHistory, _dailyHistory);
+                var monthUsageByMac = UsageQuery.BytesByDevice(UsagePeriodType.Month, DateTimeOffset.UtcNow.ToString("yyyy-MM"), isCurrentPeriod: true, _usageStates, _monthlyHistory, _dailyHistory);
             }
             @if (_devices.Count == 0)
             {
@@ -176,6 +178,10 @@
                                             @DescribeLimit(limit)
                                         </span>
                                         <div class="np-device-sub mt-1 @(isDrift ? "np-drift-text" : "")">@routerText</div>
+                                    </div>
+                                    <div>
+                                        <span class="np-badge-medium">@FormatBytes(todayUsageByMac.GetValueOrDefault((string)device.Mac)) today</span>
+                                        <div class="np-device-sub mt-1">@FormatBytes(monthUsageByMac.GetValueOrDefault((string)device.Mac)) this month</div>
                                     </div>
                                 </div>
                             }
