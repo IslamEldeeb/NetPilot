@@ -33,11 +33,12 @@ public class UsageTrackingServiceTests
         var state = await usage.FindStateAsync(new MacAddress("AA-BB-CC-DD-EE-01"), CancellationToken.None);
         Assert.NotNull(state);
         Assert.Equal(0, state!.CurrentMonthBytes);
+        Assert.Equal(0, state.CurrentDayBytes);
         Assert.Equal(500_000, state.LastRawCounterBytes);
     }
 
     [Fact]
-    public async Task CounterIncreases_AddsDeltaToCurrentMonth()
+    public async Task CounterIncreases_AddsDeltaToCurrentMonthAndDay()
     {
         var (service, usage, _) = Build();
 
@@ -46,6 +47,7 @@ public class UsageTrackingServiceTests
 
         var state = await usage.FindStateAsync(new MacAddress("AA-BB-CC-DD-EE-01"), CancellationToken.None);
         Assert.Equal(500, state!.CurrentMonthBytes);
+        Assert.Equal(500, state.CurrentDayBytes);
     }
 
     [Fact]
@@ -59,6 +61,7 @@ public class UsageTrackingServiceTests
 
         var state = await usage.FindStateAsync(new MacAddress("AA-BB-CC-DD-EE-01"), CancellationToken.None);
         Assert.Equal(800, state!.CurrentMonthBytes);
+        Assert.Equal(800, state.CurrentDayBytes);
         Assert.Single(log.Entries, e => e.Type == ActivityEventType.UsageCounterReset);
     }
 
@@ -83,6 +86,33 @@ public class UsageTrackingServiceTests
         var state = await usage.FindStateAsync(mac, CancellationToken.None);
         Assert.NotEqual("2020-01", state!.CurrentMonthKey);
         Assert.Equal(500, state.CurrentMonthBytes); // only the new month's delta (1500 - 1000)
+    }
+
+    [Fact]
+    public async Task DayRollover_FinalizesPreviousDay_ResetsRunningTotal()
+    {
+        var (service, usage, _) = Build();
+        var mac = new MacAddress("AA-BB-CC-DD-EE-01");
+        await usage.UpsertStateAsync(new DeviceUsageState
+        {
+            Mac = mac,
+            LastRawCounterBytes = 1000,
+            LastPollAtUtc = DateTimeOffset.UtcNow.AddDays(-3),
+            CurrentMonthKey = DateTimeOffset.UtcNow.ToString("yyyy-MM"), // same month, so only the day rolls over
+            CurrentMonthBytes = 9000,
+            CurrentDayKey = "2020-01-01",
+            CurrentDayBytes = 5000
+        }, CancellationToken.None);
+
+        await service.TrackAsync([MakeSnapshot(usage: new UsageSnapshot(1500))], CancellationToken.None);
+
+        Assert.Single(usage.DailyHistory, h => h.Mac == mac && h.DayKey == "2020-01-01" && h.TotalBytes == 5000);
+        Assert.Empty(usage.History); // month didn't roll over — no monthly finalization
+
+        var state = await usage.FindStateAsync(mac, CancellationToken.None);
+        Assert.NotEqual("2020-01-01", state!.CurrentDayKey);
+        Assert.Equal(500, state.CurrentDayBytes); // only the new day's delta (1500 - 1000)
+        Assert.Equal(9500, state.CurrentMonthBytes); // month total keeps accumulating (9000 + 500)
     }
 
     [Fact]

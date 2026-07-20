@@ -10,4 +10,6 @@ public class UsageStateDocument
     public DateTimeOffset? LastPollAtUtc { get; set; }
     public string CurrentMonthKey { get; set; } = "";
     public long CurrentMonthBytes { get; set; }
+    public string CurrentDayKey { get; set; } = "";
+    public long CurrentDayBytes { get; set; }
 }

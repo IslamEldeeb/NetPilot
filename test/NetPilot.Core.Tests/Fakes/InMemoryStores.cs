@@ -69,7 +69,11 @@ public class FixedCategoryClassifier(string categoryKey) : IDeviceClassifier
 public class InMemoryUsageStore : IUsageStore
 {
     private readonly Dictionary<string, DeviceUsageState> _states = [];
-    public List<UsageHistoryEntry> History { get; } = [];
+    private readonly Dictionary<string, UsageHistoryEntry> _history = [];
+    private readonly Dictionary<string, UsageDailyHistoryEntry> _dailyHistory = [];
+
+    public IReadOnlyList<UsageHistoryEntry> History => _history.Values.ToList();
+    public IReadOnlyList<UsageDailyHistoryEntry> DailyHistory => _dailyHistory.Values.ToList();
 
     public Task<DeviceUsageState?> FindStateAsync(MacAddress mac, CancellationToken ct) =>
         Task.FromResult(_states.GetValueOrDefault((string)mac));
@@ -85,11 +89,19 @@ public class InMemoryUsageStore : IUsageStore
 
     public Task AppendHistoryAsync(UsageHistoryEntry entry, CancellationToken ct)
     {
-        History.Add(entry);
+        _history[$"{entry.Mac}|{entry.MonthKey}"] = entry;
         return Task.CompletedTask;
     }
 
-    public Task<IReadOnlyList<UsageHistoryEntry>> GetHistoryAsync(MacAddress mac, int monthsBack, CancellationToken ct) =>
-        Task.FromResult<IReadOnlyList<UsageHistoryEntry>>(
-            History.Where(h => h.Mac == mac).OrderByDescending(h => h.MonthKey).Take(monthsBack).ToList());
+    public Task<IReadOnlyList<UsageHistoryEntry>> GetAllHistoryAsync(CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<UsageHistoryEntry>>(_history.Values.ToList());
+
+    public Task AppendDailyHistoryAsync(UsageDailyHistoryEntry entry, CancellationToken ct)
+    {
+        _dailyHistory[$"{entry.Mac}|{entry.DayKey}"] = entry;
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<UsageDailyHistoryEntry>> GetAllDailyHistoryAsync(CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<UsageDailyHistoryEntry>>(_dailyHistory.Values.ToList());
 }

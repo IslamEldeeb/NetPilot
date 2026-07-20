@@ -104,13 +104,27 @@
                     <input type="checkbox" @bind="_onlineOnly" />
                     Online devices only
                 </label>
+                <select class="form-select form-select-sm" style="max-width:12rem" @bind="_categoryFilter">
+                    <option value="">All categories</option>
+                    @foreach (var category in _devices.Select(d => d.CategoryKey).Distinct().OrderBy(c => c))
+                    {
+                        <option value="@category">@category.Replace('_', ' ')</option>
+                    }
+                </select>
+                <input type="search" class="form-control form-control-sm" style="max-width:14rem" placeholder="Search name or MAC" @bind="_searchText" @bind:event="oninput" />
                 @if (!string.IsNullOrEmpty(_refreshError))
                 {
                     <span class="text-danger">@_refreshError</span>
                 }
             </div>
             @{
-                var visibleDevices = _onlineOnly ? _devices.Where(d => d.Connection.IsOnline).ToList() : _devices;
+                var visibleDevices = _devices
+                    .Where(d => !_onlineOnly || d.Connection.IsOnline)
+                    .Where(d => string.IsNullOrEmpty(_categoryFilter) || d.CategoryKey == _categoryFilter)
+                    .Where(d => string.IsNullOrWhiteSpace(_searchText)
+                        || (d.FriendlyName ?? d.Hostname).Contains(_searchText, StringComparison.OrdinalIgnoreCase)
+                        || ((string)d.Mac).Contains(_searchText, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
             }
             @if (_devices.Count == 0)
             {
@@ -232,31 +246,68 @@
     else
     {
         <section class="mb-4">
-            <div class="np-section-head"><h3>Usage this month</h3></div>
+            <div class="np-section-head"><h3>Usage</h3></div>
+            <div class="np-toolbar">
+                <select class="form-select form-select-sm" style="max-width:9rem" @bind="_usagePeriodType">
+                    <option value="@UsagePeriodType.Month">Month</option>
+                    <option value="@UsagePeriodType.Day">Day</option>
+                </select>
+                @if (_usagePeriodType == UsagePeriodType.Month)
+                {
+                    <input type="month" class="form-control form-control-sm" style="max-width:10rem" value="@_selectedMonth" @onchange="e => _selectedMonth = e.Value?.ToString() ?? _selectedMonth" />
+                }
+                else
+                {
+                    <input type="date" class="form-control form-control-sm" style="max-width:11rem" value="@_selectedDay" @onchange="e => _selectedDay = e.Value?.ToString() ?? _selectedDay" />
+                }
+                <select class="form-select form-select-sm" style="max-width:14rem" @bind="_usageMacFilter">
+                    <option value="">All devices</option>
+                    @foreach (var device in _devices.OrderBy(d => d.FriendlyName ?? d.Hostname))
+                    {
+                        <option value="@((string)device.Mac)">@(device.FriendlyName ?? device.Hostname)</option>
+                    }
+                </select>
+                <span class="np-device-sub">Times are UTC</span>
+            </div>
+
             @{
-                var usageRows = _devices
-                    .Select(d => (Device: d, State: _usageStates.GetValueOrDefault((string)d.Mac)))
-                    .Where(r => r.State is not null)
-                    .OrderByDescending(r => r.State!.CurrentMonthBytes)
+                var periodKey = _usagePeriodType == UsagePeriodType.Month ? _selectedMonth : _selectedDay;
+                var isCurrentPeriod = periodKey == (_usagePeriodType == UsagePeriodType.Month
+                    ? DateTimeOffset.UtcNow.ToString("yyyy-MM")
+                    : DateTimeOffset.UtcNow.ToString("yyyy-MM-dd"));
+                var byDevice = UsageQuery.BytesByDevice(_usagePeriodType, periodKey, isCurrentPeriod, _usageStates, _monthlyHistory, _dailyHistory);
+                var filtered = string.IsNullOrEmpty(_usageMacFilter)
+                    ? byDevice
+                    : byDevice.Where(kv => kv.Key == _usageMacFilter).ToDictionary(kv => kv.Key, kv => kv.Value);
+                var total = filtered.Values.Sum();
+                var rows = filtered
+                    .OrderByDescending(kv => kv.Value)
+                    .Select(kv => (Mac: kv.Key, Bytes: kv.Value, Device: _devices.FirstOrDefault(d => (string)d.Mac == kv.Key)))
                     .ToList();
             }
-            @if (usageRows.Count == 0)
+
+            <div class="np-card mb-3">
+                <div class="np-device-sub">Total usage — @(string.IsNullOrEmpty(_usageMacFilter) ? "all devices" : "selected device")</div>
+                <div style="font-size:1.75rem;font-weight:600">@FormatBytes(total)</div>
+            </div>
+
+            @if (rows.Count == 0)
             {
-                <p class="np-empty">No usage data yet — the Agent records it on its next reconciliation tick.</p>
+                <p class="np-empty">No usage data for this period yet.</p>
             }
             else
             {
                 <div class="np-group">
                     <div class="np-device-list">
-                        @foreach (var (device, state) in usageRows)
+                        @foreach (var row in rows)
                         {
                             <div class="np-device-row">
-                                <div class="np-device-icon">@CategoryIcon(device.CategoryKey)</div>
+                                <div class="np-device-icon">@CategoryIcon(row.Device?.CategoryKey ?? "")</div>
                                 <div>
-                                    <div class="np-device-name">@(device.FriendlyName ?? device.Hostname)</div>
-                                    <div class="np-device-sub"><code>@((string)device.Mac)</code></div>
+                                    <div class="np-device-name">@(row.Device?.FriendlyName ?? row.Device?.Hostname ?? row.Mac)</div>
+                                    <div class="np-device-sub"><code>@row.Mac</code></div>
                                 </div>
-                                <div><span class="np-badge-medium">@FormatBytes(state!.CurrentMonthBytes)</span></div>
+                                <div><span class="np-badge-medium">@FormatBytes(row.Bytes)</span></div>
                             </div>
                         }
                     </div>
@@ -273,7 +324,13 @@
     private List<Device> _devices = [];
     private List<PolicyRow> _policyRows = [];
     private IReadOnlyList<ActivityLogEntry> _activity = [];
-    private Dictionary<string, DeviceUsageState> _usageStates = [];
+    private List<DeviceUsageState> _usageStates = [];
+    private List<UsageHistoryEntry> _monthlyHistory = [];
+    private List<UsageDailyHistoryEntry> _dailyHistory = [];
+    private UsagePeriodType _usagePeriodType = UsagePeriodType.Month;
+    private string _selectedMonth = DateTimeOffset.UtcNow.ToString("yyyy-MM");
+    private string _selectedDay = DateTimeOffset.UtcNow.ToString("yyyy-MM-dd");
+    private string _usageMacFilter = "";
     private readonly ConnectionEditModel _editModel = new();
     private bool _testing;
     private bool _testConnectionOk;
@@ -282,7 +339,9 @@
     private Tab _activeTab = Tab.Devices;
     private bool _refreshingDevices;
     private string? _refreshError;
-    private bool _onlineOnly;
+    private bool _onlineOnly = true;
+    private string _categoryFilter = "";
+    private string _searchText = "";
     private bool _bulkEnabled;
     private double? _bulkDownloadMbps;
     private double? _bulkUploadMbps;
@@ -338,7 +397,9 @@
 
         _devices = (await DeviceStore.GetAllAsync(CancellationToken.None)).ToList();
         _activity = await ActivityLogStore.GetRecentAsync(50, CancellationToken.None);
-        _usageStates = (await UsageStore.GetAllStatesAsync(CancellationToken.None)).ToDictionary(s => (string)s.Mac);
+        _usageStates = (await UsageStore.GetAllStatesAsync(CancellationToken.None)).ToList();
+        _monthlyHistory = (await UsageStore.GetAllHistoryAsync(CancellationToken.None)).ToList();
+        _dailyHistory = (await UsageStore.GetAllDailyHistoryAsync(CancellationToken.None)).ToList();
     }
 
     private async Task RefreshPoliciesAsync()
