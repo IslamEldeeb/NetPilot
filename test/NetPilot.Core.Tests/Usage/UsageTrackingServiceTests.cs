@@ -24,30 +24,31 @@ public class UsageTrackingServiceTests
     }
 
     [Fact]
-    public async Task FirstObservation_AdoptsBaseline_NoDeltaCounted()
+    public async Task FirstObservation_CountsCurrentValueAsUsage_NoResetEventLogged()
     {
-        var (service, usage, _) = Build();
+        var (service, usage, log) = Build();
 
         await service.TrackAsync([MakeSnapshot(usage: new UsageSnapshot(500_000))], CancellationToken.None);
 
         var state = await usage.FindStateAsync(new MacAddress("AA-BB-CC-DD-EE-01"), CancellationToken.None);
         Assert.NotNull(state);
-        Assert.Equal(0, state!.CurrentMonthBytes);
-        Assert.Equal(0, state.CurrentDayBytes);
+        Assert.Equal(500_000, state!.CurrentMonthBytes);
+        Assert.Equal(500_000, state.CurrentDayBytes);
         Assert.Equal(500_000, state.LastRawCounterBytes);
+        Assert.Empty(log.Entries); // nothing actually reset — this is just the first sighting
     }
 
     [Fact]
-    public async Task CounterIncreases_AddsDeltaToCurrentMonthAndDay()
+    public async Task CounterIncreases_AddsDeltaOnTopOfFirstObservation()
     {
         var (service, usage, _) = Build();
 
-        await service.TrackAsync([MakeSnapshot(usage: new UsageSnapshot(1000))], CancellationToken.None);
-        await service.TrackAsync([MakeSnapshot(usage: new UsageSnapshot(1500))], CancellationToken.None);
+        await service.TrackAsync([MakeSnapshot(usage: new UsageSnapshot(1000))], CancellationToken.None); // counted in full: 1000
+        await service.TrackAsync([MakeSnapshot(usage: new UsageSnapshot(1500))], CancellationToken.None); // + delta 500
 
         var state = await usage.FindStateAsync(new MacAddress("AA-BB-CC-DD-EE-01"), CancellationToken.None);
-        Assert.Equal(500, state!.CurrentMonthBytes);
-        Assert.Equal(500, state.CurrentDayBytes);
+        Assert.Equal(1500, state!.CurrentMonthBytes);
+        Assert.Equal(1500, state.CurrentDayBytes);
     }
 
     [Fact]
@@ -55,13 +56,13 @@ public class UsageTrackingServiceTests
     {
         var (service, usage, log) = Build();
 
-        await service.TrackAsync([MakeSnapshot(usage: new UsageSnapshot(1000))], CancellationToken.None); // baseline
+        await service.TrackAsync([MakeSnapshot(usage: new UsageSnapshot(1000))], CancellationToken.None); // first sighting: counted in full, 1000
         await service.TrackAsync([MakeSnapshot(usage: new UsageSnapshot(1500))], CancellationToken.None); // delta 500
         await service.TrackAsync([MakeSnapshot(usage: new UsageSnapshot(300))], CancellationToken.None);  // reset: add 300
 
         var state = await usage.FindStateAsync(new MacAddress("AA-BB-CC-DD-EE-01"), CancellationToken.None);
-        Assert.Equal(800, state!.CurrentMonthBytes);
-        Assert.Equal(800, state.CurrentDayBytes);
+        Assert.Equal(1800, state!.CurrentMonthBytes);
+        Assert.Equal(1800, state.CurrentDayBytes);
         Assert.Single(log.Entries, e => e.Type == ActivityEventType.UsageCounterReset);
     }
 

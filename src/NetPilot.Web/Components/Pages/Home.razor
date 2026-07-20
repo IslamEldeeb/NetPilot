@@ -18,6 +18,7 @@
 @inject RouterPasswordProtector PasswordProtector
 @inject IRouterProvider RouterProvider
 @inject PolicyReconciliationService ReconciliationService
+@inject UsageTrackingService UsageTrackingService
 @inject ILogger<Home> Logger
 
 <PageTitle>NetPilot</PageTitle>
@@ -582,7 +583,8 @@
             var password = PasswordProtector.Decrypt(_connection.EncryptedPassword);
             var settings = new RouterConnectionSettings(_connection.Host, _connection.UseHttps, _connection.Username, password);
             await RouterProvider.ConnectAsync(settings, CancellationToken.None);
-            await ReconciliationService.ReconcileAsync(RouterProvider, CancellationToken.None);
+            var snapshots = await ReconciliationService.ReconcileAsync(RouterProvider, CancellationToken.None);
+            await UsageTrackingService.TrackAsync(snapshots, CancellationToken.None);
             await RefreshLiveDataAsync();
         }
         catch (Exception ex)
