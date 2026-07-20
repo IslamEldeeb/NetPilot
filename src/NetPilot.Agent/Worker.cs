@@ -30,7 +30,7 @@ public class Worker(
         await policyStore.EnsureSeedCategoriesAsync(stoppingToken);
         await SeedConnectionFromEnvironmentAsync(stoppingToken);
 
-        var pollInterval = TimeSpan.FromSeconds(configuration.GetValue("NetPilot:PollIntervalSeconds", 30));
+        var pollInterval = TimeSpan.FromSeconds(configuration.GetValue("NetPilot:PollIntervalSeconds", 180));
 
         while (!stoppingToken.IsCancellationRequested)
         {

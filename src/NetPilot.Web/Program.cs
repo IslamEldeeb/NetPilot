@@ -6,7 +6,7 @@ using NetPilot.Web.Components;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var dataDir = builder.Configuration["NetPilot:DataDirectory"] ?? "./data";
+var dataDir = builder.Configuration["NetPilot:DataDirectory"] ?? "../../data";
 Directory.CreateDirectory(dataDir);
 var dbPath = Path.Combine(dataDir, "netpilot.db");
 var keyRingPath = Path.Combine(dataDir, "keys");
