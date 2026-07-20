@@ -9,5 +9,6 @@ public enum ActivityEventType
     PolicySkippedAlreadyCorrect,
     WriteFailed,
     NewCategorySeen,
-    UsageCounterReset
+    UsageCounterReset,
+    RouterRebooted
 }

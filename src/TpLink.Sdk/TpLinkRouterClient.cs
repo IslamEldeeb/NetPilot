@@ -15,6 +15,7 @@ public sealed class TpLinkRouterClient : IDisposable
 {
     private const string GameAcceleratorForm = "admin/smart_network?form=game_accelerator";
     private const string ClientSpeedLimitForm = "admin/smart_network?form=client_speed_limit";
+    private const string SystemRebootForm = "admin/system?form=reboot";
     private const string LoginKeysPath = "/login?form=keys";
     private const string LoginPath = "/login?form=login";
 
@@ -85,6 +86,29 @@ public sealed class TpLinkRouterClient : IDisposable
         // Response is a minimal {"success":true} with no echoed data — callers should
         // re-fetch (GetDevicesAsync) to confirm applied state rather than trust this alone,
         // per phase1-live-findings.md.
+    }
+
+    /// <summary>
+    /// Reboots the router. UNCONFIRMED against this firmware — unlike the smart_network path
+    /// (login, GetDevices, SetSpeedLimit), this endpoint was never live-verified via Claude in
+    /// Chrome; it comes only from NetPilot_Research_Findings_and_Architecture.md §3.3's
+    /// reverse-engineered API table (`admin/system?form=reboot`), which predates and was
+    /// superseded in part by phase1-live-findings.md — that doc corrected a different endpoint
+    /// guess (Speed Limit) from the same source, so this one should be treated as similarly
+    /// unreliable until confirmed live. It's also unknown whether `admin/system` requires the
+    /// RSA/AES-signed envelope used by other legacy sections (never implemented in
+    /// TpLinkTransport, see its header comment) rather than the plain-JSON mode used here — if
+    /// this call fails with a signing/format error rather than a clean success/failure, that's
+    /// the likely cause. Live-verify via the user's Cowork session before trusting this in
+    /// production; the caller should surface failures clearly rather than silently retrying.
+    /// </summary>
+    public async Task RebootAsync(CancellationToken ct = default)
+    {
+        var stok = RequireSession();
+        var response = await _transport.PostFormAsync<TpLinkWriteResponse>(stok, $"/{SystemRebootForm}", "operation=write", ct);
+
+        if (!response.Success)
+            throw new TpLinkProtocolException("Reboot request rejected by router.");
     }
 
     /// <summary>Router's global ceiling values — useful for input validation, not per-device data.</summary>

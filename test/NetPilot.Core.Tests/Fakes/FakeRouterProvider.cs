@@ -31,4 +31,12 @@ public class FakeRouterProvider(RouterCapabilities capabilities) : IRouterProvid
 
     public Task<RouterInfo> GetRouterInfoAsync(CancellationToken ct) =>
         Task.FromResult(new RouterInfo("Fake Model", "1.0", "fake-host"));
+
+    public bool RebootCalled { get; private set; }
+
+    public Task RebootAsync(CancellationToken ct)
+    {
+        RebootCalled = true;
+        return Task.CompletedTask;
+    }
 }

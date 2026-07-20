@@ -22,7 +22,8 @@ public class TpLinkRouterProvider(ILogger<TpLinkRouterProvider> logger) : IRoute
         SupportsDeviceCategorization: true, // deviceType confirmed live — likely Fing-backed, see phase1-live-findings.md
         SupportsPriorityQos: false,         // enablePriority write path unconfirmed — phase1-live-findings.md "Remaining open items" #1
         SupportsGuestNetworkInfo: true,     // isGuest confirmed present on every device record
-        SupportsUsageTracking: true);       // trafficUsage confirmed present on every device record, see phase2-usage-tracking-plan.md
+        SupportsUsageTracking: true,        // trafficUsage confirmed present on every device record, see phase2-usage-tracking-plan.md
+        SupportsReboot: true);              // best-effort — endpoint unconfirmed, see TpLinkRouterClient.RebootAsync
 
     public async Task ConnectAsync(RouterConnectionSettings settings, CancellationToken ct)
     {
@@ -51,6 +52,9 @@ public class TpLinkRouterProvider(ILogger<TpLinkRouterProvider> logger) : IRoute
     /// </summary>
     public Task<RouterInfo> GetRouterInfoAsync(CancellationToken ct) =>
         Task.FromResult(new RouterInfo(Model: "unknown (unverified endpoint)", FirmwareVersion: "unknown (unverified endpoint)", Host: _host));
+
+    public Task RebootAsync(CancellationToken ct) =>
+        RequireClient().RebootAsync(ct);
 
     private static ConnectionInfo ToConnectionInfo(TpLinkDeviceRecord record)
     {
