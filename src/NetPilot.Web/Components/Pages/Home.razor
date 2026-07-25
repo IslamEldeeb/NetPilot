@@ -240,6 +240,9 @@
                 <button class="np-save-btn" @onclick="SaveAllPoliciesAsync" disabled="@_savingAll">
                     @(_savingAll ? "Saving..." : "Save all")
                 </button>
+                <button class="np-reapply-btn" title="Force re-apply every category to the router now, even if nothing changed" disabled="@(_syncingAll || _connection is null)" @onclick="SyncAllPoliciesAsync">
+                    @(_syncingAll ? "Syncing..." : "Sync all")
+                </button>
             </div>
             <p class="np-device-sub mb-3">Categories marked <strong>Not applied</strong> have never been saved — NetPilot leaves whatever the router already has alone until you hit Save. Use ↻ to force-push a category right now, even if the numbers look unchanged.</p>
 
@@ -555,6 +558,7 @@
     private double? _bulkDownloadMbps;
     private double? _bulkUploadMbps;
     private bool _savingAll;
+    private bool _syncingAll;
     private bool _showRebootConfirm;
     private bool _rebooting;
     private bool _rebootOk;
@@ -835,6 +839,33 @@
     /// </summary>
     private async Task ReapplyPolicyAsync(PolicyRow row)
     {
+        await ForceBumpPolicyVersionAsync(row);
+        await PushToRouterNowAsync("Force re-apply couldn't push immediately — will retry on the Agent's next tick");
+    }
+
+    /// <summary>
+    /// Same force-bump as ReapplyPolicyAsync, for every category at once — then a single
+    /// ReconcileAsync call at the end (it already sweeps every device/category in one pass, so
+    /// reconnecting and reconciling once per row would just be redundant network round trips).
+    /// </summary>
+    private async Task SyncAllPoliciesAsync()
+    {
+        _syncingAll = true;
+        try
+        {
+            foreach (var row in _policyRows)
+                await ForceBumpPolicyVersionAsync(row);
+
+            await PushToRouterNowAsync("Sync all couldn't push immediately — will retry on the Agent's next tick");
+        }
+        finally
+        {
+            _syncingAll = false;
+        }
+    }
+
+    private async Task ForceBumpPolicyVersionAsync(PolicyRow row)
+    {
         var existing = await PolicyStore.FindByCategoryAsync(row.CategoryKey, CancellationToken.None)
             ?? new DevicePolicy(row.CategoryKey, SpeedLimit.Unlimited, 1, IsUserConfigured: false);
 
@@ -847,7 +878,10 @@
         await PolicyStore.UpsertAsync(updated, CancellationToken.None);
         row.DefinitionVersion = updated.DefinitionVersion;
         row.IsConfigured = true;
+    }
 
+    private async Task PushToRouterNowAsync(string failureLogMessage)
+    {
         if (_connection is null)
             return;
 
@@ -861,7 +895,7 @@
         }
         catch (Exception ex)
         {
-            Logger.LogWarning(ex, "Force re-apply couldn't push immediately — will retry on the Agent's next tick");
+            Logger.LogWarning(ex, "{Message}", failureLogMessage);
         }
     }
 
