@@ -12,4 +12,5 @@ public record RouterCapabilities
     public bool SupportsWirelessToggle { get; init; }
     public bool SupportsWirelessEdit { get; init; }
     public bool SupportsWirelessSchedule { get; init; }
+    public bool SupportsDeviceBlocking { get; init; }
 }

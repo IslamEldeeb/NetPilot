@@ -34,7 +34,12 @@ public class TpLinkRouterProvider(ILogger<TpLinkRouterProvider> logger) : IRoute
         SupportsWirelessRead = true,
         SupportsWirelessToggle = true,
         SupportsWirelessEdit = true,
-        SupportsWirelessSchedule = false
+        SupportsWirelessSchedule = false,
+        // Confirmed live via a user-captured curl, not this session's own testing — see
+        // docs/phase4-block-list-live-findings.md. Insert/remove work; there is no confirmed
+        // read/list path for the blacklist, so NetPilot cannot reconcile blocked state against
+        // the router the way it does for speed limits — it's a direct action, not a policy.
+        SupportsDeviceBlocking = true
     };
 
     public async Task ConnectAsync(RouterConnectionSettings settings, CancellationToken ct)
@@ -66,6 +71,12 @@ public class TpLinkRouterProvider(ILogger<TpLinkRouterProvider> logger) : IRoute
 
     public Task RebootAsync(CancellationToken ct) =>
         RequireClient().RebootAsync(ct);
+
+    public Task<string> BlockDeviceAsync(string macAddress, CancellationToken ct) =>
+        RequireClient().BlockDeviceAsync(macAddress, ct);
+
+    public Task UnblockDeviceAsync(string macAddress, string blockListToken, CancellationToken ct) =>
+        RequireClient().UnblockDeviceAsync(blockListToken, ct);
 
     /// <summary>
     /// Confirmed live per docs/phase3-live-findings.md. Four reads (main 2.4G, main 5G, both

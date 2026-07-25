@@ -9,6 +9,10 @@ namespace TpLink.Sdk.Models;
 /// </summary>
 public class TpLinkDeviceRecord
 {
+    [JsonPropertyName("index")]
+    [JsonConverter(typeof(LenientIntConverter))]
+    public int? Index { get; set; }
+    [JsonPropertyName("key")] public string? Key { get; set; }
     [JsonPropertyName("mac")] public string Mac { get; set; } = "";
     [JsonPropertyName("ip")] public string Ip { get; set; } = "";
     [JsonPropertyName("host")] public string Host { get; set; } = "";

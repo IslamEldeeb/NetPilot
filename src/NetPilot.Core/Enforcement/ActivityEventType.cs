@@ -10,5 +10,7 @@ public enum ActivityEventType
     WriteFailed,
     NewCategorySeen,
     UsageCounterReset,
-    RouterRebooted
+    RouterRebooted,
+    DeviceBlocked,
+    DeviceUnblocked
 }

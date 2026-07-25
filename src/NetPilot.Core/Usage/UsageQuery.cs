@@ -1,3 +1,5 @@
+using NetPilot.Core.Devices;
+
 namespace NetPilot.Core.Usage;
 
 public enum UsagePeriodType { Day, Month }
@@ -42,5 +44,26 @@ public static class UsageQuery
         return periodType == UsagePeriodType.Day
             ? dailyHistory.Where(h => h.DayKey == periodKey).ToDictionary(h => (string)h.Mac, h => h.TotalBytes)
             : monthlyHistory.Where(h => h.MonthKey == periodKey).ToDictionary(h => (string)h.Mac, h => h.TotalBytes);
+    }
+
+    /// <summary>
+    /// Rolls a BytesByDevice result up to one total per device category, for a "top categories"
+    /// view. A MAC with no matching device (removed, or usage history for a device that no
+    /// longer exists) is grouped under DeviceCategory.UnknownKey rather than dropped, so the
+    /// category total always accounts for every byte BytesByDevice reported.
+    /// </summary>
+    public static IReadOnlyDictionary<string, long> BytesByCategory(
+        IReadOnlyDictionary<string, long> bytesByMac, IReadOnlyList<Device> devices)
+    {
+        var categoryByMac = devices.ToDictionary(d => (string)d.Mac, d => d.CategoryKey);
+        var totals = new Dictionary<string, long>();
+
+        foreach (var (mac, bytes) in bytesByMac)
+        {
+            var categoryKey = categoryByMac.GetValueOrDefault(mac, DeviceCategory.UnknownKey);
+            totals[categoryKey] = totals.GetValueOrDefault(categoryKey) + bytes;
+        }
+
+        return totals;
     }
 }

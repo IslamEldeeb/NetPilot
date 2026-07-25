@@ -111,4 +111,30 @@ public class UsageQueryTests
         Assert.Equal(3000, bytes);
         Assert.False(result.ContainsKey("FF-FF-FF-FF-FF-FF"));
     }
+
+    [Fact]
+    public void BytesByCategory_SumsDevicesSharingACategory()
+    {
+        IReadOnlyList<Device> devices =
+        [
+            new() { Mac = MacA, CategoryKey = "mobile", FirstSeenAtUtc = DateTimeOffset.UtcNow },
+            new() { Mac = MacB, CategoryKey = "mobile", FirstSeenAtUtc = DateTimeOffset.UtcNow }
+        ];
+        var bytesByMac = new Dictionary<string, long> { [(string)MacA] = 3000, [(string)MacB] = 1000 };
+
+        var result = UsageQuery.BytesByCategory(bytesByMac, devices);
+
+        Assert.Equal(4000, result["mobile"]);
+    }
+
+    [Fact]
+    public void BytesByCategory_MacWithNoMatchingDevice_GroupsUnderUnknown()
+    {
+        IReadOnlyList<Device> devices = [];
+        var bytesByMac = new Dictionary<string, long> { [(string)MacA] = 500 };
+
+        var result = UsageQuery.BytesByCategory(bytesByMac, devices);
+
+        Assert.Equal(500, result[DeviceCategory.UnknownKey]);
+    }
 }

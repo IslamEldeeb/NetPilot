@@ -12,6 +12,11 @@ public class Device
     public string CategoryKey { get; set; } = DeviceCategory.UnknownKey;
     public ConnectionInfo Connection { get; set; } = new(ConnectionMedium.Unknown, IsOnline: false);
     public SpeedLimit? Override { get; set; }
+    public bool IsBlocked { get; set; }
+
+    /// <summary>Provider-specific token returned by IRouterProvider.BlockDeviceAsync — required
+    /// to reverse the block later. See that method's remarks for why this can't be re-derived.</summary>
+    public string? BlockListToken { get; set; }
 
     /// <summary>What the router itself last reported, independent of what NetPilot wants —
     /// refreshed every reconciliation tick regardless of whether a policy is enforced for

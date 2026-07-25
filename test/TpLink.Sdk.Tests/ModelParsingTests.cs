@@ -46,6 +46,8 @@ public class ModelParsingTests
 
         Assert.True(result.Success);
         var device = Assert.Single(result.Data);
+        Assert.Equal(0, device.Index);
+        Assert.Equal("k1", device.Key);
         Assert.Equal("IP Camera", device.DeviceType);
         Assert.Equal(5120, device.DownloadLimit);
         Assert.Equal(2048, device.UploadLimit);
@@ -122,5 +124,31 @@ public class ModelParsingTests
         var result = JsonSerializer.Deserialize<TpLinkLoginResponse>(json)!;
 
         Assert.Equal(32, result.Data!.Stok.Length);
+    }
+
+    /// <summary>
+    /// Matches the `new` JSON blob captured live in a user curl against
+    /// `admin/access_control?form=black_list` (`operation=insert`) — see
+    /// docs/phase4-block-list-live-findings.md. Field names/order mirror that capture exactly.
+    /// </summary>
+    [Fact]
+    public void BlockListEntry_SerializesToConfirmedLiveShape()
+    {
+        var entry = new TpLinkBlockListEntry
+        {
+            Name = "Galaxy-S9",
+            DeviceType = "Mobile",
+            Mac = "E6-89-81-77-B3-D1",
+            IpAddr = "192.168.1.117",
+            Host = "NON_HOST",
+            ConnType = "wireless",
+            Key = "k1"
+        };
+
+        var json = JsonSerializer.Serialize(entry);
+
+        Assert.Equal(
+            """{"name":"Galaxy-S9","deviceType":"Mobile","mac":"E6-89-81-77-B3-D1","ipaddr":"192.168.1.117","host":"NON_HOST","conn_type":"wireless","key":"k1"}""",
+            json);
     }
 }

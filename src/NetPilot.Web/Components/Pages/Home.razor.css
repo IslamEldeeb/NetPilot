@@ -7,6 +7,8 @@
     --np-amber-light: #fffbeb;
     --np-gray: #6b7280;
     --np-gray-light: #f9fafb;
+    --np-red: #dc2626;
+    --np-red-light: #fef2f2;
     --np-border: #e5e7eb;
     --np-text: #111827;
     --np-text-muted: #6b7280;
@@ -60,6 +62,15 @@
 
 .np-pill-offline .np-pill-dot {
     background: var(--np-gray);
+}
+
+.np-pill-blocked {
+    background: var(--np-red-light);
+    color: var(--np-red);
+}
+
+.np-pill-blocked .np-pill-dot {
+    background: var(--np-red);
 }
 
 .np-conn-meta {
@@ -172,7 +183,7 @@
 
 .np-device-row {
     display: grid;
-    grid-template-columns: 40px 1.4fr 0.9fr 0.9fr 1.1fr 1.1fr;
+    grid-template-columns: 40px 1.4fr 0.9fr 0.9fr 1.1fr 1.1fr 0.8fr;
     align-items: center;
     gap: 0.9rem;
     background: #fff;
@@ -256,6 +267,37 @@
 .np-drift-text {
     color: #dc2626;
     font-weight: 600;
+}
+
+.np-category-usage-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.np-category-usage-row {
+    display: grid;
+    grid-template-columns: 36px 1.1fr 2fr auto;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.np-category-usage-name {
+    font-weight: 600;
+    text-transform: capitalize;
+}
+
+.np-usage-bar {
+    background: var(--np-gray-light);
+    border-radius: 999px;
+    height: 8px;
+    overflow: hidden;
+}
+
+.np-usage-bar-fill {
+    background: var(--np-blue);
+    height: 100%;
+    border-radius: 999px;
 }
 
 .np-empty {
@@ -457,6 +499,7 @@
 .dot-failed { background: #dc2626; }
 .dot-offline { background: var(--np-gray); }
 .dot-other { background: var(--np-amber); }
+.dot-blocked { background: var(--np-red); }
 
 /* Wireless */
 .np-wifi-grid {

@@ -9,6 +9,8 @@ public class FakeRouterProvider(RouterCapabilities capabilities) : IRouterProvid
     public bool ThrowOnNextWrite { get; set; }
     public Dictionary<WirelessNetworkId, WirelessNetworkState> WirelessNetworks { get; } = [];
     public List<(WirelessNetworkId Id, WirelessNetworkUpdate Update)> AppliedWirelessUpdates { get; } = [];
+    public List<string> BlockedMacs { get; } = [];
+    public List<string> UnblockedMacs { get; } = [];
 
     public string ProviderId => "fake";
     public string DisplayName => "Fake Router";
@@ -69,5 +71,17 @@ public class FakeRouterProvider(RouterCapabilities capabilities) : IRouterProvid
         WirelessNetworks[id] = updated;
         AppliedWirelessUpdates.Add((id, update));
         return Task.FromResult(updated);
+    }
+
+    public Task<string> BlockDeviceAsync(string macAddress, CancellationToken ct)
+    {
+        BlockedMacs.Add(macAddress);
+        return Task.FromResult($"fake-token-{macAddress}");
+    }
+
+    public Task UnblockDeviceAsync(string macAddress, string blockListToken, CancellationToken ct)
+    {
+        UnblockedMacs.Add(macAddress);
+        return Task.CompletedTask;
     }
 }

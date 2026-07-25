@@ -1,3 +1,4 @@
+using System.Text.Json;
 using TpLink.Sdk.Auth;
 using TpLink.Sdk.Models;
 using TpLink.Sdk.Session;
@@ -16,6 +17,7 @@ public sealed class TpLinkRouterClient : IDisposable
 {
     private const string GameAcceleratorForm = "admin/smart_network?form=game_accelerator";
     private const string ClientSpeedLimitForm = "admin/smart_network?form=client_speed_limit";
+    private const string AccessControlBlackListForm = "admin/access_control?form=black_list";
     private const string SystemRebootForm = "admin/system?form=reboot";
     private const string FirmwareUpgradeForm = "admin/firmware?form=upgrade";
     private const string LoginKeysPath = "/login?form=keys";
@@ -88,6 +90,63 @@ public sealed class TpLinkRouterClient : IDisposable
         // Response is a minimal {"success":true} with no echoed data — callers should
         // re-fetch (GetDevicesAsync) to confirm applied state rather than trust this alone,
         // per phase1-live-findings.md.
+    }
+
+    /// <summary>
+    /// Confirmed live via a user-captured curl (see docs/phase4-block-list-live-findings.md) —
+    /// MAC-based device blacklist, same plain-JSON auth model as GetDevices/SetSpeedLimit (no
+    /// RSA/AES envelope). The `key` sent in the `new` blob is the device's OWN `key` from its
+    /// `game_accelerator` device record, not a freshly generated one — every other field in the
+    /// captured insert body maps 1:1 onto `TpLinkDeviceRecord`, so the router UI clearly builds
+    /// this entry from a device it already knows about rather than minting an identifier. This
+    /// method re-fetches the device list to find that record rather than accepting the fields as
+    /// parameters, so the returned key can be persisted by the caller for a later Unblock.
+    /// `conn_type` ("wired"/"wireless") and the top-level `index=0` are inferred, not
+    /// independently confirmed — see the findings doc's Open Items.
+    /// </summary>
+    public async Task<string> BlockDeviceAsync(string macAddress, CancellationToken ct = default)
+    {
+        var stok = RequireSession();
+        var records = await GetDevicesAsync(ct);
+        var record = records.FirstOrDefault(d => string.Equals(d.Mac, macAddress, StringComparison.OrdinalIgnoreCase))
+            ?? throw new TpLinkProtocolException($"Device {macAddress} not found in the current device list — cannot build a blacklist entry without its router-reported fields.");
+
+        if (string.IsNullOrEmpty(record.Key))
+            throw new TpLinkProtocolException($"Device {macAddress} has no 'key' in its device record — cannot build a blacklist entry.");
+
+        var entry = new TpLinkBlockListEntry
+        {
+            Name = record.DeviceName ?? "",
+            DeviceType = record.DeviceType ?? "",
+            Mac = record.Mac,
+            IpAddr = record.Ip,
+            Host = record.Host,
+            ConnType = string.Equals(record.DeviceTag, "wired", StringComparison.OrdinalIgnoreCase) ? "wired" : "wireless",
+            Key = record.Key
+        };
+
+        var body = $"operation=insert&new={Uri.EscapeDataString(JsonSerializer.Serialize(entry))}&index=0";
+        var response = await _transport.PostFormAsync<TpLinkWriteResponse>(stok, $"/{AccessControlBlackListForm}", body, ct);
+
+        if (!response.Success)
+            throw new TpLinkProtocolException($"Blacklist insert rejected for {macAddress}.");
+
+        return record.Key;
+    }
+
+    /// <summary>
+    /// See BlockDeviceAsync — same endpoint, `operation=remove`. Requires the exact `key` that
+    /// was used at insert time (returned by BlockDeviceAsync; callers must persist it, since the
+    /// device may no longer appear in GetDevicesAsync once blocked).
+    /// </summary>
+    public async Task UnblockDeviceAsync(string blockListKey, CancellationToken ct = default)
+    {
+        var stok = RequireSession();
+        var body = $"operation=remove&key={Uri.EscapeDataString(blockListKey)}&index=0";
+        var response = await _transport.PostFormAsync<TpLinkWriteResponse>(stok, $"/{AccessControlBlackListForm}", body, ct);
+
+        if (!response.Success)
+            throw new TpLinkProtocolException($"Blacklist remove rejected for key {blockListKey}.");
     }
 
     /// <summary>

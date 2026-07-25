@@ -185,6 +185,36 @@
                                         <span class="np-badge-medium">@FormatBytes(todayUsageByMac.GetValueOrDefault((string)device.Mac)) today</span>
                                         <div class="np-device-sub mt-1">@FormatBytes(monthUsageByMac.GetValueOrDefault((string)device.Mac)) this month</div>
                                     </div>
+                                    <div>
+                                        @if (device.IsBlocked)
+                                        {
+                                            <span class="np-pill np-pill-blocked">
+                                                <span class="np-pill-dot"></span>
+                                                Blocked
+                                            </span>
+                                            <button type="button" class="btn btn-link btn-sm p-0 mt-1" disabled="@(_blockingMac == (string)device.Mac || _connection is null)" @onclick="() => UnblockDeviceAsync(device)">
+                                                @(_blockingMac == (string)device.Mac ? "Unblocking..." : "Unblock")
+                                            </button>
+                                        }
+                                        else if (_pendingBlockMac == (string)device.Mac)
+                                        {
+                                            <div class="np-device-sub mb-1">Block this device?</div>
+                                            <div class="d-flex gap-1">
+                                                <button type="button" class="btn btn-danger btn-sm" disabled="@(_blockingMac == (string)device.Mac)" @onclick="() => BlockDeviceAsync(device)">
+                                                    @(_blockingMac == (string)device.Mac ? "Blocking..." : "Confirm")
+                                                </button>
+                                                <button type="button" class="btn btn-link btn-sm" disabled="@(_blockingMac == (string)device.Mac)" @onclick="() => _pendingBlockMac = null">Cancel</button>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <button type="button" class="btn btn-outline-danger btn-sm" disabled="@(_connection is null)" @onclick="() => _pendingBlockMac = (string)device.Mac">Block</button>
+                                        }
+                                        @if (_blockActionError is not null && _blockActionErrorMac == (string)device.Mac)
+                                        {
+                                            <div class="np-device-sub np-drift-text mt-1">@_blockActionError</div>
+                                        }
+                                    </div>
                                 </div>
                             }
                         </div>
@@ -306,12 +336,35 @@
                     .OrderByDescending(kv => kv.Value)
                     .Select(kv => (Mac: kv.Key, Bytes: kv.Value, Device: _devices.FirstOrDefault(d => (string)d.Mac == kv.Key)))
                     .ToList();
+                var byCategory = UsageQuery.BytesByCategory(filtered, _devices)
+                    .OrderByDescending(kv => kv.Value)
+                    .Select(kv => (CategoryKey: kv.Key, Bytes: kv.Value))
+                    .ToList();
+                var maxCategoryBytes = byCategory.Count == 0 ? 0 : byCategory[0].Bytes;
             }
 
             <div class="np-card mb-3">
                 <div class="np-device-sub">Total usage — @(string.IsNullOrEmpty(_usageMacFilter) ? "all devices" : "selected device")</div>
                 <div style="font-size:1.75rem;font-weight:600">@FormatBytes(total)</div>
             </div>
+
+            @if (byCategory.Count > 0)
+            {
+                <div class="np-card mb-3">
+                    <div class="np-device-sub mb-2">Top categories</div>
+                    <div class="np-category-usage-list">
+                        @foreach (var row in byCategory)
+                        {
+                            <div class="np-category-usage-row">
+                                <div class="np-device-icon">@CategoryIcon(row.CategoryKey)</div>
+                                <div class="np-category-usage-name">@row.CategoryKey.Replace('_', ' ')</div>
+                                <div class="np-usage-bar"><div class="np-usage-bar-fill" style="width:@(maxCategoryBytes == 0 ? 0 : row.Bytes * 100 / maxCategoryBytes)%"></div></div>
+                                <div class="np-badge-medium">@FormatBytes(row.Bytes)</div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
 
             @if (rows.Count == 0)
             {
@@ -506,6 +559,10 @@
     private bool _rebooting;
     private bool _rebootOk;
     private string? _rebootResult;
+    private string? _pendingBlockMac;
+    private string? _blockingMac;
+    private string? _blockActionError;
+    private string? _blockActionErrorMac;
     private List<WirelessNetworkState> _wireless = [];
     private bool _refreshingWireless;
     private string? _wirelessError;
@@ -643,6 +700,8 @@
         ActivityEventType.WriteFailed => "dot-failed",
         ActivityEventType.DeviceWentOffline => "dot-offline",
         ActivityEventType.RouterRebooted => "dot-other",
+        ActivityEventType.DeviceBlocked => "dot-blocked",
+        ActivityEventType.DeviceUnblocked => "dot-discovered",
         _ => "dot-other"
     };
 
@@ -837,6 +896,81 @@
         {
             _rebooting = false;
             _showRebootConfirm = false;
+        }
+    }
+
+    private async Task BlockDeviceAsync(Device device)
+    {
+        if (_connection is null)
+            return;
+
+        var mac = (string)device.Mac;
+        _blockingMac = mac;
+        _blockActionError = null;
+        try
+        {
+            var password = PasswordProtector.Decrypt(_connection.EncryptedPassword);
+            var settings = new RouterConnectionSettings(_connection.Host, _connection.UseHttps, _connection.Username, password);
+            await RouterProvider.ConnectAsync(settings, CancellationToken.None);
+            var token = await RouterProvider.BlockDeviceAsync(mac, CancellationToken.None);
+
+            device.IsBlocked = true;
+            device.BlockListToken = token;
+            await DeviceStore.UpsertAsync(device, CancellationToken.None);
+
+            await ActivityLogStore.AppendAsync(
+                new ActivityLogEntry(DateTimeOffset.UtcNow, ActivityEventType.DeviceBlocked, device.Mac,
+                    $"{device.FriendlyName ?? device.Hostname} blocked from the dashboard"),
+                CancellationToken.None);
+            _activity = await ActivityLogStore.GetRecentAsync(50, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Block failed for {Mac}", mac);
+            _blockActionError = $"Block failed: {ex.Message}";
+            _blockActionErrorMac = mac;
+        }
+        finally
+        {
+            _blockingMac = null;
+            _pendingBlockMac = null;
+        }
+    }
+
+    private async Task UnblockDeviceAsync(Device device)
+    {
+        if (_connection is null || device.BlockListToken is null)
+            return;
+
+        var mac = (string)device.Mac;
+        _blockingMac = mac;
+        _blockActionError = null;
+        try
+        {
+            var password = PasswordProtector.Decrypt(_connection.EncryptedPassword);
+            var settings = new RouterConnectionSettings(_connection.Host, _connection.UseHttps, _connection.Username, password);
+            await RouterProvider.ConnectAsync(settings, CancellationToken.None);
+            await RouterProvider.UnblockDeviceAsync(mac, device.BlockListToken, CancellationToken.None);
+
+            device.IsBlocked = false;
+            device.BlockListToken = null;
+            await DeviceStore.UpsertAsync(device, CancellationToken.None);
+
+            await ActivityLogStore.AppendAsync(
+                new ActivityLogEntry(DateTimeOffset.UtcNow, ActivityEventType.DeviceUnblocked, device.Mac,
+                    $"{device.FriendlyName ?? device.Hostname} unblocked from the dashboard"),
+                CancellationToken.None);
+            _activity = await ActivityLogStore.GetRecentAsync(50, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Unblock failed for {Mac}", mac);
+            _blockActionError = $"Unblock failed: {ex.Message}";
+            _blockActionErrorMac = mac;
+        }
+        finally
+        {
+            _blockingMac = null;
         }
     }
 

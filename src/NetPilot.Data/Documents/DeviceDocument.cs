@@ -19,6 +19,8 @@ public class DeviceDocument
     public int? RouterDownloadKbps { get; set; }
     public int? RouterUploadKbps { get; set; }
     public bool? RouterLimitCurrentlyEnforced { get; set; }
+    public bool IsBlocked { get; set; }
+    public string? BlockListToken { get; set; }
     public string? LastAppliedFingerprint { get; set; }
     public DateTimeOffset FirstSeenAtUtc { get; set; }
     public DateTimeOffset LastSeenAtUtc { get; set; }

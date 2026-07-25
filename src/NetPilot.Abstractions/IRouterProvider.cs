@@ -28,4 +28,15 @@ public interface IRouterProvider
     /// W2). Returns the router's state after the write, re-read — not an echo of the request.
     /// </summary>
     Task<WirelessNetworkState> ApplyWirelessAsync(WirelessNetworkId id, WirelessNetworkUpdate update, CancellationToken ct);
+
+    /// <summary>
+    /// Blocks a device by MAC address (denies it network access). Returns a provider-specific
+    /// token that the caller MUST persist and pass back to UnblockDeviceAsync — some providers
+    /// (e.g. TP-Link) need it to identify the entry to remove later, since the device may stop
+    /// being reported by GetDevicesAsync once blocked.
+    /// </summary>
+    Task<string> BlockDeviceAsync(string macAddress, CancellationToken ct);
+
+    /// <summary>Reverses BlockDeviceAsync using the token it returned.</summary>
+    Task UnblockDeviceAsync(string macAddress, string blockListToken, CancellationToken ct);
 }
