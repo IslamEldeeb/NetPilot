@@ -130,6 +130,21 @@ To run against a real router without Docker:
 
 For a full Docker Compose deployment — the recommended way to actually run this on your network — see [`docs/deployment.md`](docs/deployment.md).
 
+
+## Deploying Updates on Proxmox
+
+After the initial deployment, update NetPilot to the latest version with:
+
+```bash
+cd /opt/netpilot/repo/deploy/docker
+
+git pull origin master
+docker compose up -d
+```
+
+`docker compose up -d` will rebuild any services whose source or Dockerfile changed, recreate only the affected containers, and preserve the shared data volumes (LiteDB database and encryption keys).
+
+
 ## Documentation
 
 | Doc | Contents |
