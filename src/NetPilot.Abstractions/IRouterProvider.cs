@@ -19,4 +19,13 @@ public interface IRouterProvider
     Task<RouterInfo> GetRouterInfoAsync(CancellationToken ct);
 
     Task RebootAsync(CancellationToken ct);
+
+    Task<IReadOnlyList<WirelessNetworkState>> GetWirelessNetworksAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Applies a sparse update. Implementations MUST read current config and merge before
+    /// writing if the underlying firmware only accepts whole-object writes (see phase3 capture
+    /// W2). Returns the router's state after the write, re-read — not an echo of the request.
+    /// </summary>
+    Task<WirelessNetworkState> ApplyWirelessAsync(WirelessNetworkId id, WirelessNetworkUpdate update, CancellationToken ct);
 }

@@ -93,6 +93,7 @@
         <button type="button" class="np-tab @(_activeTab == Tab.Activity ? "active" : "")" @onclick="() => _activeTab = Tab.Activity">Activity log</button>
         <button type="button" class="np-tab @(_activeTab == Tab.Usage ? "active" : "")" @onclick="() => _activeTab = Tab.Usage">Usage</button>
         <button type="button" class="np-tab @(_activeTab == Tab.Management ? "active" : "")" @onclick="() => _activeTab = Tab.Management">Management</button>
+        <button type="button" class="np-tab @(_activeTab == Tab.Wireless ? "active" : "")" @onclick="() => _activeTab = Tab.Wireless">Wireless</button>
     </div>
 
     @if (_activeTab == Tab.Devices)
@@ -336,7 +337,7 @@
             }
         </section>
     }
-    else
+    else if (_activeTab == Tab.Management)
     {
         <section class="mb-4">
             <div class="np-section-head"><h3>Management</h3></div>
@@ -375,10 +376,105 @@
             </div>
         </section>
     }
+    else if (_activeTab == Tab.Wireless)
+    {
+        <section class="mb-4">
+            <div class="np-section-head"><h3>Wireless</h3></div>
+            <div class="np-toolbar">
+                <button class="btn btn-sm btn-primary" @onclick="RefreshWirelessAsync" disabled="@(_refreshingWireless || _connection is null)">
+                    @(_refreshingWireless ? "Refreshing..." : "Refresh from router")
+                </button>
+                <span class="np-device-sub">Guest (SSID/password/on-off) and IoT (SSID/on-off) editing are live. Main is read-only and IoT password changes aren't supported yet — see docs/phase3-live-findings.md.</span>
+                @if (!string.IsNullOrEmpty(_wirelessError))
+                {
+                    <span class="text-danger">@_wirelessError</span>
+                }
+            </div>
+
+            @if (_wireless.Count == 0)
+            {
+                <p class="np-empty">No wireless data loaded yet — click "Refresh from router".</p>
+            }
+            else
+            {
+                @foreach (var kindGroup in _wireless.GroupBy(w => w.Id.Kind).OrderBy(g => g.Key))
+                {
+                    <div class="np-group">
+                        <div class="np-group-title">@DescribeWirelessKind(kindGroup.Key)</div>
+                        <div class="np-wifi-grid">
+                            @foreach (var network in kindGroup.OrderBy(n => n.Id.Band))
+                            {
+                                <div class="np-wifi-card">
+                                    <div class="np-wifi-card-head">
+                                        <span class="np-device-name">@network.DisplayName</span>
+                                        <span class="np-pill @(network.Enabled ? "np-pill-online" : "np-pill-offline")">
+                                            <span class="np-pill-dot"></span>
+                                            @(network.Enabled ? "On" : "Off")
+                                        </span>
+                                    </div>
+
+                                    @if (_wirelessEditId == network.Id)
+                                    {
+                                        <div class="np-wifi-edit">
+                                            <label class="np-check">
+                                                <input type="checkbox" @bind="_wirelessEditEnabled" />
+                                                Enabled
+                                            </label>
+                                            <input type="text" class="form-control form-control-sm mt-1" placeholder="SSID" @bind="_wirelessEditSsid" />
+                                            @if (network.Id.Kind == WirelessNetworkKind.Guest)
+                                            {
+                                                <input type="text" class="form-control form-control-sm mt-1" placeholder="New password (leave blank to keep current)" @bind="_wirelessEditPassword" />
+                                            }
+                                            <div class="d-flex gap-2 mt-2">
+                                                <button class="np-save-btn" @onclick="() => SaveWirelessAsync(network.Id)" disabled="@_wirelessSaving">
+                                                    @(_wirelessSaving ? "Saving..." : "Save")
+                                                </button>
+                                                <button class="btn btn-link btn-sm p-0" @onclick="() => _wirelessEditId = null" disabled="@_wirelessSaving">Cancel</button>
+                                            </div>
+                                            @if (!string.IsNullOrEmpty(_wirelessSaveError))
+                                            {
+                                                <p class="text-danger mt-1 mb-0" style="font-size:0.8rem">@_wirelessSaveError</p>
+                                            }
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="np-device-sub mb-2">
+                                            <code>@network.Ssid</code>
+                                            @if (network.SsidBroadcast == false)
+                                            {
+                                                <span>· hidden</span>
+                                            }
+                                        </div>
+                                        <div class="np-wifi-fields">
+                                            <div><span class="np-device-sub">Security</span> @network.SecurityMode</div>
+                                            @if (network.Channel is not null)
+                                            {
+                                                <div><span class="np-device-sub">Channel</span> @network.Channel (@network.ChannelWidth)</div>
+                                                <div><span class="np-device-sub">TX power</span> @network.TxPower</div>
+                                            }
+                                            else
+                                            {
+                                                <div class="np-device-sub">Follows the main band's radio — no channel of its own</div>
+                                            }
+                                        </div>
+                                        @if (network.Id.Kind is WirelessNetworkKind.Guest or WirelessNetworkKind.Iot)
+                                        {
+                                            <button class="btn btn-sm btn-outline-primary mt-2" @onclick="() => StartEditingWireless(network)">Edit</button>
+                                        }
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            }
+        </section>
+    }
 </div>
 
 @code {
-    private enum Tab { Devices, Policies, Activity, Usage, Management }
+    private enum Tab { Devices, Policies, Activity, Usage, Management, Wireless }
 
     private RouterConnection? _connection;
     private List<Device> _devices = [];
@@ -410,6 +506,15 @@
     private bool _rebooting;
     private bool _rebootOk;
     private string? _rebootResult;
+    private List<WirelessNetworkState> _wireless = [];
+    private bool _refreshingWireless;
+    private string? _wirelessError;
+    private WirelessNetworkId? _wirelessEditId;
+    private bool _wirelessEditEnabled;
+    private string _wirelessEditSsid = "";
+    private string _wirelessEditPassword = "";
+    private bool _wirelessSaving;
+    private string? _wirelessSaveError;
     private PeriodicTimer? _timer;
     private CancellationTokenSource? _refreshCts;
 
@@ -734,6 +839,94 @@
             _showRebootConfirm = false;
         }
     }
+
+    private async Task RefreshWirelessAsync()
+    {
+        if (_connection is null)
+        {
+            _wirelessError = "No router configured yet.";
+            return;
+        }
+
+        _refreshingWireless = true;
+        _wirelessError = null;
+        try
+        {
+            var password = PasswordProtector.Decrypt(_connection.EncryptedPassword);
+            var settings = new RouterConnectionSettings(_connection.Host, _connection.UseHttps, _connection.Username, password);
+            await RouterProvider.ConnectAsync(settings, CancellationToken.None);
+            _wireless = (await RouterProvider.GetWirelessNetworksAsync(CancellationToken.None)).ToList();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Wireless refresh failed");
+            _wirelessError = $"Refresh failed: {ex.Message}";
+        }
+        finally
+        {
+            _refreshingWireless = false;
+        }
+    }
+
+    private void StartEditingWireless(WirelessNetworkState network)
+    {
+        _wirelessEditId = network.Id;
+        _wirelessEditEnabled = network.Enabled;
+        _wirelessEditSsid = network.Ssid ?? "";
+        _wirelessEditPassword = "";
+        _wirelessSaveError = null;
+    }
+
+    /// <summary>
+    /// Guest-network writes only — confirmed live per docs/phase3-live-findings.md. Only sends
+    /// the fields that actually changed (blank password means "leave it alone"); the router
+    /// confirmed this is a true partial delta, not a whole-object write, so there's no need to
+    /// resend everything else. ApplyWirelessAsync itself rejects non-guest networks.
+    /// </summary>
+    private async Task SaveWirelessAsync(WirelessNetworkId id)
+    {
+        if (_connection is null)
+            return;
+
+        var current = _wireless.FirstOrDefault(w => w.Id == id);
+        _wirelessSaving = true;
+        _wirelessSaveError = null;
+        try
+        {
+            var update = new WirelessNetworkUpdate
+            {
+                Enabled = current is null || current.Enabled != _wirelessEditEnabled ? _wirelessEditEnabled : null,
+                Ssid = current is null || current.Ssid != _wirelessEditSsid ? _wirelessEditSsid : null,
+                Password = string.IsNullOrEmpty(_wirelessEditPassword) ? null : _wirelessEditPassword
+            };
+
+            var password = PasswordProtector.Decrypt(_connection.EncryptedPassword);
+            var settings = new RouterConnectionSettings(_connection.Host, _connection.UseHttps, _connection.Username, password);
+            await RouterProvider.ConnectAsync(settings, CancellationToken.None);
+            var updated = await RouterProvider.ApplyWirelessAsync(id, update, CancellationToken.None);
+
+            var index = _wireless.FindIndex(w => w.Id == id);
+            if (index >= 0) _wireless[index] = updated;
+            _wirelessEditId = null;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Wireless write failed for {Id}", id);
+            _wirelessSaveError = $"Save failed: {ex.Message}";
+        }
+        finally
+        {
+            _wirelessSaving = false;
+        }
+    }
+
+    private static string DescribeWirelessKind(WirelessNetworkKind kind) => kind switch
+    {
+        WirelessNetworkKind.Main => "Main network",
+        WirelessNetworkKind.Iot => "IoT network",
+        WirelessNetworkKind.Guest => "Guest network",
+        _ => kind.ToString()
+    };
 
     private void ApplyBulkToAllRows()
     {

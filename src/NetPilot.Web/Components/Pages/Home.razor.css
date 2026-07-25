@@ -458,6 +458,45 @@
 .dot-offline { background: var(--np-gray); }
 .dot-other { background: var(--np-amber); }
 
+/* Wireless */
+.np-wifi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 0.7rem;
+}
+
+.np-wifi-card {
+    background: #fff;
+    border: 1px solid var(--np-border);
+    border-radius: 12px;
+    padding: 0.8rem 1rem;
+}
+
+.np-wifi-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    margin-bottom: 0.3rem;
+}
+
+.np-wifi-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.85rem;
+}
+
+.np-wifi-fields .np-device-sub {
+    display: inline;
+    margin-right: 0.35rem;
+}
+
+.np-wifi-edit {
+    display: flex;
+    flex-direction: column;
+}
+
 @media (max-width: 900px) {
     .np-device-row, .np-policy-row {
         grid-template-columns: 1fr;

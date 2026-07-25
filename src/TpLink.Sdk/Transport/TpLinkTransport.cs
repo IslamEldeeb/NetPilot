@@ -9,12 +9,13 @@ namespace TpLink.Sdk.Transport;
 /// form=client_speed_limit — plus the login handshake, which is also plain JSON on this
 /// firmware per phase1-live-findings.md). No AES/RSA-signing envelope on this path.
 ///
-/// A second, encrypted-envelope mode exists in the wider TP-Link ecosystem for legacy
-/// sections (admin/wireless, admin/network, admin/dhcps, admin/firmware) per
-/// NetPilot_Research_Findings_and_Architecture.md §3.1 — that mode is NOT implemented here
-/// because it was never live-verified against this specific firmware (only the Speed Limit
-/// path was, per the phased plan). Callers needing a legacy section should treat it as an
-/// open item requiring a live capture before implementing, not a guess.
+/// `admin/wireless` and `admin/firmware` were confirmed live in phase3-live-findings.md to
+/// use this same plain-JSON mode for reads — the encrypted-envelope mode described in
+/// NetPilot_Research_Findings_and_Architecture.md §3.1 for "legacy sections" does not apply
+/// to this firmware and is NOT implemented here. Wireless *writes* were not captured in that
+/// pass (see TpLinkRouterClient's wireless methods) — if a future write capture reveals a
+/// section that genuinely needs the encrypted envelope, that's still an open item requiring
+/// its own live verification, not a guess.
 /// </summary>
 public sealed class TpLinkTransport : IDisposable
 {

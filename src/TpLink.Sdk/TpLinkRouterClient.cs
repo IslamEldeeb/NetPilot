@@ -2,6 +2,7 @@ using TpLink.Sdk.Auth;
 using TpLink.Sdk.Models;
 using TpLink.Sdk.Session;
 using TpLink.Sdk.Transport;
+using TpLink.Sdk.Wireless;
 
 namespace TpLink.Sdk;
 
@@ -16,6 +17,7 @@ public sealed class TpLinkRouterClient : IDisposable
     private const string GameAcceleratorForm = "admin/smart_network?form=game_accelerator";
     private const string ClientSpeedLimitForm = "admin/smart_network?form=client_speed_limit";
     private const string SystemRebootForm = "admin/system?form=reboot";
+    private const string FirmwareUpgradeForm = "admin/firmware?form=upgrade";
     private const string LoginKeysPath = "/login?form=keys";
     private const string LoginPath = "/login?form=login";
 
@@ -109,6 +111,131 @@ public sealed class TpLinkRouterClient : IDisposable
 
         if (!response.Success)
             throw new TpLinkProtocolException("Reboot request rejected by router.");
+    }
+
+    /// <summary>
+    /// Reads confirmed live per docs/phase3-live-findings.md — plain JSON, same auth model as
+    /// GetDevicesAsync/SetSpeedLimitAsync (no RSA/AES envelope needed). Write support for
+    /// main/IoT bands is deliberately not implemented here: unlike guest (see
+    /// WriteWirelessGuest2GAsync below), main/IoT writes were never captured live, and their
+    /// structure differs enough from guest (separate per-band forms, no shared `_2g5g_` block)
+    /// that guest's confirmed shape can't be assumed to carry over — needs its own live capture
+    /// (phase3-wireless-management-plan.md §1.2) before it can be built safely.
+    /// </summary>
+    public Task<TpLinkMainBandConfig> GetWireless2GAsync(CancellationToken ct = default) =>
+        GetWirelessAsync<TpLinkMainBandConfig>(TpLinkWirelessForm.Wireless2G, TpLinkWirelessForm.Wireless2GReadOperation, ct);
+
+    /// <summary>See GetWireless2GAsync — same confirmed-live read path, 5 GHz band.</summary>
+    public Task<TpLinkMainBandConfig> GetWireless5GAsync(CancellationToken ct = default) =>
+        GetWirelessAsync<TpLinkMainBandConfig>(TpLinkWirelessForm.Wireless5G, TpLinkWirelessForm.Wireless5GReadOperation, ct);
+
+    /// <summary>
+    /// Single call returns both IoT sub-bands (2.4G and 5G) in one flat, prefixed-key object —
+    /// confirmed live, not three separate requests despite the three `form` params in the URL.
+    /// </summary>
+    public Task<TpLinkIotConfig> GetWirelessIotAsync(CancellationToken ct = default) =>
+        GetWirelessAsync<TpLinkIotConfig>(TpLinkWirelessForm.Iot, TpLinkWirelessForm.IotReadOperation, ct);
+
+    /// <summary>Same shape as GetWirelessIotAsync but for the two guest bands.</summary>
+    public Task<TpLinkGuestConfig> GetWirelessGuestAsync(CancellationToken ct = default) =>
+        GetWirelessAsync<TpLinkGuestConfig>(TpLinkWirelessForm.Guest, TpLinkWirelessForm.GuestReadOperation, ct);
+
+    /// <summary>
+    /// Confirmed live per docs/phase3-live-findings.md (guest network, same-day write capture).
+    /// A true partial delta: only the parameters you pass are sent, everything else on the
+    /// router is left untouched — no read-modify-write needed. `password` writes the shared
+    /// `guest_2g5g_psk_key` field (confirmed: password/security live in that shared block, not
+    /// per-band, even for a 2.4G-only edit). Response echoes the full updated guest config, same
+    /// shape as GetWirelessGuestAsync — use it directly rather than re-reading.
+    /// </summary>
+    public Task<TpLinkGuestConfig> WriteWirelessGuest2GAsync(
+        bool? enable = null, string? ssid = null, bool? hidden = null, string? password = null, CancellationToken ct = default) =>
+        WriteWirelessGuestAsync("guest_2g", enable, ssid, hidden, password, ct);
+
+    /// <summary>See WriteWirelessGuest2GAsync — same confirmed mechanism, 5 GHz band.</summary>
+    public Task<TpLinkGuestConfig> WriteWirelessGuest5GAsync(
+        bool? enable = null, string? ssid = null, bool? hidden = null, string? password = null, CancellationToken ct = default) =>
+        WriteWirelessGuestAsync("guest_5g", enable, ssid, hidden, password, ct);
+
+    private async Task<TpLinkGuestConfig> WriteWirelessGuestAsync(
+        string bandPrefix, bool? enable, string? ssid, bool? hidden, string? password, CancellationToken ct)
+    {
+        if (enable is null && ssid is null && hidden is null && password is null)
+            throw new ArgumentException("At least one field must be provided.");
+
+        var stok = RequireSession();
+        var parts = new List<string> { "operation=write" };
+        if (enable is not null) parts.Add($"{bandPrefix}_enable={(enable.Value ? "on" : "off")}");
+        if (ssid is not null) parts.Add($"{bandPrefix}_ssid={Uri.EscapeDataString(ssid)}");
+        if (hidden is not null) parts.Add($"{bandPrefix}_hidden={(hidden.Value ? "on" : "off")}");
+        if (password is not null) parts.Add($"guest_2g5g_psk_key={Uri.EscapeDataString(password)}");
+
+        var response = await _transport.PostFormAsync<TpLinkWirelessResponse<TpLinkGuestConfig>>(
+            stok, $"/{TpLinkWirelessForm.Guest}", string.Join("&", parts), ct);
+
+        if (!response.Success || response.Data is null)
+            throw new TpLinkProtocolException("Guest wireless write returned success:false or no data.");
+
+        return response.Data;
+    }
+
+    /// <summary>
+    /// Confirmed live per docs/phase3-live-findings.md, from user-captured DevTools traffic
+    /// (not generated by this SDK's own testing) — `operation=write_spf`, NOT `operation=write`
+    /// like guest. IoT keeps its password per-band (`{band}_psk_key`), unlike guest's shared
+    /// block. Passing `password` is supported here for protocol completeness, but whether
+    /// `encryption` must travel alongside a password change was never isolated and confirmed —
+    /// callers should treat a password-only IoT write as unverified until that capture happens.
+    /// </summary>
+    public Task<TpLinkIotConfig> WriteWirelessIot2GAsync(
+        bool? enable = null, string? ssid = null, bool? hidden = null, string? password = null, CancellationToken ct = default) =>
+        WriteWirelessIotAsync("iot_2g", enable, ssid, hidden, password, ct);
+
+    /// <summary>See WriteWirelessIot2GAsync — same confirmed mechanism, 5 GHz band.</summary>
+    public Task<TpLinkIotConfig> WriteWirelessIot5GAsync(
+        bool? enable = null, string? ssid = null, bool? hidden = null, string? password = null, CancellationToken ct = default) =>
+        WriteWirelessIotAsync("iot_5g", enable, ssid, hidden, password, ct);
+
+    private async Task<TpLinkIotConfig> WriteWirelessIotAsync(
+        string bandPrefix, bool? enable, string? ssid, bool? hidden, string? password, CancellationToken ct)
+    {
+        if (enable is null && ssid is null && hidden is null && password is null)
+            throw new ArgumentException("At least one field must be provided.");
+
+        var stok = RequireSession();
+        var parts = new List<string>();
+        if (enable is not null) parts.Add($"{bandPrefix}_enable={(enable.Value ? "on" : "off")}");
+        if (ssid is not null) parts.Add($"{bandPrefix}_ssid={Uri.EscapeDataString(ssid)}");
+        if (hidden is not null) parts.Add($"{bandPrefix}_hidden={(hidden.Value ? "on" : "off")}");
+        if (password is not null) parts.Add($"{bandPrefix}_psk_key={Uri.EscapeDataString(password)}");
+        parts.Add(TpLinkWirelessForm.IotWriteOperation);
+
+        var response = await _transport.PostFormAsync<TpLinkWirelessResponse<TpLinkIotConfig>>(
+            stok, $"/{TpLinkWirelessForm.IotWrite}", string.Join("&", parts), ct);
+
+        if (!response.Success || response.Data is null)
+            throw new TpLinkProtocolException("IoT wireless write returned success:false or no data.");
+
+        return response.Data;
+    }
+
+    private async Task<T> GetWirelessAsync<T>(string form, string operation, CancellationToken ct)
+    {
+        var stok = RequireSession();
+        var response = await _transport.PostFormAsync<TpLinkWirelessResponse<T>>(stok, $"/{form}", operation, ct);
+
+        if (!response.Success || response.Data is null)
+            throw new TpLinkProtocolException($"{form} returned success:false or no data.");
+
+        return response.Data;
+    }
+
+    /// <summary>Model + firmware version — confirmed live per docs/phase3-live-findings.md.</summary>
+    public async Task<TpLinkFirmwareInfo?> GetFirmwareInfoAsync(CancellationToken ct = default)
+    {
+        var stok = RequireSession();
+        var response = await _transport.PostFormAsync<TpLinkFirmwareInfoResponse>(stok, $"/{FirmwareUpgradeForm}", "operation=read", ct);
+        return response.Success ? response.Data : null;
     }
 
     /// <summary>Router's global ceiling values — useful for input validation, not per-device data.</summary>

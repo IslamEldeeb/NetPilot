@@ -8,8 +8,19 @@ namespace NetPilot.Core.Tests;
 
 public class PolicyReconciliationServiceTests
 {
-    private static readonly RouterCapabilities FullCapabilities = new(
-        SupportsSpeedLimit: true, SupportsDeviceCategorization: true, SupportsPriorityQos: true, SupportsGuestNetworkInfo: true, SupportsUsageTracking: true, SupportsReboot: true);
+    private static readonly RouterCapabilities FullCapabilities = new()
+    {
+        SupportsSpeedLimit = true,
+        SupportsDeviceCategorization = true,
+        SupportsPriorityQos = true,
+        SupportsGuestNetworkInfo = true,
+        SupportsUsageTracking = true,
+        SupportsReboot = true,
+        SupportsWirelessRead = true,
+        SupportsWirelessToggle = true,
+        SupportsWirelessEdit = true,
+        SupportsWirelessSchedule = true
+    };
 
     private static RouterDeviceSnapshot MakeSnapshot(
         string mac = "AA-BB-CC-DD-EE-01", string hostname = "phone-1", string? rawCategory = "Mobile", bool online = true,
