@@ -150,7 +150,7 @@ This closes out the **primary open item** from the first pass of this document. 
 ## Remaining open items
 
 1. ~~Whether `enablePriority` is writable via this same `client_speed_limit` write endpoint~~ — **Decided (July 31, 2026): not pursuing.** QoS Priority is subscription-gated marketing surface on this firmware regardless of the write-path answer; not worth a live test or a NetPilot feature. Dropped, not parked.
-2. Exact meaning of `speedLimitOnline` — plausible guess ("currently being enforced" vs. "configured but device offline") not verified against behavior.
+2. ~~Exact meaning of `speedLimitOnline`~~ — **Decided (July 31, 2026): dropped.** Nothing in NetPilot reads or acts on this field; not worth carrying as backlog with no consumer. Re-derive the question if a future feature (e.g. an "actively throttled" dashboard indicator) ever needs it.
 3. TMP protocol (port ~20002, doc §6b) — out of scope for this pass per user's earlier direction; not tested against this specific router.
 
 ## What this changes in the main doc / architecture
