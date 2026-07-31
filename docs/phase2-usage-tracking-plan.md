@@ -1,6 +1,8 @@
 # NetPilot — Phase 2 Investigation + Plan: Per-MAC Usage Tracking
 
-**Status:** Investigation complete against existing docs/code; one live protocol check still recommended before implementation starts (see "Open items" below — same pattern as Phase 1: live checks happen through the user's Cowork session with Chrome connected, not here).
+**Status (updated July 31, 2026): Implemented**, per this doc's own §3 design, without waiting on the live protocol check this original status line recommended — the byte-vs-formatted-string unit question (§2 item 1) shipped as a documented assumption instead (isolated to `TpLinkUsageParser`, per `docs/phase2-implementation-plan.md`), still not live-confirmed. See `docs/phase2-usage-tracking-feature.md` for the as-built reference and its deviations (notably: §3's "first observation is baseline only, not counted" rule was changed after building it — see that doc's §2).
+
+**Original status line, kept for history:** Investigation complete against existing docs/code; one live protocol check still recommended before implementation starts (see "Open items" below — same pattern as Phase 1: live checks happen through the user's Cowork session with Chrome connected, not here).
 
 **Goal:** Track bandwidth usage per MAC address and roll it up into accurate monthly totals, despite the router's own usage counter resetting on its own — user has observed this happening (via the TP-Link app) but isn't sure if the trigger is a restart, a daily rollover, or something else. **The design below doesn't need to know the trigger** — see §3.
 

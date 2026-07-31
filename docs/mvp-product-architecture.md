@@ -1,6 +1,6 @@
 # NetPilot MVP — Product Architecture Proposal
 
-**Status:** Proposal only. No production code written against this yet — awaiting your approval per your instructions.
+**Status (updated July 31, 2026):** Implemented and deployed. Every project in §2 exists and builds; the five-step reconciliation loop (§6), LiteDB persistence (§2/§5), Docker deployment (§8), and the `IRouterProvider` seam (§3) are all live against the user's real AX53 on Proxmox CT 109. §9's MVP scope is done in full. What's shipped beyond this doc's original scope: per-MAC usage tracking (`docs/phase2-usage-tracking-feature.md`), device block/unblock (`docs/phase4-block-list-live-findings.md`), and partial wireless management — read for all networks, write for guest + IoT only (`docs/phase3-wireless-management-plan.md`, still in progress). Still not built: a second router provider, dynamic plugin loading, and the Home Assistant integration (`docs/phase5-home-assistant-integration-plan.md`) — all deliberately deferred, not overdue. This header is kept in place (not deleted) as the historical record of what was proposed before any of it existed.
 **Framing shift:** router support (starting with TP-Link) is now infrastructure in service of the product, not the product itself — and per your latest direction, it's built from the start as *one of potentially several* router integrations, not a TP-Link-only system with a theoretical escape hatch.
 **Revision note:** this replaces the previous version. Three things changed based on your last few messages, folded in below: (1) `DeviceCategory` is now dynamic/data-driven, not a fixed enum (resolves the open question from our category discussion); (2) persistence is LiteDB, not EF Core/SQLite (resolves the open question from our Redis discussion — same reasoning: embedded, no server, and now also no migration step to break in a Docker container); (3) router support is a proper provider/plugin architecture, and there's a full deployment section for Docker on your Proxmox box.
 
@@ -282,15 +282,17 @@ volumes:
 
 ## 9. MVP scope
 
-**In:** the five-step flow, four dashboard panels, LiteDB persistence, the `IRouterProvider` seam with TP-Link as the first (and for v1, only) implementation, Docker deployment.
+**In — all done:** the five-step flow, four dashboard panels, LiteDB persistence, the `IRouterProvider` seam with TP-Link as the first (and for v1, only) implementation, Docker deployment.
 
 **Explicitly out (deferred, not forgotten):**
-- A second real router provider — the *seam* is built now; the *second implementation* waits for a real router to test against (yours, or a contributor's).
-- Dynamic plugin loading (`AssemblyLoadContext`) — documented upgrade path (§3), not built until there's a second provider to prove the contract against.
+- A second real router provider — **still not built.** The *seam* is proven now (`RouterCapabilities`/`IRouterProvider` have one real implementation); the *second implementation* still waits for a real router to test against (yours, or a contributor's).
+- Dynamic plugin loading (`AssemblyLoadContext`) — **still not built.** Documented upgrade path (§3), correctly gated on a second provider existing to prove the contract against, which hasn't happened.
 - TMP/Tether protocol — still parked.
 - Traffic-shaping bridge fallback — not needed, the router API works.
-- Dashboard authentication/multi-user access — v1 assumes LAN-only reachability. Worth a one-line README callout so it isn't accidentally exposed to the internet.
-- Notifications, AI-assisted categorization, usage-history charts — see §10, all natural adds on top of what's built here, none are dependencies of the MVP working.
+- Dashboard authentication/multi-user access — **still not built.** v1 still assumes LAN-only reachability; `docs/deployment.md`'s "Security" section carries the README callout this line asked for. This is now a real gap once `docs/phase5-home-assistant-integration-plan.md`'s Agent API (which does get a bearer token) ships — the dashboard will be the less-protected of the two surfaces.
+- Notifications — still not built.
+- AI-assisted categorization — still not built; not currently needed, the router's own `deviceType` classification has been sufficient in practice.
+- Usage-history charts — **done**, via `docs/phase2-usage-tracking-feature.md` (table view, not charts — per-device/period totals with month/day rollup). Charting the same data is a UI-only follow-up, not a new capability.
 
 ## 10. Future expansion points
 
@@ -298,8 +300,8 @@ volumes:
 - **Real plugin loading:** `AssemblyLoadContext`-based discovery once 2+ providers exist (§3).
 - **Notifications:** subscribe to `ActivityLogEntry` writes (e.g., `DeviceDiscovered`) — no change to the reconciliation loop.
 - **AI-assisted categorization:** a fallback classifier that only kicks in when `RawCategory` is null or generic (`Unknown`/`Smart Device`) — doesn't touch the confirmed-good cases.
-- **Historical usage charts:** the router already reports `trafficUsage`/`onlineTime` per device — `NetPilot.Data` can start recording snapshots any time.
-- **Mobile access:** `NetPilot.Web` can grow a thin JSON API alongside Blazor pages later.
+- **Historical usage charts:** **done** — `NetPilot.Data` records per-device snapshots and rolls them into month/day history (`docs/phase2-usage-tracking-feature.md`). Presented as tables, not charts yet.
+- **Mobile access:** `NetPilot.Web` can grow a thin JSON API alongside Blazor pages later. **In progress** — `docs/phase5-home-assistant-integration-plan.md` is building this JSON API now, on `NetPilot.Agent` rather than `NetPilot.Web` (the Agent owns the router session), with Home Assistant as the first consumer rather than a mobile client. Same API, once it exists, serves both use cases.
 - **Multi-router/mesh:** `Device` is already keyed globally by MAC, not scoped to one router — adding a second *configured router* (not just brand) is a `RouterId` column and a dashboard filter, not a rearchitecture.
 
 ## 11. One practical constraint worth naming now

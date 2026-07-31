@@ -1,5 +1,7 @@
 # NetPilot — Phase 4 Readiness: Home Assistant Integration
 
+**Status (updated July 31, 2026): Not started — this doc's §3 API contract is still the target design, but `docs/phase5-home-assistant-integration-plan.md` now scopes the actual v1 build down to a subset of it.** Confirmed via code audit: no HTTP endpoints exist in `NetPilot.Agent` yet (still `Host.CreateApplicationBuilder`, no `WebApplication`), no bearer-token auth, no OpenAPI, `RouterSessionManager` doesn't exist. Phase 5's v1 covers §3.1 (system), the device/policy/block/reboot/activity rows of §3.3, and §4's auth — deliberately **not** §3.2 (wireless, since `phase3-wireless-management-plan.md` steps 6–9 aren't built) or §3.4 (SSE push). Treat §3/§4/§5 below as the full target shape; Phase 5 is the sequencing for getting there in two bites instead of one.
+
 **Purpose:** two things. First, a review of the current codebase against what a Home Assistant integration actually demands — what's already right, and what would break. Second, the concrete API contract that **Phase 3 builds** and Phase 4 consumes, so the HA work is writing a Python client against a stable surface rather than co-designing a server.
 
 **Decisions taken with the user:** the HTTP API lives in `NetPilot.Agent`; HA talks to it over **REST via a custom integration** (no MQTT broker).
