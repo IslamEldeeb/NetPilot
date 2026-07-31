@@ -13,6 +13,10 @@ Implementation is underway: all projects in `src/` exist and build (`NetPilot.Ab
 
 Background/historical, read only if needed: `docs/NetPilot_Research_Findings_and_Architecture.md` (earlier, now-superseded research doc — has extra protocol detail on non-Speed-Limit endpoints like wireless/VPN config if that's ever relevant), `docs/phase1-plan.md` (working log from initial repo scaffolding).
 
+## Keeping plan docs current
+
+Once a plan doc under `docs/` is finalized (approved, not just drafted), update it in place as its items get implemented — mark each item done (or note the deviation, if it shipped differently than planned) rather than leaving the doc reading as an untouched proposal. Edit the existing doc; don't spin up a new one just to record that drift. This is already the pattern several docs use (e.g. `phase3-wireless-management-plan.md`'s "Implementation status" header, `phase2-usage-tracking-feature.md` as the as-built doc superseding its own plan) — keep doing it for every plan doc, not just those.
+
 ## Key decisions already made (don't re-derive these)
 
 - Target framework: **.NET 10** (`net10.0`) across every project.
