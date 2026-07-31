@@ -32,7 +32,7 @@ This doesn't contradict what Phase 1 found. The web table not rendering a usage 
 
 What's still worth nailing down, since it directly shapes the data model (not the field's existence):
 
-1. **Format/unit of `trafficUsage`.** Bytes? KB/MB as a number? A pre-formatted string like `"1.2 GB"`? A combined download+upload total, or split like `downloadLimit`/`uploadLimit` are (real field names might be `trafficUsageDown`/`trafficUsageUp` in that case)?
+1. ~~**Format/unit of `trafficUsage`.**~~ **Moved to `docs/deferred-issues.md` #1 (July 31, 2026)** — needs a live capture or post-deploy data check, tracked there instead of here.
 2. **Is `onlineTime` a useful corroborating signal?** Not required, but if it drops alongside `trafficUsage` it's a nice sanity check that a reset really happened rather than a stray bad reading.
 
 **Recommendation:** capture the raw `loadDevice` JSON response body directly (network-request capture, same method as Phase 1) rather than relying on what any web page renders — the web UI was never the source of truth here, the API response is. Write real values to `docs/phase2-live-findings.md` when convenient. Nothing in §3 is gated on this.

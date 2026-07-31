@@ -136,3 +136,4 @@ and the C# fallback.
   surfaced in either the current or historical view.
 - **`trafficUsage`'s exact unit is still not live-verified** against the real firmware —
   everything above assumes plain-integer-bytes, isolated to `TpLinkUsageParser` if wrong.
+  Tracked as an open item in `docs/deferred-issues.md` #1, not here.
