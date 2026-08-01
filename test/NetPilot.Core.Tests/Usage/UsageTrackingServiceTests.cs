@@ -126,4 +126,48 @@ public class UsageTrackingServiceTests
         var states = await usage.GetAllStatesAsync(CancellationToken.None);
         Assert.Empty(states);
     }
+
+    [Fact]
+    public async Task DeviceStopsReporting_StillFinalizesOnANextTickForAnotherDevice()
+    {
+        var (service, usage, _) = Build();
+        var goneMac = new MacAddress("AA-BB-CC-DD-EE-99");
+        await usage.UpsertStateAsync(new DeviceUsageState
+        {
+            Mac = goneMac,
+            LastRawCounterBytes = 1000,
+            LastPollAtUtc = DateTimeOffset.UtcNow.AddMonths(-2),
+            CurrentMonthKey = "2020-01",
+            CurrentMonthBytes = 7000,
+            CurrentDayKey = "2020-01-01",
+            CurrentDayBytes = 7000
+        }, CancellationToken.None);
+
+        // goneMac never appears in a snapshot again — only a different device does.
+        await service.TrackAsync([MakeSnapshot(usage: new UsageSnapshot(1))], CancellationToken.None);
+
+        Assert.Single(usage.History, h => h.Mac == goneMac && h.MonthKey == "2020-01" && h.TotalBytes == 7000);
+        Assert.Single(usage.DailyHistory, h => h.Mac == goneMac && h.DayKey == "2020-01-01" && h.TotalBytes == 7000);
+
+        var goneState = await usage.FindStateAsync(goneMac, CancellationToken.None);
+        Assert.NotEqual("2020-01", goneState!.CurrentMonthKey);
+        Assert.Equal(0, goneState.CurrentMonthBytes);
+    }
+
+    [Fact]
+    public async Task DeviceAlreadyCurrent_IsNotTouchedBySweep()
+    {
+        var (service, usage, _) = Build();
+
+        // First tick establishes the device at the current bucket.
+        await service.TrackAsync([MakeSnapshot(usage: new UsageSnapshot(1000))], CancellationToken.None);
+        var historyCountBefore = usage.History.Count;
+
+        // Second tick: same device, still current — sweep must not re-finalize it.
+        await service.TrackAsync([MakeSnapshot(usage: new UsageSnapshot(1200))], CancellationToken.None);
+
+        Assert.Equal(historyCountBefore, usage.History.Count);
+        var state = await usage.FindStateAsync(new MacAddress("AA-BB-CC-DD-EE-01"), CancellationToken.None);
+        Assert.Equal(1200, state!.CurrentMonthBytes);
+    }
 }

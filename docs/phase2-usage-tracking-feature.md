@@ -135,9 +135,13 @@ and the C# fallback.
   see `docs/deployment.md`), not UTC. Still not configurable per-ISP-billing-cycle-start-date
   (e.g. a cycle starting on the 15th) — only the timezone, not the day-of-month boundary,
   changed.
-- **A device that goes offline and never returns** keeps its final period's total trapped
-  in a live `usage_state` row that never finalizes to `usage_history` — not lost, just not
-  surfaced in either the current or historical view.
+- ~~A device that goes offline and never returns keeps its final period's total trapped~~ —
+  **Fixed July 31, 2026.** `UsageTrackingService.TrackAsync` now sweeps every stored
+  `usage_state` row each tick (not just MACs in that tick's snapshot) and finalizes any whose
+  bucket key is stale into `usage_history`/`usage_daily_history`, mirroring
+  `PolicyReconciliationService.MarkMissingDevicesOfflineAsync`'s existing sweep pattern. A
+  device that vanishes now gets its trailing period closed out on the next tick after the
+  boundary passes, instead of staying frozen forever.
 - **`trafficUsage`'s exact unit is still not live-verified** against the real firmware —
   everything above assumes plain-integer-bytes, isolated to `TpLinkUsageParser` if wrong.
   Tracked as an open item in `docs/deferred-issues.md` #1, not here.

@@ -32,6 +32,7 @@ public class UsageTrackingService(IUsageStore usageStore, IActivityLogStore acti
         var local = TimeZoneInfo.ConvertTime(now, timeZone);
         var monthKey = MonthKeyFor(local);
         var dayKey = DayKeyFor(local);
+        var seenMacs = new HashSet<string>();
 
         foreach (var snapshot in snapshots)
         {
@@ -39,30 +40,11 @@ public class UsageTrackingService(IUsageStore usageStore, IActivityLogStore acti
                 continue; // provider doesn't support usage tracking, or couldn't parse this tick
 
             var mac = new MacAddress(snapshot.MacAddress);
+            seenMacs.Add(mac);
             var state = await usageStore.FindStateAsync(mac, ct)
                 ?? new DeviceUsageState { Mac = mac, CurrentMonthKey = monthKey, CurrentDayKey = dayKey };
 
-            if (state.CurrentMonthKey != monthKey)
-            {
-                if (!string.IsNullOrEmpty(state.CurrentMonthKey))
-                {
-                    await usageStore.AppendHistoryAsync(
-                        new UsageHistoryEntry(mac, state.CurrentMonthKey, state.CurrentMonthBytes, now), ct);
-                }
-                state.CurrentMonthKey = monthKey;
-                state.CurrentMonthBytes = 0;
-            }
-
-            if (state.CurrentDayKey != dayKey)
-            {
-                if (!string.IsNullOrEmpty(state.CurrentDayKey))
-                {
-                    await usageStore.AppendDailyHistoryAsync(
-                        new UsageDailyHistoryEntry(mac, state.CurrentDayKey, state.CurrentDayBytes, now), ct);
-                }
-                state.CurrentDayKey = dayKey;
-                state.CurrentDayBytes = 0;
-            }
+            await RollBucketsAsync(state, monthKey, dayKey, now, ct);
 
             var current = snapshot.Usage.TotalBytes;
 
@@ -94,6 +76,62 @@ public class UsageTrackingService(IUsageStore usageStore, IActivityLogStore acti
 
             state.LastRawCounterBytes = current;
             state.LastPollAtUtc = now;
+            await usageStore.UpsertStateAsync(state, ct);
+        }
+
+        await FinalizeStaleStatesAsync(monthKey, dayKey, now, seenMacs, ct);
+    }
+
+    /// <summary>
+    /// Finalizes a device's running total into history when its stored bucket key no longer
+    /// matches the current one — same rollover the per-snapshot path always did, factored out
+    /// so <see cref="FinalizeStaleStatesAsync"/> can apply it to devices this tick never saw.
+    /// </summary>
+    private async Task RollBucketsAsync(DeviceUsageState state, string monthKey, string dayKey, DateTimeOffset now, CancellationToken ct)
+    {
+        if (state.CurrentMonthKey != monthKey)
+        {
+            if (!string.IsNullOrEmpty(state.CurrentMonthKey))
+            {
+                await usageStore.AppendHistoryAsync(
+                    new UsageHistoryEntry(state.Mac, state.CurrentMonthKey, state.CurrentMonthBytes, now), ct);
+            }
+            state.CurrentMonthKey = monthKey;
+            state.CurrentMonthBytes = 0;
+        }
+
+        if (state.CurrentDayKey != dayKey)
+        {
+            if (!string.IsNullOrEmpty(state.CurrentDayKey))
+            {
+                await usageStore.AppendDailyHistoryAsync(
+                    new UsageDailyHistoryEntry(state.Mac, state.CurrentDayKey, state.CurrentDayBytes, now), ct);
+            }
+            state.CurrentDayKey = dayKey;
+            state.CurrentDayBytes = 0;
+        }
+    }
+
+    /// <summary>
+    /// Closes out any device's trailing period even if it never appears in a snapshot again —
+    /// e.g. a device that's permanently removed from the network. Without this, its last
+    /// period's total stayed frozen in usage_state forever: not lost, but invisible in both the
+    /// current-period and history views, since neither reads a live state row for a MAC that
+    /// stopped reporting. Mirrors PolicyReconciliationService.MarkMissingDevicesOfflineAsync's
+    /// pattern of sweeping all known entities each tick, not just ones in the current snapshot.
+    /// </summary>
+    private async Task FinalizeStaleStatesAsync(string monthKey, string dayKey, DateTimeOffset now, HashSet<string> seenMacs, CancellationToken ct)
+    {
+        var allStates = await usageStore.GetAllStatesAsync(ct);
+        foreach (var state in allStates)
+        {
+            if (seenMacs.Contains(state.Mac))
+                continue; // already rolled above this tick
+
+            if (state.CurrentMonthKey == monthKey && state.CurrentDayKey == dayKey)
+                continue; // not stale
+
+            await RollBucketsAsync(state, monthKey, dayKey, now, ct);
             await usageStore.UpsertStateAsync(state, ct);
         }
     }
