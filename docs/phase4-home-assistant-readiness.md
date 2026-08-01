@@ -1,6 +1,8 @@
 # NetPilot — Phase 4 Readiness: Home Assistant Integration
 
-**Status (updated July 31, 2026): Not started — this doc's §3 API contract is still the target design, but `docs/phase5-home-assistant-integration-plan.md` now scopes the actual v1 build down to a subset of it.** Confirmed via code audit: no HTTP endpoints exist in `NetPilot.Agent` yet (still `Host.CreateApplicationBuilder`, no `WebApplication`), no bearer-token auth, no OpenAPI, `RouterSessionManager` doesn't exist. Phase 5's v1 covers §3.1 (system), the device/policy/block/reboot/activity rows of §3.3, and §4's auth — deliberately **not** §3.2 (wireless, since `phase3-wireless-management-plan.md` steps 6–9 aren't built) or §3.4 (SSE push). Treat §3/§4/§5 below as the full target shape; Phase 5 is the sequencing for getting there in two bites instead of one.
+**Status (updated July 31, 2026): Not started — this doc's §3 API contract is still the target design, but `docs/phase5-home-assistant-integration-plan.md` now scopes the actual v1 build down to a subset of it.** Confirmed via code audit: no HTTP endpoints exist in `NetPilot.Agent` yet (still `Host.CreateApplicationBuilder`, no `WebApplication`), no bearer-token auth, no OpenAPI. Phase 5's v1 covers §3.1 (system), the device/policy/block/reboot/activity rows of §3.3, and §4's auth — deliberately **not** §3.2 (wireless, since `phase3-wireless-management-plan.md` steps 6–9 aren't built) or §3.4 (SSE push). Treat §3/§4/§5 below as the full target shape; Phase 5 is the sequencing for getting there in two bites instead of one.
+
+**`RouterSessionManager` is done as of July 31, 2026** — see `src/NetPilot.Core/RouterConnection/RouterSessionManager.cs`, wired into `Worker.cs` and all `Home.razor` router call sites. §1.2(b) below and §6 item 1 are resolved; the remaining blocker for this doc's API is purely the missing HTTP host itself.
 
 **Purpose:** two things. First, a review of the current codebase against what a Home Assistant integration actually demands — what's already right, and what would break. Second, the concrete API contract that **Phase 3 builds** and Phase 4 consumes, so the HA work is writing a Python client against a stable surface rather than co-designing a server.
 
@@ -28,7 +30,7 @@
 
 **(a) There is no HTTP API at all.** `NetPilot.Web` is Blazor Server only (`MapRazorComponents`, no `MapGet`/`MapPost`); `NetPilot.Agent` is a bare `Host` with no server. Nothing external can read or change anything. This is the whole of the Phase 4 blocker and the reason the API is being built in Phase 3.
 
-**(b) Two processes fight over one router login.** `Home.razor` calls `RouterProvider.ConnectAsync` in four separate handlers; `Worker.cs` does the same on its schedule; the router permits exactly one session (`NetPilot_Research_Findings_and_Architecture.md` §3.1 step 8, and `TpLinkRouterClient.LoginAsync`'s own error text). Today the Agent absorbs this by reconnecting next tick. Add HA as a third writer and it becomes a real fault source — particularly for wireless writes, where a half-applied change is materially worse than a retried speed limit. `RouterSessionManager` (Phase 3 §6.1) is the fix and it should land before, not after, the API.
+**(b) ~~Two processes fight over one router login.~~ Fixed July 31, 2026.** `Home.razor` used to call `RouterProvider.ConnectAsync` in (by the time this landed) eight separate handlers, independently of `Worker.cs`'s own schedule — the router permits exactly one session (`NetPilot_Research_Findings_and_Architecture.md` §3.1 step 8, and `TpLinkRouterClient.LoginAsync`'s own error text). `RouterSessionManager` (Phase 3 §6.1) now serializes every caller behind one lock; both `Worker.cs` and `Home.razor` route through it.
 
 **(c) The poll interval is wrong for automation.** 180 s of latency is invisible for bandwidth policy and unacceptable for "away → WiFi off". HA users read that as a broken integration. Phase 3 §6.2 splits the loop; without it, the HA integration will feel bad no matter how clean the API is.
 
@@ -163,7 +165,7 @@ The automations the user described map directly:
 
 Ordered by how much pain their absence causes:
 
-1. `RouterSessionManager` — one serialized router session. Without it, HA writes race the Agent loop.
+1. ~~`RouterSessionManager` — one serialized router session.~~ **Done July 31, 2026.**
 2. Agent as `WebApplication` + the §3 endpoints + §4 auth. The literal prerequisite.
 3. Wireless desired-state model with stable `WirelessNetworkId`s and per-network `features`.
 4. Loop split so writes apply in seconds, not on a 180 s tick.

@@ -1,4 +1,5 @@
 using NetPilot.Core.Enforcement;
+using NetPilot.Core.RouterConnection;
 using NetPilot.Core.Usage;
 using NetPilot.Data;
 using NetPilot.Providers.TpLink;
@@ -13,6 +14,7 @@ var keyRingPath = Path.Combine(dataDir, "keys");
 
 builder.Services.AddNetPilotData(dbPath, keyRingPath);
 builder.Services.AddTpLinkProvider();
+builder.Services.AddSingleton<RouterSessionManager>();
 builder.Services.AddSingleton<PolicyReconciliationService>();
 builder.Services.AddSingleton(TimeZoneInfo.FindSystemTimeZoneById(
     builder.Configuration["NetPilot:Usage:TimeZoneId"] ?? "Africa/Cairo"));

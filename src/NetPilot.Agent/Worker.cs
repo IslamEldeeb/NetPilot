@@ -11,7 +11,9 @@ namespace NetPilot.Agent;
 /// The reconciliation loop: one read, per-device fingerprint compare, write only what's
 /// wrong — every {PollIntervalSeconds} (default 30s). Never crashes the whole worker on a
 /// single bad tick (router offline, bad password, transient network error); logs and
-/// retries next tick instead.
+/// retries next tick instead. Connecting and every router call go through
+/// RouterSessionManager so this tick can never collide with a Web dashboard request (or,
+/// later, the Home Assistant API) for the router's single login slot.
 /// </summary>
 public class Worker(
     ILogger<Worker> logger,
@@ -20,11 +22,10 @@ public class Worker(
     IRouterConnectionStore connectionStore,
     RouterPasswordProtector passwordProtector,
     IRouterProvider routerProvider,
+    RouterSessionManager sessionManager,
     PolicyReconciliationService reconciliationService,
     UsageTrackingService usageTrackingService) : BackgroundService
 {
-    private bool _connected;
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await policyStore.EnsureSeedCategoriesAsync(stoppingToken);
@@ -36,22 +37,19 @@ public class Worker(
         {
             try
             {
-                if (!_connected && !await TryConnectAsync(stoppingToken))
-                {
-                    logger.LogWarning(
-                        "No router configured yet — set it from the dashboard, or ROUTER_HOST/ROUTER_PASSWORD env vars on first run. Retrying in {Interval}.",
-                        pollInterval);
-                }
-                else
-                {
-                    var snapshots = await reconciliationService.ReconcileAsync(routerProvider, stoppingToken);
-                    await usageTrackingService.TrackAsync(snapshots, stoppingToken);
-                }
+                var snapshots = await sessionManager.ExecuteAsync(
+                    p => reconciliationService.ReconcileAsync(p, stoppingToken), stoppingToken);
+                await usageTrackingService.TrackAsync(snapshots, stoppingToken);
+            }
+            catch (RouterNotConfiguredException)
+            {
+                logger.LogWarning(
+                    "No router configured yet — set it from the dashboard, or ROUTER_HOST/ROUTER_PASSWORD env vars on first run. Retrying in {Interval}.",
+                    pollInterval);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 logger.LogError(ex, "Reconciliation tick failed — will reconnect and retry next tick.");
-                _connected = false;
             }
 
             await Task.Delay(pollInterval, stoppingToken);
@@ -68,20 +66,5 @@ public class Worker(
 
         await connectionStore.SeedFromEnvironmentIfEmptyAsync(
             routerProvider.ProviderId, envHost, passwordProtector.Encrypt(envPassword), ct);
-    }
-
-    private async Task<bool> TryConnectAsync(CancellationToken ct)
-    {
-        var connection = await connectionStore.GetAsync(ct);
-        if (connection is null)
-            return false;
-
-        var password = passwordProtector.Decrypt(connection.EncryptedPassword);
-        var settings = new RouterConnectionSettings(connection.Host, connection.UseHttps, connection.Username, password);
-
-        await routerProvider.ConnectAsync(settings, ct);
-        _connected = true;
-        logger.LogInformation("Connected to router at {Host}", connection.Host);
-        return true;
     }
 }

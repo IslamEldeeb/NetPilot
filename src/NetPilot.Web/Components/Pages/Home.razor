@@ -18,6 +18,7 @@
 @inject RouterPasswordProtector PasswordProtector
 @inject IRouterProvider RouterProvider
 @inject PolicyReconciliationService ReconciliationService
+@inject RouterSessionManager SessionManager
 @inject UsageTrackingService UsageTrackingService
 @inject TimeZoneInfo UsageTimeZone
 @inject ILogger<Home> Logger
@@ -778,8 +779,7 @@
                 : _editModel.Password;
 
             var settings = new RouterConnectionSettings(_editModel.Host, _editModel.UseHttps, _editModel.Username, password);
-            await RouterProvider.ConnectAsync(settings, CancellationToken.None);
-            var info = await RouterProvider.GetRouterInfoAsync(CancellationToken.None);
+            var info = await SessionManager.TestConnectionAsync(settings, p => p.GetRouterInfoAsync(CancellationToken.None), CancellationToken.None);
             _testConnectionOk = true;
             _testConnectionResult = $"Connected — {info.Model} ({info.FirmwareVersion})";
         }
@@ -807,10 +807,8 @@
         _refreshError = null;
         try
         {
-            var password = PasswordProtector.Decrypt(_connection.EncryptedPassword);
-            var settings = new RouterConnectionSettings(_connection.Host, _connection.UseHttps, _connection.Username, password);
-            await RouterProvider.ConnectAsync(settings, CancellationToken.None);
-            var snapshots = await ReconciliationService.ReconcileAsync(RouterProvider, CancellationToken.None);
+            var snapshots = await SessionManager.ExecuteAsync(
+                p => ReconciliationService.ReconcileAsync(p, CancellationToken.None), CancellationToken.None);
             await UsageTrackingService.TrackAsync(snapshots, CancellationToken.None);
             await RefreshLiveDataAsync();
         }
@@ -895,10 +893,8 @@
 
         try
         {
-            var password = PasswordProtector.Decrypt(_connection.EncryptedPassword);
-            var settings = new RouterConnectionSettings(_connection.Host, _connection.UseHttps, _connection.Username, password);
-            await RouterProvider.ConnectAsync(settings, CancellationToken.None);
-            await ReconciliationService.ReconcileAsync(RouterProvider, CancellationToken.None);
+            await SessionManager.ExecuteAsync(
+                p => ReconciliationService.ReconcileAsync(p, CancellationToken.None), CancellationToken.None);
             await RefreshLiveDataAsync();
         }
         catch (Exception ex)
@@ -916,10 +912,7 @@
         _rebootResult = null;
         try
         {
-            var password = PasswordProtector.Decrypt(_connection.EncryptedPassword);
-            var settings = new RouterConnectionSettings(_connection.Host, _connection.UseHttps, _connection.Username, password);
-            await RouterProvider.ConnectAsync(settings, CancellationToken.None);
-            await RouterProvider.RebootAsync(CancellationToken.None);
+            await SessionManager.ExecuteAsync(p => p.RebootAsync(CancellationToken.None), CancellationToken.None);
 
             _rebootOk = true;
             _rebootResult = "Reboot command sent — the router should be back online in a minute or two.";
@@ -951,10 +944,7 @@
         _blockActionError = null;
         try
         {
-            var password = PasswordProtector.Decrypt(_connection.EncryptedPassword);
-            var settings = new RouterConnectionSettings(_connection.Host, _connection.UseHttps, _connection.Username, password);
-            await RouterProvider.ConnectAsync(settings, CancellationToken.None);
-            var token = await RouterProvider.BlockDeviceAsync(mac, CancellationToken.None);
+            var token = await SessionManager.ExecuteAsync(p => p.BlockDeviceAsync(mac, CancellationToken.None), CancellationToken.None);
 
             device.IsBlocked = true;
             device.BlockListToken = token;
@@ -985,14 +975,12 @@
             return;
 
         var mac = (string)device.Mac;
+        var blockListToken = device.BlockListToken;
         _blockingMac = mac;
         _blockActionError = null;
         try
         {
-            var password = PasswordProtector.Decrypt(_connection.EncryptedPassword);
-            var settings = new RouterConnectionSettings(_connection.Host, _connection.UseHttps, _connection.Username, password);
-            await RouterProvider.ConnectAsync(settings, CancellationToken.None);
-            await RouterProvider.UnblockDeviceAsync(mac, device.BlockListToken, CancellationToken.None);
+            await SessionManager.ExecuteAsync(p => p.UnblockDeviceAsync(mac, blockListToken, CancellationToken.None), CancellationToken.None);
 
             device.IsBlocked = false;
             device.BlockListToken = null;
@@ -1028,10 +1016,8 @@
         _wirelessError = null;
         try
         {
-            var password = PasswordProtector.Decrypt(_connection.EncryptedPassword);
-            var settings = new RouterConnectionSettings(_connection.Host, _connection.UseHttps, _connection.Username, password);
-            await RouterProvider.ConnectAsync(settings, CancellationToken.None);
-            _wireless = (await RouterProvider.GetWirelessNetworksAsync(CancellationToken.None)).ToList();
+            _wireless = (await SessionManager.ExecuteAsync(
+                p => p.GetWirelessNetworksAsync(CancellationToken.None), CancellationToken.None)).ToList();
         }
         catch (Exception ex)
         {
@@ -1076,10 +1062,8 @@
                 Password = string.IsNullOrEmpty(_wirelessEditPassword) ? null : _wirelessEditPassword
             };
 
-            var password = PasswordProtector.Decrypt(_connection.EncryptedPassword);
-            var settings = new RouterConnectionSettings(_connection.Host, _connection.UseHttps, _connection.Username, password);
-            await RouterProvider.ConnectAsync(settings, CancellationToken.None);
-            var updated = await RouterProvider.ApplyWirelessAsync(id, update, CancellationToken.None);
+            var updated = await SessionManager.ExecuteAsync(
+                p => p.ApplyWirelessAsync(id, update, CancellationToken.None), CancellationToken.None);
 
             var index = _wireless.FindIndex(w => w.Id == id);
             if (index >= 0) _wireless[index] = updated;

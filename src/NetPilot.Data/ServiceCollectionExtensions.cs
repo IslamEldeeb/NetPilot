@@ -30,6 +30,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IUsageStore, LiteUsageStore>();
         services.AddSingleton<IDeviceClassifier, HeuristicDeviceClassifier>();
         services.AddSingleton<RouterPasswordProtector>();
+        services.AddSingleton<IRouterPasswordCipher>(sp => sp.GetRequiredService<RouterPasswordProtector>());
         return services;
     }
 }

@@ -6,7 +6,7 @@
 
 **Read first:** `docs/phase4-home-assistant-readiness.md` (the full API contract and HA entity mapping this plan narrows down for v1), `docs/phase3-wireless-management-plan.md` (why wireless is deferred), `docs/mvp-product-architecture.md` (baseline architecture).
 
-**Written against commit `1e4c5dc`.** Verified by code audit: `RouterSessionManager` doesn't exist; `NetPilot.Agent/Program.cs` is `Host.CreateApplicationBuilder`, no HTTP surface; `NetPilot.Web/Home.razor` calls `IRouterProvider` directly; `RouterCapabilities`, device blocking, and real `GetRouterInfoAsync` are already done and reusable as-is.
+**Written against commit `1e4c5dc`.** Verified by code audit at the time: `RouterSessionManager` doesn't exist; `NetPilot.Agent/Program.cs` is `Host.CreateApplicationBuilder`, no HTTP surface; `NetPilot.Web/Home.razor` calls `IRouterProvider` directly; `RouterCapabilities`, device blocking, and real `GetRouterInfoAsync` are already done and reusable as-is. **Update July 31, 2026: `RouterSessionManager` now exists — see Step 1 below.** The rest of this paragraph describes the state before that.
 
 ---
 
@@ -14,8 +14,8 @@
 
 Two things block *any* HA integration regardless of feature scope, so they come first no matter what:
 
-1. **The two-session bug is real, not theoretical.** `Home.razor` and `Worker.cs` both call `RouterProvider.ConnectAsync` independently; the router allows exactly one login. This already misbehaves today with two actors (Web + Agent). Adding HA as a third writer without fixing it first turns an occasional reconnect into a real fault source the moment HA starts polling on its own schedule.
-2. **There is no HTTP surface at all.** `NetPilot.Agent` is a bare `Host`. Until it's a `WebApplication` with endpoints and auth, nothing external — HA or otherwise — can reach NetPilot.
+1. ~~**The two-session bug is real, not theoretical.**~~ **Fixed July 31, 2026** — see Step 1. `Home.razor` and `Worker.cs` used to call `RouterProvider.ConnectAsync` independently; the router allows exactly one login, and this already misbehaved today with two actors (Web + Agent). `RouterSessionManager` closes it before HA becomes a third writer.
+2. **There is no HTTP surface at all.** `NetPilot.Agent` is a bare `Host`. Until it's a `WebApplication` with endpoints and auth, nothing external — HA or otherwise — can reach NetPilot. **Still the remaining blocker.**
 
 Everything else (which endpoints, which HA entities) is scoped down from `phase4-home-assistant-readiness.md` §3/§5 to only what's already backed by working code: `IRouterProvider.GetDevicesAsync`, `SetSpeedLimitAsync`, `BlockDeviceAsync`/`UnblockDeviceAsync`, `GetRouterInfoAsync`, `RebootAsync`, plus the existing `ActivityLog` and `DevicePolicy` stores. No wireless endpoints, no `WirelessNetworkId`, no reconciliation service in this phase.
 
@@ -23,8 +23,8 @@ Everything else (which endpoints, which HA entities) is scoped down from `phase4
 
 ## 2. Build order
 
-### Step 1 — `RouterSessionManager` (`NetPilot.Core`)
-Single owner of the `IRouterProvider` connection, serialized behind a `SemaphoreSlim(1,1)`, re-logs-in on session-expiry, exposes `ExecuteAsync<T>(Func<IRouterProvider, Task<T>>)`. `Worker.cs` and (temporarily) `Home.razor` both route through it. This has value independent of HA — it fixes a live bug — so it's worth landing even if HA slipped.
+### Step 1 — `RouterSessionManager` (`NetPilot.Core`) — **done July 31, 2026**
+Single owner of the `IRouterProvider` connection, serialized behind a `SemaphoreSlim(1,1)`, re-logs-in on session-expiry, exposes `ExecuteAsync<T>(Func<IRouterProvider, Task<T>>)` plus a `TestConnectionAsync` overload for the dashboard's unsaved-settings test flow. `Worker.cs` and all eight of `Home.razor`'s router call sites route through it now — see `src/NetPilot.Core/RouterConnection/RouterSessionManager.cs` and its tests. Landed ahead of the rest of this phase, exactly as planned, since it fixes a live bug independent of HA.
 
 ### Step 2 — `NetPilot.Agent` becomes a `WebApplication`
 - Convert `Program.cs` from `Host.CreateApplicationBuilder` to `WebApplication.CreateBuilder`; keep `AddHostedService<Worker>()` as-is.

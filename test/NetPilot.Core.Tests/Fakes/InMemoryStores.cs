@@ -1,9 +1,39 @@
 using NetPilot.Core.Devices;
 using NetPilot.Core.Enforcement;
 using NetPilot.Core.Policy;
+using NetPilot.Core.RouterConnection;
 using NetPilot.Core.Usage;
 
 namespace NetPilot.Core.Tests.Fakes;
+
+public class InMemoryRouterConnectionStore : IRouterConnectionStore
+{
+    private RouterConnection? _connection;
+
+    public Task<RouterConnection?> GetAsync(CancellationToken ct) => Task.FromResult(_connection);
+
+    public Task SaveAsync(RouterConnection connection, CancellationToken ct)
+    {
+        _connection = connection;
+        return Task.CompletedTask;
+    }
+
+    public Task SeedFromEnvironmentIfEmptyAsync(string providerId, string? host, string? encryptedPassword, CancellationToken ct)
+    {
+        if (_connection is null && host is not null && encryptedPassword is not null)
+            _connection = new RouterConnection(providerId, host, UseHttps: true, RouterConnectionSettings.DefaultUsername, encryptedPassword);
+        return Task.CompletedTask;
+    }
+}
+
+/// <summary>No-op cipher for tests — passes the value through unchanged, since real Data
+/// Protection isn't available outside NetPilot.Data and the session-manager tests don't
+/// care about actual encryption, only that decryption happens exactly once per connect.</summary>
+public class FakePasswordCipher : IRouterPasswordCipher
+{
+    public string Encrypt(string plaintextPassword) => plaintextPassword;
+    public string Decrypt(string encryptedPassword) => encryptedPassword;
+}
 
 public class InMemoryDeviceStore : IDeviceStore
 {

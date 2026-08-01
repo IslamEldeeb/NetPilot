@@ -11,12 +11,26 @@ public class FakeRouterProvider(RouterCapabilities capabilities) : IRouterProvid
     public List<(WirelessNetworkId Id, WirelessNetworkUpdate Update)> AppliedWirelessUpdates { get; } = [];
     public List<string> BlockedMacs { get; } = [];
     public List<string> UnblockedMacs { get; } = [];
+    public int ConnectCallCount { get; private set; }
+    public List<RouterConnectionSettings> ConnectCalls { get; } = [];
+    public bool ThrowOnNextConnect { get; set; }
 
     public string ProviderId => "fake";
     public string DisplayName => "Fake Router";
     public RouterCapabilities Capabilities => capabilities;
 
-    public Task ConnectAsync(RouterConnectionSettings settings, CancellationToken ct) => Task.CompletedTask;
+    public Task ConnectAsync(RouterConnectionSettings settings, CancellationToken ct)
+    {
+        if (ThrowOnNextConnect)
+        {
+            ThrowOnNextConnect = false;
+            throw new InvalidOperationException("Simulated connect failure.");
+        }
+
+        ConnectCallCount++;
+        ConnectCalls.Add(settings);
+        return Task.CompletedTask;
+    }
 
     public Task<IReadOnlyList<RouterDeviceSnapshot>> GetDevicesAsync(CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<RouterDeviceSnapshot>>(Devices);
