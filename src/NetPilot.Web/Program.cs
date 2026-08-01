@@ -14,6 +14,8 @@ var keyRingPath = Path.Combine(dataDir, "keys");
 builder.Services.AddNetPilotData(dbPath, keyRingPath);
 builder.Services.AddTpLinkProvider();
 builder.Services.AddSingleton<PolicyReconciliationService>();
+builder.Services.AddSingleton(TimeZoneInfo.FindSystemTimeZoneById(
+    builder.Configuration["NetPilot:Usage:TimeZoneId"] ?? "Africa/Cairo"));
 builder.Services.AddSingleton<UsageTrackingService>();
 
 // Add services to the container.

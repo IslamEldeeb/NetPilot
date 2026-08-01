@@ -19,14 +19,19 @@ namespace NetPilot.Core.Usage;
 /// baseline-only for the first observation.
 /// Called once per tick with the same snapshot PolicyReconciliationService already fetched
 /// — no extra HTTP call to the router.
+/// Month/day bucket boundaries are computed in <paramref name="timeZone"/>, not UTC — all
+/// other timestamps (LastPollAtUtc, FinalizedAtUtc, activity log entries) stay UTC as before;
+/// only "which month/day bucket does this reading belong to" uses local time, so totals line
+/// up with the user's own calendar instead of rolling over a few hours off at UTC midnight.
 /// </summary>
-public class UsageTrackingService(IUsageStore usageStore, IActivityLogStore activityLog)
+public class UsageTrackingService(IUsageStore usageStore, IActivityLogStore activityLog, TimeZoneInfo timeZone)
 {
     public async Task TrackAsync(IReadOnlyList<RouterDeviceSnapshot> snapshots, CancellationToken ct)
     {
         var now = DateTimeOffset.UtcNow;
-        var monthKey = MonthKeyFor(now);
-        var dayKey = DayKeyFor(now);
+        var local = TimeZoneInfo.ConvertTime(now, timeZone);
+        var monthKey = MonthKeyFor(local);
+        var dayKey = DayKeyFor(local);
 
         foreach (var snapshot in snapshots)
         {
@@ -93,6 +98,6 @@ public class UsageTrackingService(IUsageStore usageStore, IActivityLogStore acti
         }
     }
 
-    private static string MonthKeyFor(DateTimeOffset utc) => utc.ToString("yyyy-MM");
-    private static string DayKeyFor(DateTimeOffset utc) => utc.ToString("yyyy-MM-dd");
+    private static string MonthKeyFor(DateTimeOffset local) => local.ToString("yyyy-MM");
+    private static string DayKeyFor(DateTimeOffset local) => local.ToString("yyyy-MM-dd");
 }

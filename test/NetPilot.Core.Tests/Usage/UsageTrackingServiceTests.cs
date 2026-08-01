@@ -19,7 +19,7 @@ public class UsageTrackingServiceTests
     {
         var usage = new InMemoryUsageStore();
         var log = new InMemoryActivityLogStore();
-        var service = new UsageTrackingService(usage, log);
+        var service = new UsageTrackingService(usage, log, TimeZoneInfo.Utc);
         return (service, usage, log);
     }
 

@@ -19,6 +19,7 @@
 @inject IRouterProvider RouterProvider
 @inject PolicyReconciliationService ReconciliationService
 @inject UsageTrackingService UsageTrackingService
+@inject TimeZoneInfo UsageTimeZone
 @inject ILogger<Home> Logger
 
 <PageTitle>NetPilot</PageTitle>
@@ -128,8 +129,8 @@
                         || (d.FriendlyName ?? d.Hostname).Contains(_searchText, StringComparison.OrdinalIgnoreCase)
                         || ((string)d.Mac).Contains(_searchText, StringComparison.OrdinalIgnoreCase))
                     .ToList();
-                var todayUsageByMac = UsageQuery.BytesByDevice(UsagePeriodType.Day, DateTimeOffset.UtcNow.ToString("yyyy-MM-dd"), isCurrentPeriod: true, _usageStates, _monthlyHistory, _dailyHistory);
-                var monthUsageByMac = UsageQuery.BytesByDevice(UsagePeriodType.Month, DateTimeOffset.UtcNow.ToString("yyyy-MM"), isCurrentPeriod: true, _usageStates, _monthlyHistory, _dailyHistory);
+                var todayUsageByMac = UsageQuery.BytesByDevice(UsagePeriodType.Day, LocalNow().ToString("yyyy-MM-dd"), isCurrentPeriod: true, _usageStates, _monthlyHistory, _dailyHistory);
+                var monthUsageByMac = UsageQuery.BytesByDevice(UsagePeriodType.Month, LocalNow().ToString("yyyy-MM"), isCurrentPeriod: true, _usageStates, _monthlyHistory, _dailyHistory);
             }
             @if (_devices.Count == 0)
             {
@@ -322,14 +323,14 @@
                         <option value="@((string)device.Mac)">@(device.FriendlyName ?? device.Hostname)</option>
                     }
                 </select>
-                <span class="np-device-sub">Times are UTC</span>
+                <span class="np-device-sub">Times are @UsageTimeZone.Id</span>
             </div>
 
             @{
                 var periodKey = _usagePeriodType == UsagePeriodType.Month ? _selectedMonth : _selectedDay;
                 var isCurrentPeriod = periodKey == (_usagePeriodType == UsagePeriodType.Month
-                    ? DateTimeOffset.UtcNow.ToString("yyyy-MM")
-                    : DateTimeOffset.UtcNow.ToString("yyyy-MM-dd"));
+                    ? LocalNow().ToString("yyyy-MM")
+                    : LocalNow().ToString("yyyy-MM-dd"));
                 var byDevice = UsageQuery.BytesByDevice(_usagePeriodType, periodKey, isCurrentPeriod, _usageStates, _monthlyHistory, _dailyHistory);
                 var filtered = string.IsNullOrEmpty(_usageMacFilter)
                     ? byDevice
@@ -540,6 +541,8 @@
     private List<UsageHistoryEntry> _monthlyHistory = [];
     private List<UsageDailyHistoryEntry> _dailyHistory = [];
     private UsagePeriodType _usagePeriodType = UsagePeriodType.Month;
+    // Placeholder only — @inject properties aren't set yet when field initializers run.
+    // OnInitializedAsync overwrites these with UsageTimeZone-correct values before first render.
     private string _selectedMonth = DateTimeOffset.UtcNow.ToString("yyyy-MM");
     private string _selectedDay = DateTimeOffset.UtcNow.ToString("yyyy-MM-dd");
     private string _usageMacFilter = "";
@@ -579,8 +582,13 @@
     private PeriodicTimer? _timer;
     private CancellationTokenSource? _refreshCts;
 
+    private DateTimeOffset LocalNow() => TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, UsageTimeZone);
+
     protected override async Task OnInitializedAsync()
     {
+        _selectedMonth = LocalNow().ToString("yyyy-MM");
+        _selectedDay = LocalNow().ToString("yyyy-MM-dd");
+
         await PolicyStore.EnsureSeedCategoriesAsync(CancellationToken.None);
         await RefreshAsync();
 

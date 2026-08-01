@@ -77,6 +77,7 @@ Both containers mount the same `netpilot-data` volume, which holds the LiteDB fi
 | `ROUTER_PASSWORD` | `deploy/docker/.env` | — | Router admin password, first-run seed only, encrypted before storage |
 | `NetPilot__DataDirectory` | Baked into both Dockerfiles | `/data` | Where the shared LiteDB file and key ring live inside each container |
 | `NetPilot__PollIntervalSeconds` | Agent's `appsettings.json`, override via compose `environment:` if needed | `180` | Reconciliation tick interval |
+| `NetPilot__Usage__TimeZoneId` | Both `appsettings.json`, override via compose `environment:` if needed | `Africa/Cairo` | IANA time zone used for usage-tracking month/day bucket boundaries (not for any other timestamp — activity log and internal state stay UTC) |
 | `ASPNETCORE_URLS` | Baked into `Dockerfile.web` | `http://+:8080` | Web listen address |
 
 To override any `NetPilot:*` setting without rebuilding, add it under `environment:` in `docker-compose.yml` using the double-underscore convention (e.g. `NetPilot__PollIntervalSeconds=60`).
