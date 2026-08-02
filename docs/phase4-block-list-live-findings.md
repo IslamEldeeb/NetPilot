@@ -54,9 +54,9 @@ Response: `{"success": true}`.
   re-fetches `GetDevicesAsync` and reuses that record's `key` rather than generating one.
 
 **Inferred, not independently confirmed — open items:**
-1. **`conn_type`** ("wireless" in the one sample) — assumed to be `"wired"` for a wired device
-   (mirroring the existing `deviceTag == "wired"` check used elsewhere), but no wired-device
-   capture exists to confirm this.
+1. ~~**`conn_type`**~~ — **Decided (July 31, 2026): dropped.** Low-impact single-field assumption
+   on a rarely-tested path; not worth tracking further. Current code still assumes `"wired"` for
+   wired devices (mirroring the existing `deviceTag == "wired"` check), unconfirmed but untouched.
 2. **The top-level `index=0`** — both captures used `index=0` (one insert, one remove of what
    appear to be different, unrelated entries). Whether this is a literal constant, a position in
    the blacklist itself, or something else entirely (e.g. a batch-operation index) is unconfirmed.
