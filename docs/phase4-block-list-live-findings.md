@@ -61,8 +61,7 @@ Response: `{"success": true}`.
    appear to be different, unrelated entries). Whether this is a literal constant, a position in
    the blacklist itself, or something else entirely (e.g. a batch-operation index) is unconfirmed.
    Kept as a hardcoded `0` for now, matching both observed samples.
-3. **No read/list operation was captured** for `form=black_list`. The router UI must have some way
-   to display currently-blocked devices, but that request wasn't captured. Without it:
+3. ~~**No read/list operation was captured** for `form=black_list`.~~ **Moved to `docs/deferred-issues.md` #2 (July 31, 2026)** — needs a live capture, tracked there instead of here. Until it's resolved:
    - NetPilot cannot reconcile blocked state against the router the way it does for Speed Limit
      (`RouterReportedLimit` / drift detection) — blocking is implemented as a direct dashboard
      action (mirrors `RebootAsync`'s pattern), not a reconciled policy.
