@@ -1,6 +1,6 @@
 # NetPilot — Phase 5 Plan: Daily Quotas, Web Push Notifications, Rules Engine
 
-**Status:** plan only, no code yet. Implementation is delegated task-by-task to Codex (see §8); planning and review happen in the Claude session.
+**Status:** T1–T5 implemented (timezone, quota model/UI, enforcement, notification server, Web Push client); T6 supplies HTTPS access/deployment docs. Live HTTPS/Android checks remain deployment verification. T7 rules engine and T8 LAN-traffic exclusion are planned. This document retains the original design sketches; see [server notifications](server-notifications.md) for implemented notification behaviour.
 
 **Decisions taken with the user**
 
@@ -12,7 +12,7 @@
 ## 1. Preconditions and risks
 
 1. **Usage counter is not live-verified** (`phase2-usage-tracking-feature.md` §2, §6). Enforcement on wrong numbers would throttle or block innocent devices. Therefore every quota and rule ships with a **dry-run** mode, default **on** for the first deploy: it evaluates, logs "would have done X", notifies, but does not write to the router. Enforcement is switched on per quota/rule after the user has compared numbers for a few days.
-2. **Day keys are UTC today** (`UsageTrackingService.DayKeyFor`). Cairo midnight differs by 2–3 h (DST applies). Change to a timezone-aware key. Existing history rows stay as-is (UTC keys); document the one-time boundary overlap.
+2. **Timezone keys implemented in T1.** Cairo midnight differs from UTC by 2–3 h (DST applies); current keys use `UsagePeriodClock`. Existing history rows stay as-is (UTC keys); document the one-time boundary overlap.
 3. **Two-session bug** (`phase3-wireless-management-plan.md` §6.1). Quota/rule actions that touch the router run **only in the Agent**. The Web dashboard edits quota/rule *data* and never writes to the router for them.
 4. **Block has no read/list endpoint** (`phase4-block-list-live-findings.md`). NetPilot cannot verify blocked state; it relies on `Device.IsBlocked` + `BlockListToken`. Throttle is the safer default action because it reuses the reconciled speed-limit path.
 5. **Lockout.** Never auto-block the device the user manages from. A **protected devices** list is exempt from Block and Throttle (notify still allowed).
@@ -80,12 +80,12 @@ interface INotificationChannel { string Id { get; } Task SendAsync(NotificationM
 - `PushSubscription` documents (endpoint, p256dh, auth, label, createdAt) in LiteDB; written by Web, read by Agent (shared DB, same as everything else).
 - Sender uses a maintained WebPush NuGet package; 404/410 from the push service deletes the subscription.
 - Message example: "iPhone-Islam: 4.8 of 5 GB used today (96%)". Tap opens `/devices/{mac}`.
-- **Notification actions** (Android supports them): "+1 GB today", "Unblock / Restore now". These call authenticated Web endpoints that write `ExtraAllowanceBytes` / request a revert; the **Agent** applies it on its next tick (keeps router writes in the Agent).
+- **Notification actions** (Android supports them): "+1 GB today", "Unblock / Restore now". These call token-authorized Web endpoints that write `ExtraAllowanceBytes` / request a revert; the **Agent** applies it on its next tick (keeps router writes in the Agent).
 
 ### 3.3 Web side (`NetPilot.Web`)
 
-- `wwwroot/sw.js` (push + notificationclick + actions), `wwwroot/manifest.webmanifest`, JS interop to request permission and subscribe, "Enable notifications on this device" button in Settings, a "Send test notification" button, list of subscribed devices with remove.
-- Action endpoints need a minimal auth (see §6) because they change enforcement state.
+- `wwwroot/sw.js` (push + notificationclick + actions), `wwwroot/manifest.webmanifest`, JS interop to request permission and subscribe, "Enable notifications on this device" button in the Notifications tab, a "Send test notification" button, list of subscribed devices with remove.
+- T5 action endpoints use scoped, expiring, single-use tokens; there is no dashboard login. Keep access private (see §6).
 
 ### 3.4 Later channels
 
@@ -128,25 +128,25 @@ Safety rails: per-tick cap on automatic router writes; protected-devices exempti
 - `NetPilot.Core` interfaces `IQuotaStore`, `IPushSubscriptionStore`, `IRuleStore`, … implemented in `NetPilot.Data` (same `IXStore`/`LiteXStore` pattern).
 - Config: `NetPilot:TimeZone`, `NetPilot:Quota:DryRunDefault`, `NetPilot:Notifications:QuietHours`.
 
-## 6. HTTPS and access (decision needed)
+## 6. HTTPS and access
 
-Android Chrome only registers a service worker / push subscription on a **secure context**. Options on this Proxmox setup:
+Android Chrome requires a **secure context** for service workers / push subscriptions. [HTTPS access](https-access.md) gives reproducible setup steps and troubleshooting:
 
-| Option | Pros | Cons |
+| Option | Use | Constraint |
 |---|---|---|
-| **Tailscale `serve`** (recommended) | Real trusted cert (`*.ts.net`), works away from home, no CA install | Needs Tailscale on server and phone; in a privileged LXC needs `/dev/net/tun` passthrough in `109.conf`, or run Tailscale on the Proxmox host and proxy to `192.168.1.24:8080` |
-| Caddy with internal CA | Fully local | Must install the CA cert on the phone; LAN-only |
-| Cloudflare Tunnel | Real domain | Public exposure; needs auth first |
+| **Tailscale Serve (recommended)** | Trusted HTTPS at `<name>.<tailnet>.ts.net`, home and away | Official Docker image in userspace mode; no `/dev/net/tun` passthrough; phone must join the tailnet |
+| Caddy internal CA | LAN-only HTTPS | Install Caddy's root CA on the phone and preserve its data |
+| Chrome insecure-origin flag | One-off test only | Insecure and version-dependent; never a permanent setup |
 
-The push **payload** goes server → Google FCM → phone, so the server needs outbound internet only; the phone does not need to reach the server for delivery, only to open the dashboard.
+T6 ships optional Compose overrides; it does not enroll a real account or change the live CT. Base LAN access on HTTP `:8080` is preserved. **The dashboard has no authentication: never expose it to the public Internet or enable Tailscale Funnel.** T5 action tokens authorize only their scoped actions, not dashboard access.
 
-Auth: the dashboard has none today. Quota/notification-action endpoints change enforcement, so T5 adds a minimal gate (shared secret/cookie login) at least on those endpoints, and the plan assumes the dashboard is not exposed beyond the LAN/tailnet.
+Push sends need outbound Internet from Agent/Web. The phone needs HTTPS reachability for enrollment, dashboard access and notification actions; the push-service/OS delivery path is separate. Use the [deployment verification checklist](deployment.md#post-deploy-verification) before treating phone delivery as verified.
 
 ## 7. Open items
 
 - `trafficUsage` unit/reset verification (blocks turning dry-run off).
 - Whether the TP-Link snapshot exposes a live rate (needed for the sustained-rate trigger).
-- HTTPS option choice (§6).
+- Activate and verify the selected HTTPS option (§6); Tailscale is recommended, not yet enrolled by T6.
 - Whether quotas become rules in the engine or stay separate (decide at T7).
 
 ## 8. Delegation to Codex — task breakdown
@@ -159,8 +159,8 @@ Each task = one Codex run, reviewed as a diff, one commit. Tests alongside, `dot
 | T2 | Quota model, stores, resolution, protected devices; Quotas tab (default/category/device editors, progress bars) | Core, Data, Web | Resolution order tested; UI saves/loads; no router calls |
 | T3 | `QuotaEnforcementService`: thresholds once-per-period, dry-run, Throttle/Block/NotifyOnly actions, midnight revert, restart-safe state, activity events | Core, Agent | Tests with `FakeRouterProvider`: warn once, exceed once, revert once, protected device skipped, dry-run writes nothing |
 | T4 | Notification abstractions + `NotificationDispatcher` + `PushSubscription` store + VAPID keys + WebPush sender, dead-subscription cleanup | Core, Data, new notifications project, Agent | Sender unit-tested against a fake push service; keys persist in volume |
-| T5 | PWA + subscribe flow in Web: `sw.js`, manifest, permission/subscribe button, test-notification button, action endpoints (+1 GB, restore) with minimal auth | Web | Subscribes on Android Chrome over HTTPS; test push arrives; action buttons change state |
-| T6 | HTTPS access docs + compose/LXC changes (chosen option); update `docs/deployment.md`, README, stale `AGENTS.md` | deploy, docs | Documented, reproducible steps |
+| T5 | PWA + subscribe flow in Web: `sw.js`, manifest, permission/subscribe button, test-notification button, action endpoints (+1 GB, restore) with scoped single-use tokens | Web | Subscribes on Android Chrome over HTTPS; test push arrives; action buttons change state |
+| T6 | HTTPS access docs + optional userspace Tailscale/Caddy Compose overrides; update `docs/deployment.md`, README, stale `AGENTS.md` | deploy, docs | Documented, reproducible steps |
 | T7 | Rules engine: model, evaluator, v1 triggers/actions, templates, firing history view, rules UI | Core, Data, Agent, Web | Starter templates 1–3 working in dry-run; firing history visible |
 
 Order: **T1 → T2 → T3** gives working quotas with dashboard alerts; **T4 → T5 → T6** adds phone push; **T7** generalizes. After T3 deploys, run in dry-run for several days before enabling enforcement.

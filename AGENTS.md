@@ -4,12 +4,17 @@ AI-first, open-source home network automation platform. First business feature: 
 
 ## Status
 
-Architecture proposal is done and iterated on with the user; implementation has **not** started (no production code exists yet beyond the original empty project scaffold). Confirm the plan still holds before writing code, but no need to re-litigate settled decisions unless something concrete conflicts with them.
+Implementation is underway: all projects in `src/` exist and build (`NetPilot.Abstractions`, `NetPilot.Core`, `NetPilot.Data`, `TpLink.Sdk`, `NetPilot.Providers.TpLink`, `NetPilot.Agent`, `NetPilot.Web`), with tests under `test/`. Docker deploy assets (`deploy/docker/`) are in place and the app is **deployed and running** on the user's Proxmox home server (see `CLAUDE.md` Deployment section). Confirm the plan still holds before writing code, but no need to re-litigate settled decisions unless something concrete conflicts with them.
+
+### Phase 5 status
+
+T1–T5 are implemented: timezone, quota model/UI, enforcement, notification server, and Web Push client. T6 supplies HTTPS access and deployment docs; live HTTPS/Android verification remains a deployment check. T7 rules engine and T8 LAN-traffic exclusion are planned. Keep enforcement in dry-run until usage is verified and T8 is in place; see `docs/phase5-quotas-notifications-rules-plan.md`, `docs/server-notifications.md`, and `docs/https-access.md`.
 
 ## Required reading before touching code
 
 1. **`docs/mvp-product-architecture.md`** — the current blueprint. Project structure, domain model, the `IRouterProvider` multi-router abstraction, LiteDB persistence, Docker deployment. This is the spec.
 2. **`docs/phase1-live-findings.md`** — confirmed-live protocol ground truth captured directly against the user's real router (login flow, exact `GetDevices`/`SetSpeedLimit` endpoints, field names, units). Implement `TpLink.Sdk` / `NetPilot.Providers.TpLink` against this, not guesses.
+3. **`docs/phase5-quotas-notifications-rules-plan.md`** — Phase 5 scope, safety constraints, implemented tasks, and planned rules/LAN-traffic work. Deployment and phone setup: `docs/deployment.md`, `docs/server-notifications.md`, `docs/https-access.md`.
 
 Background/historical, read only if needed: `docs/NetPilot_Research_Findings_and_Architecture.md` (earlier, now-superseded research doc — has extra protocol detail on non-Speed-Limit endpoints like wireless/VPN config if that's ever relevant), `docs/phase1-plan.md` (working log from initial repo scaffolding).
 

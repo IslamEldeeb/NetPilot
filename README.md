@@ -25,6 +25,7 @@ Automatically apply per-device speed limits based on device category — Mobile,
 - [Projects](#projects)
 - [Technology](#technology)
 - [Getting started](#getting-started)
+- [Deploying Updates on Proxmox](#deploying-updates-on-proxmox)
 - [Documentation](#documentation)
 - [Security note](#security-note)
 
@@ -37,12 +38,14 @@ NetPilot runs a background reconciliation loop against your router:
 3. **Compare** against a fingerprint of the limit last applied.
 4. **Write** only the devices that drifted — no redundant router API calls on ticks where nothing changed.
 5. **Track** offline/online transitions and per-device usage history.
+6. **Evaluate quotas** by day/month, with default, category and device policies, protected devices, and dry-run enabled on new policies. Quota actions can notify, throttle or block.
+7. **Notify** registered browsers through Web Push, including scoped quota-extension and restore actions.
 
-A companion Blazor dashboard lets you review connected devices, edit category policies, set per-device overrides, watch a live activity log, and inspect usage history — all backed by the same embedded database the Agent writes to.
+A companion Blazor dashboard lets you review connected devices, edit category policies, set per-device overrides, watch a live activity log, inspect usage history, configure quotas in the **Quotas** tab, and subscribe/send a test from **Notifications** — all backed by the same embedded database the Agent writes to.
 
 ## Architecture
 
-Two deployables sharing one embedded database, built on five supporting libraries:
+Two deployables sharing one embedded database, built on six supporting libraries:
 
 ```
                      TP-Link Archer AX53  (HTTP, LAN-only)
@@ -81,6 +84,7 @@ NetPilot/
 │   ├── NetPilot.Abstractions/      router-agnostic contract (IRouterProvider)
 │   ├── NetPilot.Core/              domain model + policy/enforcement/usage logic
 │   ├── NetPilot.Data/              LiteDB persistence, encrypted credentials
+│   ├── NetPilot.Notifications.WebPush/  encrypted Web Push sender
 │   ├── TpLink.Sdk/                 standalone TP-Link protocol client
 │   ├── NetPilot.Providers.TpLink/  TpLink.Sdk → IRouterProvider adapter
 │   ├── NetPilot.Agent/             background reconciliation worker
@@ -99,8 +103,9 @@ NetPilot/
 | [`NetPilot.Data`](src/NetPilot.Data/README.md) | LiteDB persistence and encrypted-at-rest router credentials. |
 | [`TpLink.Sdk`](src/TpLink.Sdk/README.md) | Standalone TP-Link Archer protocol client (auth, transport, device/usage parsing). |
 | [`NetPilot.Providers.TpLink`](src/NetPilot.Providers.TpLink/README.md) | Thin adapter: `TpLink.Sdk` → `IRouterProvider`. |
+| `NetPilot.Notifications.WebPush` | Encrypted Web Push delivery through the shared notification pipeline. |
 | [`NetPilot.Agent`](src/NetPilot.Agent/README.md) | Background worker running the reconciliation loop. |
-| [`NetPilot.Web`](src/NetPilot.Web/README.md) | Blazor Server dashboard: devices, policies, activity log, usage. |
+| [`NetPilot.Web`](src/NetPilot.Web/README.md) | Blazor Server dashboard: devices, policies, activity log, usage, Quotas and Notifications. |
 
 ## Technology
 
@@ -111,7 +116,7 @@ NetPilot/
 | Dashboard | Blazor Server (Interactive Server render mode) | real-time UI without hand-rolled polling/SignalR, no separate frontend toolchain |
 | Secrets at rest | ASP.NET Core Data Protection | encrypts the router password before it touches LiteDB; key ring shared between Agent and Web |
 | Router protocol | Hand-built `TpLink.Sdk` (RSA login handshake, plain-JSON `smart_network` endpoints) | confirmed live against a real Archer AX53 — see [`docs/phase1-live-findings.md`](docs/phase1-live-findings.md) |
-| Tests | xUnit | `test/NetPilot.Core.Tests`, `test/NetPilot.Data.Tests`, `test/TpLink.Sdk.Tests` |
+| Tests | xUnit | `test/NetPilot.Core.Tests`, `test/NetPilot.Data.Tests`, `test/TpLink.Sdk.Tests`, `test/NetPilot.Notifications.WebPush.Tests` |
 | Deployment | Docker Compose, two images, one shared named volume | `Dockerfile.agent` + `Dockerfile.web`; see [`docs/deployment.md`](docs/deployment.md) |
 
 ## Getting started
@@ -139,10 +144,18 @@ After the initial deployment, update NetPilot to the latest version with:
 cd /opt/netpilot/repo/deploy/docker
 
 git pull origin master
-docker compose up -d
+docker compose --env-file .env up -d --build
 ```
 
-`docker compose up -d` will rebuild any services whose source or Dockerfile changed, recreate only the affected containers, and preserve the shared data volumes (LiteDB database and encryption keys).
+`--build` rebuilds the application images from the pulled source; `up` recreates containers when needed and preserves the shared data volumes (LiteDB database and encryption keys). With the configured `image:` tags, `up -d` alone does not rebuild changed source.
+
+If you enabled Tailscale HTTPS, use both Compose files for updates:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.tailscale.yml --env-file .env up -d --build
+```
+
+For the LAN-only Caddy option, use `docker-compose.caddy.yml` as the second file instead. See [HTTPS access](docs/https-access.md) and the [deployment checks](docs/deployment.md#post-deploy-verification). Keep quota enforcement in dry-run while validating usage; LAN-traffic exclusion (T8) is still planned.
 
 
 ## Documentation
@@ -152,9 +165,12 @@ docker compose up -d
 | [`docs/mvp-product-architecture.md`](docs/mvp-product-architecture.md) | Architecture spec: project structure, domain model, provider abstraction, deployment shape |
 | [`docs/phase1-live-findings.md`](docs/phase1-live-findings.md) | Confirmed-live TP-Link protocol details — login flow, endpoints, field names, units |
 | [`docs/deployment.md`](docs/deployment.md) | How to deploy with Docker Compose |
+| [`docs/https-access.md`](docs/https-access.md) | Android push over private Tailscale HTTPS, LAN Caddy alternative, troubleshooting |
+| [`docs/server-notifications.md`](docs/server-notifications.md) | Notification configuration, subscriptions, delivery and scoped actions |
+| [`docs/phase5-quotas-notifications-rules-plan.md`](docs/phase5-quotas-notifications-rules-plan.md) | Quotas, notifications and planned rules/LAN-traffic exclusion |
 | `docs/phase2-*.md` | Usage-tracking feature planning |
 | `docs/NetPilot_Research_Findings_and_Architecture.md` | Earlier, superseded research (background only) |
 
 ## Security note
 
-The dashboard assumes LAN-only reachability — there is no built-in authentication in v1. Do not expose `NetPilot.Web`'s port directly to the internet.
+The dashboard has **no authentication**. Keep it on your private LAN or your own trusted tailnet; anyone who can reach it can change settings. Use [Tailscale HTTPS](docs/https-access.md) for Android push and private remote access. HTTPS does not add a dashboard login. **Never expose NetPilot to the public Internet**, forward its ports from the router, or enable Tailscale Funnel.

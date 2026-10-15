@@ -1,0 +1,29 @@
+# Use with docker-compose.yml; no host ports or TUN device required.
+services:
+  tailscale:
+    # Bump this pin after checking https://tailscale.com/changelog and HTTPS access.
+    image: tailscale/tailscale:v1.104.1
+    environment:
+      TS_USERSPACE: "true"
+      TS_AUTH_ONCE: "true"
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+      TS_HOSTNAME: ${TS_HOSTNAME:-netpilot}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SERVE_CONFIG: /config/tailscale-serve.json
+      # Keep Docker DNS for the netpilot-web upstream.
+      TS_ACCEPT_DNS: "false"
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      # Single-file mount: recreate this service after editing the JSON.
+      - ./tailscale-serve.json:/config/tailscale-serve.json:ro
+    depends_on:
+      - netpilot-web
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+
+volumes:
+  tailscale-state:

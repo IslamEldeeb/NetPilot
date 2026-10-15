@@ -9,6 +9,8 @@ services:
     environment:
       - ROUTER_HOST=${ROUTER_HOST:-}
       - ROUTER_PASSWORD=${ROUTER_PASSWORD:-}
+      - NetPilot__Notifications__VapidSubject=${NETPILOT_VAPID_SUBJECT:-mailto:netpilot@localhost}
+      - NetPilot__TimeZone=${NETPILOT_TIMEZONE:-Africa/Cairo}
     logging:
       driver: json-file
       options:
@@ -23,6 +25,9 @@ services:
       dockerfile: deploy/docker/Dockerfile.web
     volumes:
       - netpilot-data:/data
+    environment:
+      - NetPilot__Notifications__VapidSubject=${NETPILOT_VAPID_SUBJECT:-mailto:netpilot@localhost}
+      - NetPilot__TimeZone=${NETPILOT_TIMEZONE:-Africa/Cairo}
     ports:
       - "8080:8080"
     logging:

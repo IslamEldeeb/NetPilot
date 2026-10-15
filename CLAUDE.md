@@ -6,10 +6,15 @@ AI-first, open-source home network automation platform. First business feature: 
 
 Implementation is underway: all projects in `src/` exist and build (`NetPilot.Abstractions`, `NetPilot.Core`, `NetPilot.Data`, `TpLink.Sdk`, `NetPilot.Providers.TpLink`, `NetPilot.Agent`, `NetPilot.Web`), with tests under `test/`. Docker deploy assets (`deploy/docker/`) are in place and the app is **deployed and running** on the user's Proxmox home server (see Deployment section below). Confirm the plan still holds before writing code, but no need to re-litigate settled decisions unless something concrete conflicts with them.
 
+### Phase 5 status
+
+T1–T5 are implemented: timezone, quota model/UI, enforcement, notification server, and Web Push client. T6 supplies HTTPS access and deployment docs; live HTTPS/Android verification remains a deployment check. T7 rules engine and T8 LAN-traffic exclusion are planned. Keep enforcement in dry-run until usage is verified and T8 is in place; see `docs/phase5-quotas-notifications-rules-plan.md`, `docs/server-notifications.md`, and `docs/https-access.md`.
+
 ## Required reading before touching code
 
 1. **`docs/mvp-product-architecture.md`** — the current blueprint. Project structure, domain model, the `IRouterProvider` multi-router abstraction, LiteDB persistence, Docker deployment. This is the spec.
 2. **`docs/phase1-live-findings.md`** — confirmed-live protocol ground truth captured directly against the user's real router (login flow, exact `GetDevices`/`SetSpeedLimit` endpoints, field names, units). Implement `TpLink.Sdk` / `NetPilot.Providers.TpLink` against this, not guesses.
+3. **`docs/phase5-quotas-notifications-rules-plan.md`** — Phase 5 scope, safety constraints, implemented tasks, and planned rules/LAN-traffic work. Deployment and phone setup: `docs/deployment.md`, `docs/server-notifications.md`, `docs/https-access.md`.
 
 Background/historical, read only if needed: `docs/NetPilot_Research_Findings_and_Architecture.md` (earlier, now-superseded research doc — has extra protocol detail on non-Speed-Limit endpoints like wireless/VPN config if that's ever relevant), `docs/phase1-plan.md` (working log from initial repo scaffolding).
 
@@ -29,7 +34,7 @@ Live on Proxmox at `192.168.1.13:8006`, inside LXC container **CT 109** (`NetPil
 
 - **CT must be privileged** (`unprivileged: 0` in `/etc/pve/lxc/109.conf`). Unprivileged LXC + nested Docker was tried and failed two ways: (1) runc can't write `net.ipv4.ip_unprivileged_port_start` under the unprivileged apparmor profile (`permission denied` on container start), and (2) even after adding `lxc.apparmor.profile: unconfined` and `features: nesting=1,keyctl=1`, flipping to `unprivileged: 1` killed `containerd` outright (nested overlayfs in a user namespace needs kernel/mount support this stack doesn't have). Don't re-attempt unprivileged without a concrete reason — privileged is the working, accepted state for this single-purpose home-lab host.
 - CT config also carries `lxc.apparmor.profile: unconfined` and `features: nesting=1,keyctl=1` — keep both even though privileged, they were part of the working combination.
-- Code is deployed via `git clone`/`git pull` of this repo directly onto the CT at `/opt/netpilot/repo`, then `docker compose --env-file .env up -d --build` from `deploy/docker/`. No CI/CD pipeline yet — updates are manual.
+- Code is deployed via `git clone`/`git pull` of this repo directly onto the CT at `/opt/netpilot/repo`, then `docker compose --env-file .env up -d --build` from `deploy/docker/`. When Tailscale is used, include `-f docker-compose.yml -f docker-compose.tailscale.yml` in that command (see `docs/https-access.md`). No CI/CD pipeline yet — updates are manual.
 - Real router credentials live in `deploy/docker/.env` on the CT only (gitignored, never committed).
 
 ## Constraints

@@ -1,0 +1,23 @@
+# LAN-only alternative for the current CT 109 address; no public forwarding.
+services:
+  caddy:
+    # Bump alongside the version note in docs/https-access.md after review.
+    image: caddy:2.11.7-alpine
+    ports:
+      - "192.168.1.24:443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - netpilot-web
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+
+volumes:
+  caddy-data:
+  caddy-config:
