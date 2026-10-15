@@ -164,3 +164,22 @@ Each task = one Codex run, reviewed as a diff, one commit. Tests alongside, `dot
 | T7 | Rules engine: model, evaluator, v1 triggers/actions, templates, firing history view, rules UI | Core, Data, Agent, Web | Starter templates 1–3 working in dry-run; firing history visible |
 
 Order: **T1 → T2 → T3** gives working quotas with dashboard alerts; **T4 → T5 → T6** adds phone push; **T7** generalizes. After T3 deploys, run in dry-run for several days before enabling enforcement.
+
+## 9. T8 — Exclude LAN traffic from Internet usage (Jellyfin → TV)
+
+**Problem (confirmed by the user):** the router counts *all* traffic per device, local and Internet alike. A Jellyfin stream to the TV is counted on the server **and** on the TV, though it never touches the Internet. Quotas and rules must act on Internet bytes only, so T8 must land **before quota enforcement leaves dry-run**.
+
+**Model:** `internetBytes(device) = routerBytes(device) − lanBytes(device)`. LAN bytes between a pair of devices are subtracted from **both** endpoints, because the router counted them on both.
+
+**Source of LAN bytes (`ILocalTrafficSource`, cumulative bytes per peer IP):**
+- Preferred: nftables/iptables per-destination counters on the Jellyfin host (private-range destinations only, so remote viewers streaming over the Internet stay counted as real usage), exposed by a tiny read-only endpoint. Exact.
+- Fallback: Jellyfin `/Sessions` API estimate (client IP, bitrate × play time). Approximate, coarse at the 180 s tick.
+- Alternative with no code: put TV and server on one switch so the traffic never reaches the router.
+
+**Rules:**
+- Per-device usage splits into Internet bytes and LAN bytes. The Usage tab shows both; quotas, rules and notifications read Internet bytes only.
+- LAN deltas use the same reset/rollover handling as router counters; the Internet delta is clamped at zero.
+- Per-device "LAN-only server" flag excludes a device from Internet usage entirely.
+- Source unreachable ⇒ fall back to router bytes and log a warning (never silently drop usage).
+
+**Open questions:** where Jellyfin runs (CT/VM/Docker, IP), TV on Wi-Fi or wired, any remote viewers, whether shell access to the Jellyfin host is available (decides nftables vs API estimate).
