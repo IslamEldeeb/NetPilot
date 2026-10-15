@@ -154,3 +154,29 @@ public class InMemoryProtectedDeviceStore : IProtectedDeviceStore
 
     public Task<bool> IsProtectedAsync(MacAddress mac, CancellationToken ct) => Task.FromResult(_macs.Contains(mac));
 }
+
+public class InMemoryQuotaStateStore : IQuotaStateStore
+{
+    private readonly Dictionary<string, QuotaPeriodState> _states = [];
+
+    public Task<QuotaPeriodState?> FindAsync(string id, CancellationToken ct) =>
+        Task.FromResult(_states.GetValueOrDefault(id));
+
+    public Task UpsertAsync(QuotaPeriodState state, CancellationToken ct)
+    {
+        _states[state.Id] = state;
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<QuotaPeriodState>> ListWithActiveActionAsync(CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<QuotaPeriodState>>(_states.Values.Where(s => s.ActionKind != QuotaActionKind.None).ToList());
+
+    public Task PruneAsync(DateTimeOffset olderThanUtc, CancellationToken ct)
+    {
+        foreach (var state in _states.Values.Where(s => s.ActionKind == QuotaActionKind.None
+            && DateTime.ParseExact(s.PeriodKey, s.PeriodKind == QuotaPeriodKind.Day ? "yyyy-MM-dd" : "yyyy-MM",
+                System.Globalization.CultureInfo.InvariantCulture) < olderThanUtc.UtcDateTime.Date).ToList())
+            _states.Remove(state.Id);
+        return Task.CompletedTask;
+    }
+}

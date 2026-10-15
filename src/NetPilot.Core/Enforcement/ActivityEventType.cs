@@ -12,5 +12,11 @@ public enum ActivityEventType
     UsageCounterReset,
     RouterRebooted,
     DeviceBlocked,
-    DeviceUnblocked
+    DeviceUnblocked,
+    QuotaWarning,
+    QuotaExceeded,
+    QuotaActionApplied,
+    QuotaReverted,
+    QuotaDryRun,
+    QuotaActionSkippedProtected
 }

@@ -716,6 +716,12 @@
         ActivityEventType.RouterRebooted => "dot-other",
         ActivityEventType.DeviceBlocked => "dot-blocked",
         ActivityEventType.DeviceUnblocked => "dot-discovered",
+        ActivityEventType.QuotaWarning => "dot-other",
+        ActivityEventType.QuotaExceeded => "dot-failed",
+        ActivityEventType.QuotaActionApplied => "dot-applied",
+        ActivityEventType.QuotaReverted => "dot-discovered",
+        ActivityEventType.QuotaDryRun => "dot-skipped",
+        ActivityEventType.QuotaActionSkippedProtected => "dot-skipped",
         _ => "dot-other"
     };
 

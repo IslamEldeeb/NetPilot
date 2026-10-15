@@ -65,7 +65,7 @@ public class PolicyReconciliationService(
                         $"Never-seen category '{categoryKey}' auto-created with fallback policy"), ct);
             }
 
-            await ApplyPolicyIfNeededAsync(provider, device, snapshot.CurrentLimit, ct);
+            await ApplyDevicePolicyAsync(provider, device, ct);
             await deviceStore.UpsertAsync(device, ct);
         }
 
@@ -93,57 +93,71 @@ public class PolicyReconciliationService(
         return true;
     }
 
-    private async Task ApplyPolicyIfNeededAsync(IRouterProvider provider, Device device, SpeedLimitState routerReportedLimit, CancellationToken ct)
+    public async Task<bool> ApplyDevicePolicyAsync(IRouterProvider provider, Device device, CancellationToken ct)
     {
-        var policy = await policyStore.FindByCategoryAsync(device.CategoryKey, ct)
-            ?? throw new InvalidOperationException($"Policy for category '{device.CategoryKey}' should exist by now.");
+        var policy = await GetPolicyAsync(device, ct);
+        // Auto-seeded Unlimited must never wipe a router limit; quota throttles are explicit actions.
+        if (device.QuotaThrottle is null && device.Override is null && !policy.IsUserConfigured)
+            return true;
 
-        // No human has ever set a per-device override or saved this category's policy through
-        // the dashboard — never write to the router for it. Without this, a fresh/empty local
-        // database (e.g. running the app locally against the same router while a server
-        // deployment already has real limits configured) would auto-seed every never-seen
-        // category with a disabled Unlimited fallback and push it live, silently wiping out
-        // whatever was actually configured elsewhere.
-        if (device.Override is null && !policy.IsUserConfigured)
-            return;
+        var desired = new DesiredPolicy(device.QuotaThrottle ?? device.Override ?? policy.Limit,
+            PolicyFingerprint.Compute(device.CategoryKey, device.Override, policy.DefinitionVersion, device.QuotaThrottle));
+        return await WriteLimitIfNeededAsync(provider, device, desired, ct);
+    }
 
-        var desiredLimit = device.Override ?? policy.Limit;
-        var desiredFingerprint = PolicyFingerprint.Compute(device.CategoryKey, device.Override, policy.DefinitionVersion);
+    public async Task<bool> RestoreQuotaLimitAsync(IRouterProvider provider, Device device, SpeedLimit? priorLimit, CancellationToken ct)
+    {
+        var policy = await GetPolicyAsync(device, ct);
+        var restoredLimit = device.Override ?? (policy.IsUserConfigured ? policy.Limit : priorLimit)
+            ?? throw new InvalidOperationException("No pre-quota speed limit is available to restore.");
+        var desired = new DesiredPolicy(restoredLimit,
+            PolicyFingerprint.Compute(device.CategoryKey, device.Override, policy.DefinitionVersion));
+        return await WriteLimitIfNeededAsync(provider, device, desired, ct);
+    }
 
-        if (desiredFingerprint == device.LastAppliedFingerprint)
+    private async Task<DevicePolicy> GetPolicyAsync(Device device, CancellationToken ct) =>
+        await policyStore.FindByCategoryAsync(device.CategoryKey, ct)
+        ?? throw new InvalidOperationException($"Policy for category '{device.CategoryKey}' should exist by now.");
+
+    private sealed record DesiredPolicy(SpeedLimit Limit, string Fingerprint);
+
+    private async Task<bool> WriteLimitIfNeededAsync(IRouterProvider provider, Device device, DesiredPolicy desired, CancellationToken ct)
+    {
+        if (desired.Fingerprint == device.LastAppliedFingerprint)
         {
             await activityLog.AppendAsync(
                 new ActivityLogEntry(DateTimeOffset.UtcNow, ActivityEventType.PolicySkippedAlreadyCorrect, device.Mac,
                     "Already matches desired policy — no write sent"), ct);
-            return;
+            return true;
         }
 
-        // First time we've ever recorded this device (no fingerprint yet): if the router
-        // already reports exactly the desired state, adopt that fingerprint without writing
-        // — avoids re-sending a limit that's already correct on first discovery.
-        if (device.LastAppliedFingerprint is null && MatchesDesiredState(routerReportedLimit, desiredLimit))
+        if (device.LastAppliedFingerprint is null && device.RouterReportedLimit is { } reported
+            && MatchesDesiredState(reported, desired.Limit))
         {
-            device.LastAppliedFingerprint = desiredFingerprint;
+            device.LastAppliedFingerprint = desired.Fingerprint;
             await activityLog.AppendAsync(
                 new ActivityLogEntry(DateTimeOffset.UtcNow, ActivityEventType.PolicySkippedAlreadyCorrect, device.Mac,
                     "Router already reports the desired policy — no write sent"), ct);
-            return;
+            return true;
         }
 
         try
         {
-            await provider.SetSpeedLimitAsync(device.Mac, desiredLimit, ct);
-            device.LastAppliedFingerprint = desiredFingerprint;
-            await activityLog.AppendAsync(
-                new ActivityLogEntry(DateTimeOffset.UtcNow, ActivityEventType.PolicyApplied, device.Mac,
-                    $"Applied {desiredLimit} for category '{device.CategoryKey}'"), ct);
+            await provider.SetSpeedLimitAsync(device.Mac, desired.Limit, ct);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             await activityLog.AppendAsync(
                 new ActivityLogEntry(DateTimeOffset.UtcNow, ActivityEventType.WriteFailed, device.Mac,
                     $"SetSpeedLimit failed: {ex.Message}"), ct);
+            return false;
         }
+
+        device.LastAppliedFingerprint = desired.Fingerprint;
+        await activityLog.AppendAsync(
+            new ActivityLogEntry(DateTimeOffset.UtcNow, ActivityEventType.PolicyApplied, device.Mac,
+                $"Applied {desired.Limit} for category '{device.CategoryKey}'"), ct);
+        return true;
     }
 
     private static bool MatchesDesiredState(SpeedLimitState routerReported, SpeedLimit desired) =>

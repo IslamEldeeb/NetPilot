@@ -43,6 +43,9 @@ public class LiteDeviceStore : IDeviceStore
         Override = doc.OverrideEnabled is null
             ? null
             : new SpeedLimit(doc.OverrideEnabled.Value, doc.OverrideDownloadKbps, doc.OverrideUploadKbps),
+        QuotaThrottle = doc.QuotaThrottleEnabled is null
+            ? null
+            : new SpeedLimit(doc.QuotaThrottleEnabled.Value, doc.QuotaThrottleDownloadKbps, doc.QuotaThrottleUploadKbps),
         RouterReportedLimit = doc.RouterLimitEnabled is null
             ? null
             : new SpeedLimitState(doc.RouterLimitEnabled.Value, doc.RouterDownloadKbps, doc.RouterUploadKbps, doc.RouterLimitCurrentlyEnforced),
@@ -65,6 +68,9 @@ public class LiteDeviceStore : IDeviceStore
         OverrideEnabled = device.Override?.Enabled,
         OverrideDownloadKbps = device.Override?.DownloadKbps,
         OverrideUploadKbps = device.Override?.UploadKbps,
+        QuotaThrottleEnabled = device.QuotaThrottle?.Enabled,
+        QuotaThrottleDownloadKbps = device.QuotaThrottle?.DownloadKbps,
+        QuotaThrottleUploadKbps = device.QuotaThrottle?.UploadKbps,
         RouterLimitEnabled = device.RouterReportedLimit?.Enabled,
         RouterDownloadKbps = device.RouterReportedLimit?.DownloadKbps,
         RouterUploadKbps = device.RouterReportedLimit?.UploadKbps,

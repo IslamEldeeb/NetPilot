@@ -27,6 +27,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IDeviceStore, LiteDeviceStore>();
         services.AddSingleton<IPolicyStore, LitePolicyStore>();
         services.AddSingleton<IQuotaStore, LiteQuotaStore>();
+        services.AddSingleton<IQuotaStateStore, LiteQuotaStateStore>();
         services.AddSingleton<IProtectedDeviceStore, LiteProtectedDeviceStore>();
         services.AddSingleton<IActivityLogStore, LiteActivityLogStore>();
         services.AddSingleton<IRouterConnectionStore, LiteRouterConnectionStore>();

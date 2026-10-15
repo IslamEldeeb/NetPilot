@@ -1,5 +1,6 @@
 using NetPilot.Agent;
 using NetPilot.Core.Enforcement;
+using NetPilot.Core.Quota;
 using NetPilot.Core.Usage;
 using NetPilot.Data;
 using NetPilot.Providers.TpLink;
@@ -18,6 +19,9 @@ builder.Services.AddNetPilotData(dbPath, keyRingPath);
 builder.Services.AddTpLinkProvider();
 builder.Services.AddSingleton<PolicyReconciliationService>();
 builder.Services.AddSingleton<UsageTrackingService>();
+builder.Services.AddSingleton<IQuotaEventSink, NullQuotaEventSink>();
+builder.Services.AddSingleton<IQuotaEventSink, ActivityLogQuotaEventSink>();
+builder.Services.AddSingleton<QuotaEnforcementService>();
 builder.Services.AddHostedService<Worker>();
 
 var host = builder.Build();

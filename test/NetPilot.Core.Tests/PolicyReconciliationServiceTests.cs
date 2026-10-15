@@ -215,4 +215,28 @@ public class PolicyReconciliationServiceTests
         await service.ReconcileAsync(provider, CancellationToken.None);
         Assert.Single(provider.AppliedLimits); // retried and succeeded this time
     }
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task QuotaThrottle_IsExplicitAndHighestPrecedence_SetAndClearEachWriteOnce(bool configured)
+    {
+        var (service, provider, devices, policies, _) = Build();
+        await policies.UpsertAsync(new("mobile", new SpeedLimit(true, 5000, 1000), 1, configured), CancellationToken.None);
+        var device = new Device { Mac = new("AA-BB-CC-DD-EE-01"), CategoryKey = "mobile",
+            Override = new SpeedLimit(true, 2000, 1000), QuotaThrottle = new SpeedLimit(true, 512, 512) };
+        await devices.UpsertAsync(device, CancellationToken.None);
+        provider.Devices.Add(MakeSnapshot());
+
+        await service.ReconcileAsync(provider, CancellationToken.None);
+        await service.ReconcileAsync(provider, CancellationToken.None);
+        Assert.Equal(device.QuotaThrottle, Assert.Single(provider.AppliedLimits).Limit);
+        var throttleFingerprint = device.LastAppliedFingerprint;
+        device.QuotaThrottle = null;
+        await service.ReconcileAsync(provider, CancellationToken.None);
+        await service.ReconcileAsync(provider, CancellationToken.None);
+
+        Assert.Equal(2, provider.AppliedLimits.Count);
+        Assert.Equal(device.Override, provider.AppliedLimits[1].Limit);
+        Assert.NotEqual(throttleFingerprint, device.LastAppliedFingerprint);
+    }
 }

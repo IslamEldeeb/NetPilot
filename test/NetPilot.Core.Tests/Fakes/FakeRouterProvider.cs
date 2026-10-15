@@ -11,6 +11,7 @@ public class FakeRouterProvider(RouterCapabilities capabilities) : IRouterProvid
     public List<(WirelessNetworkId Id, WirelessNetworkUpdate Update)> AppliedWirelessUpdates { get; } = [];
     public List<string> BlockedMacs { get; } = [];
     public List<string> UnblockedMacs { get; } = [];
+    public List<(string Mac, string Token)> UnblockRequests { get; } = [];
 
     public string ProviderId => "fake";
     public string DisplayName => "Fake Router";
@@ -75,12 +76,23 @@ public class FakeRouterProvider(RouterCapabilities capabilities) : IRouterProvid
 
     public Task<string> BlockDeviceAsync(string macAddress, CancellationToken ct)
     {
+        FailWriteIfRequested();
         BlockedMacs.Add(macAddress);
         return Task.FromResult($"fake-token-{macAddress}");
     }
 
+    private void FailWriteIfRequested()
+    {
+        if (!ThrowOnNextWrite)
+            return;
+        ThrowOnNextWrite = false;
+        throw new InvalidOperationException("Simulated write failure.");
+    }
+
     public Task UnblockDeviceAsync(string macAddress, string blockListToken, CancellationToken ct)
     {
+        FailWriteIfRequested();
+        UnblockRequests.Add((macAddress, blockListToken));
         UnblockedMacs.Add(macAddress);
         return Task.CompletedTask;
     }

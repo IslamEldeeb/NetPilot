@@ -15,6 +15,9 @@ public class DeviceDocument
     public bool? OverrideEnabled { get; set; }
     public int? OverrideDownloadKbps { get; set; }
     public int? OverrideUploadKbps { get; set; }
+    public bool? QuotaThrottleEnabled { get; set; }
+    public int? QuotaThrottleDownloadKbps { get; set; }
+    public int? QuotaThrottleUploadKbps { get; set; }
     public bool? RouterLimitEnabled { get; set; }
     public int? RouterDownloadKbps { get; set; }
     public int? RouterUploadKbps { get; set; }

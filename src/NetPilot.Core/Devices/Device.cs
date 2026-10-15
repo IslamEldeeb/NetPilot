@@ -12,6 +12,7 @@ public class Device
     public string CategoryKey { get; set; } = DeviceCategory.UnknownKey;
     public ConnectionInfo Connection { get; set; } = new(ConnectionMedium.Unknown, IsOnline: false);
     public SpeedLimit? Override { get; set; }
+    public SpeedLimit? QuotaThrottle { get; set; }
     public bool IsBlocked { get; set; }
 
     /// <summary>Provider-specific token returned by IRouterProvider.BlockDeviceAsync — required
