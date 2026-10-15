@@ -183,3 +183,5 @@ Order: **T1 → T2 → T3** gives working quotas with dashboard alerts; **T4 →
 - Source unreachable ⇒ fall back to router bytes and log a warning (never silently drop usage).
 
 **Open questions:** where Jellyfin runs (CT/VM/Docker, IP), TV on Wi-Fi or wired, any remote viewers, whether shell access to the Jellyfin host is available (decides nftables vs API estimate).
+
+**T8 decisions (user answers):** Jellyfin runs in a Proxmox CT/VM on the same server; the Samsung TV is on Wi-Fi; Jellyfin is home-only (no remote viewers); guest shell access unknown. Because Jellyfin shares the Proxmox host, the plan is **host-level nftables bridge-family counters on `vmbr0`** (per Jellyfin MAC → client IP, no access inside the guest needed), read by NetPilot through a small read-only HTTP endpoint on the Proxmox host restricted to CT 109. The Jellyfin API estimate stays as a fallback. Since there are no remote viewers, the Jellyfin box's own router counter is effectively all-LAN and can also be excluded with the "LAN-only server" flag as a first, zero-infrastructure step.
