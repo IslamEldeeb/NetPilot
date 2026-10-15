@@ -89,7 +89,7 @@
                 var percent = cap is > 0 ? used * 100m / cap.Value : 0;
                 <div class="np-card np-quota-progress mb-2" @key="device.Mac">
                     <div class="np-device-name">@DeviceName(device)<span class="np-device-sub">@device.Mac</span></div>
-                    <div class="np-device-sub">@Gb(used) GB used today</div>
+                    <div class="np-device-sub">@Gb(used) GB Internet used today</div>
                     @if (cap is > 0)
                     {
                         <div class="np-usage-bar" role="progressbar" aria-label="@($"Daily quota for {DeviceName(device)}")" aria-valuemin="0" aria-valuemax="100" aria-valuenow="@Math.Clamp(percent, 0, 100).ToString(CultureInfo.InvariantCulture)">
@@ -105,6 +105,8 @@
             }
             @if (Devices.Count == 0) { <p class="np-empty">No devices yet.</p> }
         </section>
+
+        <UsageExclusions Devices="Devices" />
 
         <section class="mb-4">
             <div class="np-section-head"><h3>Protected devices</h3></div>

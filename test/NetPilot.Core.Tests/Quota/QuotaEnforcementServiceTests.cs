@@ -14,6 +14,29 @@ public class QuotaEnforcementServiceTests
     private static readonly CancellationToken Ct = CancellationToken.None;
 
     [Fact]
+    public async Task JellyfinLanExclusion_QuotaEvaluatesOnlyTvInternetBytes()
+    {
+        var h = await Harness.CreateAsync(new() { Id = "default", DailyBytes = 1_000_000_000, WarnPercents = [], DryRun = true });
+        var source = new FakeLocalTrafficSource { Reading = new([new("192.168.1.20", "192.168.1.50", 8000)], null) };
+        var tracker = new UsageTrackingService(h.Usages, h.Log, h.Clock,
+            new(source, new InMemoryLocalTrafficStore(), h.Log, h.Clock), h.Devices);
+        var snapshot = h.Provider.Devices[0] with { Usage = new UsageSnapshot(0) };
+        await tracker.TrackAsync([snapshot], Ct);
+        source.Reading = new([new("192.168.1.20", "192.168.1.50", 2_000_008_000)], null);
+        snapshot = snapshot with { Usage = new UsageSnapshot(2_300_000_000) };
+        await tracker.TrackAsync([snapshot], Ct);
+        await h.Service.EvaluateAsync(h.Provider, [snapshot], Ct);
+        Assert.Equal(300_000_000, h.Usage.CurrentDayBytes);
+        Assert.Equal(2_000_000_000, h.Usage.CurrentDayLanBytes);
+        Assert.DoesNotContain(h.Events.Events, e => e.Kind == QuotaEventKind.Exceeded);
+        Assert.Empty(h.Provider.BlockedMacs);
+        // The same policy still exceeds once actual Internet usage reaches its cap.
+        await tracker.TrackAsync([snapshot with { Usage = new UsageSnapshot(3_000_000_000) }], Ct);
+        await h.Service.EvaluateAsync(h.Provider, [snapshot], Ct);
+        Assert.Contains(h.Events.Events, e => e.Kind == QuotaEventKind.Exceeded);
+    }
+
+    [Fact]
     public async Task WarningFiresAtThreshold_OnceAcrossTicksAndRestart()
     {
         var h = await Harness.CreateAsync();

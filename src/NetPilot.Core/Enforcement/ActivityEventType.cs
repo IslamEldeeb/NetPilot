@@ -20,5 +20,7 @@ public enum ActivityEventType
     QuotaDryRun,
     QuotaActionSkippedProtected,
     QuotaAllowanceGranted,
-    QuotaRestoreRequested
+    QuotaRestoreRequested,
+    LanCounterReset,
+    LanSourceUnavailable
 }

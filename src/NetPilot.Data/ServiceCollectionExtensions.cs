@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 using NetPilot.Core.Devices;
 using NetPilot.Core.Enforcement;
 using NetPilot.Core.Enforcement.Claims;
@@ -13,6 +14,26 @@ namespace NetPilot.Data;
 
 public static class ServiceCollectionExtensions
 {
+    public static IServiceCollection AddNetPilotLocalTraffic(this IServiceCollection services, IConfiguration configuration)
+    {
+        var url = configuration["NetPilot:LocalTraffic:Url"];
+        if (string.IsNullOrWhiteSpace(url))
+            services.AddSingleton<ILocalTrafficSource, NullLocalTrafficSource>();
+        else
+        {
+            var endpoint = new Uri(url, UriKind.Absolute);
+            if (endpoint.Scheme is not ("http" or "https") || !string.IsNullOrEmpty(endpoint.UserInfo))
+                throw new ArgumentException("LocalTraffic:Url must be an HTTP(S) URL without embedded credentials.");
+            services.AddHttpClient("LocalTraffic", client => client.Timeout = TimeSpan.FromSeconds(5))
+                .RedactLoggedHeaders(["Authorization"]);
+            services.AddSingleton<ILocalTrafficSource>(sp => new HttpLocalTrafficSource(
+                sp.GetRequiredService<IHttpClientFactory>().CreateClient("LocalTraffic"), endpoint,
+                configuration["NetPilot:LocalTraffic:Token"]));
+        }
+        services.AddSingleton<LocalTrafficTracker>();
+        return services;
+    }
+
     /// <summary>
     /// Registers the shared LiteDB file, every repository, and a Data Protection key ring
     /// persisted to keyRingPath. Both NetPilot.Agent and NetPilot.Web must call this with
@@ -40,6 +61,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IActivityLogStore, LiteActivityLogStore>();
         services.AddSingleton<IRouterConnectionStore, LiteRouterConnectionStore>();
         services.AddSingleton<IUsageStore, LiteUsageStore>();
+        services.AddSingleton<ILocalTrafficStore, LiteLocalTrafficStore>();
         services.AddSingleton<IDeviceClassifier, HeuristicDeviceClassifier>();
         services.AddSingleton<RouterPasswordProtector>();
         return services;

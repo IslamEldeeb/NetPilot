@@ -1,6 +1,6 @@
 # NetPilot — Phase 5 Plan: Daily Quotas, Web Push Notifications, Rules Engine
 
-**Status:** T1–T5 implemented (timezone, quota model/UI, enforcement, notification server, Web Push client); T6 supplies HTTPS access/deployment docs. Live HTTPS/Android checks remain deployment verification. T7 rules engine and T8 LAN-traffic exclusion are planned. This document retains the original design sketches; see [server notifications](server-notifications.md) for implemented notification behaviour.
+**Status:** T1–T5 implemented (timezone, quota model/UI, enforcement, notification server, Web Push client); T6 supplies HTTPS access/deployment docs. Live HTTPS/Android checks remain deployment verification. T8 LAN-traffic exclusion is implemented but not live-verified; T7 rules engine is planned. This document retains the original design sketches; see [server notifications](server-notifications.md) for implemented notification behaviour.
 
 **Decisions taken with the user**
 
@@ -167,21 +167,23 @@ Order: **T1 → T2 → T3** gives working quotas with dashboard alerts; **T4 →
 
 ## 9. T8 — Exclude LAN traffic from Internet usage (Jellyfin → TV)
 
+**Implemented, not live-verified.** See [LAN traffic exclusion](lan-traffic-exclusion.md) for the delivered model, carry/failure semantics, host exporter, configuration and required counter experiment. Keep enforcement in dry-run until that verification passes.
+
 **Problem (confirmed by the user):** the router counts *all* traffic per device, local and Internet alike. A Jellyfin stream to the TV is counted on the server **and** on the TV, though it never touches the Internet. Quotas and rules must act on Internet bytes only, so T8 must land **before quota enforcement leaves dry-run**.
 
-**Model:** `internetBytes(device) = routerBytes(device) − lanBytes(device)`. LAN bytes between a pair of devices are subtracted from **both** endpoints, because the router counted them on both.
+**Model:** `internetDelta(device) = max(0, routerDelta(device) − lanDelta(device) − savedCarry(device))`. LAN bytes between a pair of devices are subtracted from **both** endpoints, because the router counted them on both.
 
 **Source of LAN bytes (`ILocalTrafficSource`, cumulative bytes per peer IP):**
-- Preferred: nftables/iptables per-destination counters on the Jellyfin host (private-range destinations only, so remote viewers streaming over the Internet stay counted as real usage), exposed by a tiny read-only endpoint. Exact.
-- Fallback: Jellyfin `/Sessions` API estimate (client IP, bitrate × play time). Approximate, coarse at the 180 s tick.
+- Implemented optional source: nftables bridge-family per-directional-pair counters on the Proxmox host, exposed by a read-only HTTP exporter. Expected accuracy requires live path/counting verification.
+- Future alternative (not implemented): Jellyfin `/Sessions` API estimate (client IP, bitrate × play time). Approximate, coarse at the 180 s tick.
 - Alternative with no code: put TV and server on one switch so the traffic never reaches the router.
 
 **Rules:**
 - Per-device usage splits into Internet bytes and LAN bytes. The Usage tab shows both; quotas, rules and notifications read Internet bytes only.
-- LAN deltas use the same reset/rollover handling as router counters; the Internet delta is clamped at zero.
+- Flow first observation is baseline-only; lower counters count the new value and log a reset. Internet deltas clamp at zero, with persisted excess LAN carry capped at 1 GB per device.
 - Per-device "LAN-only server" flag excludes a device from Internet usage entirely.
 - Source unreachable ⇒ fall back to router bytes and log a warning (never silently drop usage).
 
-**Open questions:** where Jellyfin runs (CT/VM/Docker, IP), TV on Wi-Fi or wired, any remote viewers, whether shell access to the Jellyfin host is available (decides nftables vs API estimate).
+**Remaining deployment checks:** fill in the actual guest IP/MAC and TV IP, verify nftables counters on the host bridge and compare both endpoint counters to router usage. No live bridge or Wi-Fi path has been validated.
 
-**T8 decisions (user answers):** Jellyfin runs in a Proxmox CT/VM on the same server; the Samsung TV is on Wi-Fi; Jellyfin is home-only (no remote viewers); guest shell access unknown. Because Jellyfin shares the Proxmox host, the plan is **host-level nftables bridge-family counters on `vmbr0`** (per Jellyfin MAC → client IP, no access inside the guest needed), read by NetPilot through a small read-only HTTP endpoint on the Proxmox host restricted to CT 109. The Jellyfin API estimate stays as a fallback. Since there are no remote viewers, the Jellyfin box's own router counter is effectively all-LAN and can also be excluded with the "LAN-only server" flag as a first, zero-infrastructure step.
+**T8 decisions (user answers):** Jellyfin runs in a Proxmox CT/VM on the same server; the Samsung TV is on Wi-Fi; Jellyfin is home-only (no remote viewers); guest shell access unknown. Because Jellyfin shares the Proxmox host, the plan is **host-level nftables bridge-family counters on `vmbr0`** (per Jellyfin MAC → client IP, no access inside the guest needed), read by NetPilot through a small read-only HTTP endpoint on the Proxmox host restricted to CT 109. The Jellyfin API estimate remains a future alternative, not an implemented fallback. Since there are no remote viewers, the Jellyfin box's own router counter is effectively all-LAN and can also be excluded with the "LAN-only server" flag as a first, zero-infrastructure step.

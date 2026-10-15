@@ -21,6 +21,7 @@ builder.Services.AddTpLinkProvider();
 builder.Services.AddNetPilotWebPush(builder.Configuration);
 builder.Services.AddNotificationActionEndpoints();
 builder.Services.AddSingleton<PolicyReconciliationService>();
+builder.Services.AddNetPilotLocalTraffic(builder.Configuration);
 builder.Services.AddSingleton<UsageTrackingService>();
 
 // Add services to the container.

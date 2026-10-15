@@ -44,6 +44,7 @@ public class LiteUsageStore : IUsageStore
             Mac = entry.Mac,
             MonthKey = entry.MonthKey,
             TotalBytes = entry.TotalBytes,
+            LanBytes = entry.LanBytes,
             FinalizedAtUtc = entry.FinalizedAtUtc
         });
         return Task.CompletedTask;
@@ -52,7 +53,7 @@ public class LiteUsageStore : IUsageStore
     public Task<IReadOnlyList<UsageHistoryEntry>> GetAllHistoryAsync(CancellationToken ct)
     {
         IReadOnlyList<UsageHistoryEntry> entries = _history.FindAll()
-            .Select(h => new UsageHistoryEntry(new MacAddress(h.Mac), h.MonthKey, h.TotalBytes, h.FinalizedAtUtc))
+            .Select(h => new UsageHistoryEntry(new MacAddress(h.Mac), h.MonthKey, h.TotalBytes, h.FinalizedAtUtc, h.LanBytes))
             .ToList();
         return Task.FromResult(entries);
     }
@@ -65,6 +66,7 @@ public class LiteUsageStore : IUsageStore
             Mac = entry.Mac,
             DayKey = entry.DayKey,
             TotalBytes = entry.TotalBytes,
+            LanBytes = entry.LanBytes,
             FinalizedAtUtc = entry.FinalizedAtUtc
         });
         return Task.CompletedTask;
@@ -73,7 +75,7 @@ public class LiteUsageStore : IUsageStore
     public Task<IReadOnlyList<UsageDailyHistoryEntry>> GetAllDailyHistoryAsync(CancellationToken ct)
     {
         IReadOnlyList<UsageDailyHistoryEntry> entries = _dailyHistory.FindAll()
-            .Select(h => new UsageDailyHistoryEntry(new MacAddress(h.Mac), h.DayKey, h.TotalBytes, h.FinalizedAtUtc))
+            .Select(h => new UsageDailyHistoryEntry(new MacAddress(h.Mac), h.DayKey, h.TotalBytes, h.FinalizedAtUtc, h.LanBytes))
             .ToList();
         return Task.FromResult(entries);
     }
@@ -86,6 +88,9 @@ public class LiteUsageStore : IUsageStore
         CurrentMonthKey = doc.CurrentMonthKey,
         CurrentMonthBytes = doc.CurrentMonthBytes,
         CurrentDayKey = doc.CurrentDayKey,
+        CurrentDayLanBytes = doc.CurrentDayLanBytes,
+        CurrentMonthLanBytes = doc.CurrentMonthLanBytes,
+        PendingLanCarryBytes = doc.PendingLanCarryBytes,
         CurrentDayBytes = doc.CurrentDayBytes
     };
 
@@ -97,6 +102,9 @@ public class LiteUsageStore : IUsageStore
         CurrentMonthKey = state.CurrentMonthKey,
         CurrentMonthBytes = state.CurrentMonthBytes,
         CurrentDayKey = state.CurrentDayKey,
+        CurrentDayLanBytes = state.CurrentDayLanBytes,
+        CurrentMonthLanBytes = state.CurrentMonthLanBytes,
+        PendingLanCarryBytes = state.PendingLanCarryBytes,
         CurrentDayBytes = state.CurrentDayBytes
     };
 }

@@ -21,13 +21,20 @@ namespace NetPilot.Core.Usage;
 /// — no extra HTTP call to the router.
 /// Day/month boundaries use the configured timezone (Africa/Cairo by default).
 /// </summary>
-public class UsageTrackingService(IUsageStore usageStore, IActivityLogStore activityLog, UsagePeriodClock periodClock)
+public class UsageTrackingService(IUsageStore usageStore, IActivityLogStore activityLog, UsagePeriodClock periodClock,
+    LocalTrafficTracker localTraffic, IDeviceStore deviceStore)
 {
+    // Bound stale/skewed exclusions so they cannot mask unlimited future Internet traffic.
+    public const long MaxLanCarryBytes = 1_000_000_000;
+
     public async Task TrackAsync(IReadOnlyList<RouterDeviceSnapshot> snapshots, CancellationToken ct)
     {
         var now = periodClock.GetUtcNow();
         var monthKey = periodClock.MonthKey(now);
         var dayKey = periodClock.DayKey(now);
+
+        var lanDeltas = await localTraffic.ReadDeltasAsync(snapshots, ct);
+        var lanOnly = (await deviceStore.GetAllAsync(ct)).Where(d => d.UsageLanOnly).Select(d => d.Mac).ToHashSet();
 
         foreach (var snapshot in snapshots)
         {
@@ -43,10 +50,11 @@ public class UsageTrackingService(IUsageStore usageStore, IActivityLogStore acti
                 if (!string.IsNullOrEmpty(state.CurrentMonthKey))
                 {
                     await usageStore.AppendHistoryAsync(
-                        new UsageHistoryEntry(mac, state.CurrentMonthKey, state.CurrentMonthBytes, now), ct);
+                        new UsageHistoryEntry(mac, state.CurrentMonthKey, state.CurrentMonthBytes, now, state.CurrentMonthLanBytes), ct);
                 }
                 state.CurrentMonthKey = monthKey;
                 state.CurrentMonthBytes = 0;
+                state.CurrentMonthLanBytes = 0;
             }
 
             if (state.CurrentDayKey != dayKey)
@@ -54,14 +62,16 @@ public class UsageTrackingService(IUsageStore usageStore, IActivityLogStore acti
                 if (!string.IsNullOrEmpty(state.CurrentDayKey))
                 {
                     await usageStore.AppendDailyHistoryAsync(
-                        new UsageDailyHistoryEntry(mac, state.CurrentDayKey, state.CurrentDayBytes, now), ct);
+                        new UsageDailyHistoryEntry(mac, state.CurrentDayKey, state.CurrentDayBytes, now, state.CurrentDayLanBytes), ct);
                 }
                 state.CurrentDayKey = dayKey;
                 state.CurrentDayBytes = 0;
+                state.CurrentDayLanBytes = 0;
             }
 
             var current = snapshot.Usage.TotalBytes;
 
+            long routerDelta;
             if (state.LastPollAtUtc is null)
             {
                 // First time we've ever seen this device's counter — counted in full, assuming
@@ -69,28 +79,48 @@ public class UsageTrackingService(IUsageStore usageStore, IActivityLogStore acti
                 // multi-month lifetime total. See class doc: that assumption is not yet
                 // live-verified for this specific counter. No reset event logged here: nothing
                 // actually reset, we just started watching.
-                state.CurrentMonthBytes += current;
-                state.CurrentDayBytes += current;
+                routerDelta = current;
             }
             else if (current >= state.LastRawCounterBytes)
             {
-                var delta = current - state.LastRawCounterBytes;
-                state.CurrentMonthBytes += delta;
-                state.CurrentDayBytes += delta;
+                routerDelta = current - state.LastRawCounterBytes;
             }
             else
             {
                 // Counter went backwards — reset, cause unknown and irrelevant (restart, daily
                 // rollover, whatever). Assume it restarted at 0 and resume from here.
-                state.CurrentMonthBytes += current;
-                state.CurrentDayBytes += current;
+                routerDelta = current;
                 await activityLog.AppendAsync(new ActivityLogEntry(now, ActivityEventType.UsageCounterReset, mac,
                     $"Usage counter reset detected (was {state.LastRawCounterBytes} bytes, now {current}) — resumed accumulation from new baseline"), ct);
             }
 
+            AccumulateInternetUsage(state, routerDelta, lanDeltas, lanOnly);
             state.LastRawCounterBytes = current;
             state.LastPollAtUtc = now;
             await usageStore.UpsertStateAsync(state, ct);
         }
+    }
+
+    private static void AccumulateInternetUsage(DeviceUsageState state, long routerDelta,
+        IReadOnlyDictionary<string, long>? lanDeltas, HashSet<MacAddress> lanOnly)
+    {
+        var lanBytes = 0L;
+        if (lanOnly.Contains(state.Mac))
+        {
+            lanBytes = routerDelta;
+            state.PendingLanCarryBytes = 0;
+        }
+        else if (lanDeltas is not null)
+        {
+            var available = LocalTrafficTracker.SaturatingAdd(lanDeltas.GetValueOrDefault((string)state.Mac),
+                state.PendingLanCarryBytes);
+            lanBytes = Math.Min(routerDelta, available);
+            state.PendingLanCarryBytes = Math.Min(MaxLanCarryBytes, available - lanBytes);
+        }
+        // During source outages (or while disabled), even saved carry is frozen: fail closed.
+        state.CurrentMonthBytes += routerDelta - lanBytes;
+        state.CurrentDayBytes += routerDelta - lanBytes;
+        state.CurrentMonthLanBytes += lanBytes;
+        state.CurrentDayLanBytes += lanBytes;
     }
 }

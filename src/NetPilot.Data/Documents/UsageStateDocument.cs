@@ -12,4 +12,7 @@ public class UsageStateDocument
     public long CurrentMonthBytes { get; set; }
     public string CurrentDayKey { get; set; } = "";
     public long CurrentDayBytes { get; set; }
+    public long CurrentDayLanBytes { get; set; }
+    public long CurrentMonthLanBytes { get; set; }
+    public long PendingLanCarryBytes { get; set; }
 }

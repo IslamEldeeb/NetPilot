@@ -546,3 +546,11 @@
         gap: 0.35rem;
     }
 }
+
+.np-usage-devices .np-device-row {
+    grid-template-columns: 40px minmax(10rem, 1fr) minmax(8rem, auto) minmax(8rem, auto);
+}
+
+@media (max-width: 768px) {
+    .np-usage-devices .np-device-row { grid-template-columns: 1fr; }
+}

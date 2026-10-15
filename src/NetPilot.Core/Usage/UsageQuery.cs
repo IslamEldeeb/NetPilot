@@ -45,6 +45,21 @@ public static class UsageQuery
             : monthlyHistory.Where(h => h.MonthKey == periodKey).ToDictionary(h => (string)h.Mac, h => h.TotalBytes);
     }
 
+    /// <summary>Excluded LAN bytes, matched to router deltas (including settled carry), for the same period.</summary>
+    public static IReadOnlyDictionary<string, long> LanBytesByDevice(
+        UsagePeriodType periodType, string periodKey, bool isCurrentPeriod,
+        IReadOnlyList<DeviceUsageState> liveStates, IReadOnlyList<UsageHistoryEntry> monthlyHistory,
+        IReadOnlyList<UsageDailyHistoryEntry> dailyHistory)
+    {
+        if (isCurrentPeriod)
+            return periodType == UsagePeriodType.Day
+                ? liveStates.Where(s => s.CurrentDayKey == periodKey).ToDictionary(s => (string)s.Mac, s => s.CurrentDayLanBytes)
+                : liveStates.Where(s => s.CurrentMonthKey == periodKey).ToDictionary(s => (string)s.Mac, s => s.CurrentMonthLanBytes);
+        return periodType == UsagePeriodType.Day
+            ? dailyHistory.Where(h => h.DayKey == periodKey).ToDictionary(h => (string)h.Mac, h => h.LanBytes)
+            : monthlyHistory.Where(h => h.MonthKey == periodKey).ToDictionary(h => (string)h.Mac, h => h.LanBytes);
+    }
+
     /// <summary>
     /// Rolls a BytesByDevice result up to one total per device category, for a "top categories"
     /// view. A MAC with no matching device (removed, or usage history for a device that no

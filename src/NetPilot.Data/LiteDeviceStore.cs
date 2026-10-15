@@ -49,6 +49,7 @@ public class LiteDeviceStore : IDeviceStore
         RouterReportedLimit = doc.RouterLimitEnabled is null
             ? null
             : new SpeedLimitState(doc.RouterLimitEnabled.Value, doc.RouterDownloadKbps, doc.RouterUploadKbps, doc.RouterLimitCurrentlyEnforced),
+        UsageLanOnly = doc.UsageLanOnly,
         IsBlocked = doc.IsBlocked,
         BlockListToken = doc.BlockListToken,
         LastAppliedFingerprint = doc.LastAppliedFingerprint,
@@ -75,6 +76,7 @@ public class LiteDeviceStore : IDeviceStore
         RouterDownloadKbps = device.RouterReportedLimit?.DownloadKbps,
         RouterUploadKbps = device.RouterReportedLimit?.UploadKbps,
         RouterLimitCurrentlyEnforced = device.RouterReportedLimit?.IsCurrentlyEnforced,
+        UsageLanOnly = device.UsageLanOnly,
         IsBlocked = device.IsBlocked,
         BlockListToken = device.BlockListToken,
         LastAppliedFingerprint = device.LastAppliedFingerprint,

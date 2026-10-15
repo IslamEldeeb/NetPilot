@@ -1,0 +1,21 @@
+[Unit]
+Description=NetPilot read-only LAN flow exporter
+After=network-online.target nftables.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/python3 /opt/netpilot-lan-exporter/exporter.py --config /etc/netpilot-lan-exporter.json
+Restart=on-failure
+RestartSec=5
+# nft list needs CAP_NET_ADMIN; the application exposes no write endpoint.
+CapabilityBoundingSet=CAP_NET_ADMIN
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+RestrictAddressFamilies=AF_INET AF_NETLINK AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

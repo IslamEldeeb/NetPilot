@@ -22,6 +22,7 @@ builder.Services.AddNetPilotData(dbPath, keyRingPath);
 builder.Services.AddTpLinkProvider();
 builder.Services.AddNetPilotWebPush(builder.Configuration);
 builder.Services.AddSingleton<PolicyReconciliationService>();
+builder.Services.AddNetPilotLocalTraffic(builder.Configuration);
 builder.Services.AddSingleton<UsageTrackingService>();
 builder.Services.AddSingleton<IQuotaEventSink, NullQuotaEventSink>();
 builder.Services.AddSingleton<IQuotaEventSink, ActivityLogQuotaEventSink>();

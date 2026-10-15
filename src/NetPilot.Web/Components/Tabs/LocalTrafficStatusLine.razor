@@ -1,0 +1,12 @@
+@using NetPilot.Core.Usage
+@inject IConfiguration Configuration
+
+<p class="np-device-sub" role="status">LAN traffic source: @Label</p>
+
+@code {
+    [Parameter] public LocalTrafficStatus Status { get; set; } = new();
+
+    private string Label => string.IsNullOrWhiteSpace(Configuration["NetPilot:LocalTraffic:Url"]) ? "not configured"
+        : Status.UnavailableSinceUtc is { } since ? $"unavailable since {since:u}"
+        : Status.LastReadAtUtc is { } last ? $"OK (last read {last:u})" : "awaiting first read";
+}

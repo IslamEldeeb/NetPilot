@@ -14,6 +14,8 @@ public class Device
     public SpeedLimit? Override { get; set; }
     /// <summary>Effective throttle from all action claims; the name preserves policy fingerprints and persisted data.</summary>
     public SpeedLimit? QuotaThrottle { get; set; }
+    /// <summary>Exclude all future router deltas, including any remote viewers, from Internet usage.</summary>
+    public bool UsageLanOnly { get; set; }
     public bool IsBlocked { get; set; }
 
     /// <summary>Provider-specific token returned by IRouterProvider.BlockDeviceAsync — required

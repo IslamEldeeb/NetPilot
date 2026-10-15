@@ -13,6 +13,7 @@
 @inject IDeviceStore DeviceStore
 @inject IPolicyStore PolicyStore
 @inject IActivityLogStore ActivityLogStore
+@inject ILocalTrafficStore LocalTrafficStore
 @inject IUsageStore UsageStore
 @inject IRouterConnectionStore ConnectionStore
 @inject RouterPasswordProtector PasswordProtector
@@ -185,8 +186,8 @@
                                         <div class="np-device-sub mt-1 @(isDrift ? "np-drift-text" : "")">@routerText</div>
                                     </div>
                                     <div>
-                                        <span class="np-badge-medium">@FormatBytes(todayUsageByMac.GetValueOrDefault((string)device.Mac)) today</span>
-                                        <div class="np-device-sub mt-1">@FormatBytes(monthUsageByMac.GetValueOrDefault((string)device.Mac)) this month</div>
+                                        <span class="np-badge-medium">@FormatBytes(todayUsageByMac.GetValueOrDefault((string)device.Mac)) Internet today</span>
+                                        <div class="np-device-sub mt-1">@FormatBytes(monthUsageByMac.GetValueOrDefault((string)device.Mac)) Internet this month</div>
                                     </div>
                                     <div>
                                         @if (device.IsBlocked)
@@ -313,6 +314,7 @@
     {
         <section class="mb-4">
             <div class="np-section-head"><h3>Usage</h3></div>
+            <NetPilot.Web.Components.Tabs.LocalTrafficStatusLine Status="_localTrafficStatus" />
             <div class="np-toolbar">
                 <select class="form-select form-select-sm" style="max-width:9rem" @bind="_usagePeriodType">
                     <option value="@UsagePeriodType.Month">Month</option>
@@ -345,6 +347,8 @@
                 var filtered = string.IsNullOrEmpty(_usageMacFilter)
                     ? byDevice
                     : byDevice.Where(kv => kv.Key == _usageMacFilter).ToDictionary(kv => kv.Key, kv => kv.Value);
+                var lanByDevice = UsageQuery.LanBytesByDevice(_usagePeriodType, periodKey, isCurrentPeriod, _usageStates, _monthlyHistory, _dailyHistory);
+                var lanTotal = filtered.Keys.Sum(mac => lanByDevice.GetValueOrDefault(mac));
                 var total = filtered.Values.Sum();
                 var rows = filtered
                     .OrderByDescending(kv => kv.Value)
@@ -358,8 +362,9 @@
             }
 
             <div class="np-card mb-3">
-                <div class="np-device-sub">Total usage — @(string.IsNullOrEmpty(_usageMacFilter) ? "all devices" : "selected device")</div>
+                <div class="np-device-sub">Total Internet usage — @(string.IsNullOrEmpty(_usageMacFilter) ? "all devices" : "selected device")</div>
                 <div style="font-size:1.75rem;font-weight:600">@FormatBytes(total)</div>
+                @if (lanTotal > 0) { <div class="np-device-sub">LAN excluded: @FormatBytes(lanTotal) (both endpoints counted)</div> }
             </div>
 
             @if (byCategory.Count > 0)
@@ -386,7 +391,7 @@
             }
             else
             {
-                <div class="np-group">
+                <div class="np-group np-usage-devices">
                     <div class="np-device-list">
                         @foreach (var row in rows)
                         {
@@ -396,7 +401,11 @@
                                     <div class="np-device-name">@(row.Device?.FriendlyName ?? row.Device?.Hostname ?? row.Mac)</div>
                                     <div class="np-device-sub"><code>@row.Mac</code></div>
                                 </div>
-                                <div><span class="np-badge-medium">@FormatBytes(row.Bytes)</span></div>
+                                <div><span class="np-badge-medium">Internet: @FormatBytes(row.Bytes)</span></div>
+                                @if (lanTotal > 0)
+                                {
+                                    <div><span class="np-badge-medium">LAN: @FormatBytes(lanByDevice.GetValueOrDefault(row.Mac))</span></div>
+                                }
                             </div>
                         }
                     </div>
@@ -547,6 +556,7 @@
     private List<Device> _devices = [];
     private List<PolicyRow> _policyRows = [];
     private IReadOnlyList<ActivityLogEntry> _activity = [];
+    private LocalTrafficStatus _localTrafficStatus = new();
     private List<DeviceUsageState> _usageStates = [];
     private List<UsageHistoryEntry> _monthlyHistory = [];
     private List<UsageDailyHistoryEntry> _dailyHistory = [];
@@ -642,6 +652,7 @@
 
         _devices = (await DeviceStore.GetAllAsync(CancellationToken.None)).ToList();
         _activity = await ActivityLogStore.GetRecentAsync(50, CancellationToken.None);
+        _localTrafficStatus = await LocalTrafficStore.GetStatusAsync(CancellationToken.None);
         _usageStates = (await UsageStore.GetAllStatesAsync(CancellationToken.None)).ToList();
         _monthlyHistory = (await UsageStore.GetAllHistoryAsync(CancellationToken.None)).ToList();
         _dailyHistory = (await UsageStore.GetAllDailyHistoryAsync(CancellationToken.None)).ToList();

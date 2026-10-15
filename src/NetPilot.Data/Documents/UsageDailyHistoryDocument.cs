@@ -10,4 +10,5 @@ public class UsageDailyHistoryDocument
     public string DayKey { get; set; } = "";
     public long TotalBytes { get; set; }
     public DateTimeOffset FinalizedAtUtc { get; set; }
+    public long LanBytes { get; set; }
 }

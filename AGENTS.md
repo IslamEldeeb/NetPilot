@@ -8,7 +8,7 @@ Implementation is underway: all projects in `src/` exist and build (`NetPilot.Ab
 
 ### Phase 5 status
 
-T1–T5 are implemented: timezone, quota model/UI, enforcement, notification server, and Web Push client. T6 supplies HTTPS access and deployment docs; live HTTPS/Android verification remains a deployment check. T7 rules engine and T8 LAN-traffic exclusion are planned. Keep enforcement in dry-run until usage is verified and T8 is in place; see `docs/phase5-quotas-notifications-rules-plan.md`, `docs/server-notifications.md`, and `docs/https-access.md`.
+T1–T5 are implemented: timezone, quota model/UI, enforcement, notification server, and Web Push client. T6 supplies HTTPS access and deployment docs; live HTTPS/Android verification remains a deployment check. T8 LAN-traffic exclusion is implemented but not live-verified (see `docs/lan-traffic-exclusion.md`); T7 rules engine is planned. Keep enforcement in dry-run until usage is verified and T8 is in place; see `docs/phase5-quotas-notifications-rules-plan.md`, `docs/server-notifications.md`, and `docs/https-access.md`.
 
 ## Required reading before touching code
 

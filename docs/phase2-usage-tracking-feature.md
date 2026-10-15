@@ -7,6 +7,8 @@ where it deviated from those plans during implementation.
 
 ![Usage calculation flow](diagrams/usage-calculation-flow.svg)
 
+T8 adds optional [LAN traffic exclusion](lan-traffic-exclusion.md): the running byte fields and history totals below now mean **Internet bytes**; separate LAN fields record excluded bytes. Router first-observation/reset logic is unchanged. No source/flags preserves prior numbers.
+
 ## 1. Mechanism
 
 No new HTTP call to the router. The Agent's existing reconciliation tick already polls

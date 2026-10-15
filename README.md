@@ -155,7 +155,7 @@ If you enabled Tailscale HTTPS, use both Compose files for updates:
 docker compose -f docker-compose.yml -f docker-compose.tailscale.yml --env-file .env up -d --build
 ```
 
-For the LAN-only Caddy option, use `docker-compose.caddy.yml` as the second file instead. See [HTTPS access](docs/https-access.md) and the [deployment checks](docs/deployment.md#post-deploy-verification). Keep quota enforcement in dry-run while validating usage; LAN-traffic exclusion (T8) is still planned.
+For the LAN-only Caddy option, use `docker-compose.caddy.yml` as the second file instead. See [HTTPS access](docs/https-access.md) and the [deployment checks](docs/deployment.md#post-deploy-verification). Keep quota enforcement in dry-run while validating usage; LAN-traffic exclusion (T8) is implemented but needs [live counter verification](docs/lan-traffic-exclusion.md).
 
 
 ## Documentation
@@ -167,7 +167,8 @@ For the LAN-only Caddy option, use `docker-compose.caddy.yml` as the second file
 | [`docs/deployment.md`](docs/deployment.md) | How to deploy with Docker Compose |
 | [`docs/https-access.md`](docs/https-access.md) | Android push over private Tailscale HTTPS, LAN Caddy alternative, troubleshooting |
 | [`docs/server-notifications.md`](docs/server-notifications.md) | Notification configuration, subscriptions, delivery and scoped actions |
-| [`docs/phase5-quotas-notifications-rules-plan.md`](docs/phase5-quotas-notifications-rules-plan.md) | Quotas, notifications and planned rules/LAN-traffic exclusion |
+| [`docs/lan-traffic-exclusion.md`](docs/lan-traffic-exclusion.md) | Internet/LAN usage, Proxmox bridge counter verification and optional exporter setup |
+| [`docs/phase5-quotas-notifications-rules-plan.md`](docs/phase5-quotas-notifications-rules-plan.md) | Quotas, notifications, LAN-traffic exclusion and planned rules |
 | `docs/phase2-*.md` | Usage-tracking feature planning |
 | `docs/NetPilot_Research_Findings_and_Architecture.md` | Earlier, superseded research (background only) |
 

@@ -1,0 +1,43 @@
+@using NetPilot.Core.Devices
+@inject IDeviceStore DeviceStore
+@inject ILogger<UsageExclusions> Logger
+
+<section class="mb-4">
+    <div class="np-section-head"><h3>Usage exclusions</h3></div>
+    <p class="np-device-sub">LAN-only devices count all future traffic as LAN. Remote viewers and other Internet traffic from these devices will also be hidden. Existing totals stay unchanged.</p>
+    @if (_error is not null) { <p role="alert">@_error</p> }
+    @foreach (var device in Devices.OrderBy(d => d.FriendlyName ?? d.Hostname))
+    {
+        <div class="np-card mb-2" @key="device.Mac">
+            <label><input type="checkbox" @bind:get="device.UsageLanOnly" @bind:set="enabled => ChangeAsync(device, enabled)" disabled="@_busy" />
+                LAN-only device: @(device.FriendlyName ?? device.Hostname) (@device.Mac)</label>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter] public IReadOnlyList<Device> Devices { get; set; } = [];
+    private bool _busy;
+    private string? _error;
+
+    private async Task ChangeAsync(Device device, bool enabled)
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            // Fetch current router-owned fields rather than saving the dashboard's stale copy.
+            var saved = await DeviceStore.FindByMacAsync(device.Mac, CancellationToken.None);
+            if (saved is null) throw new InvalidOperationException("Device no longer exists.");
+            saved.UsageLanOnly = enabled;
+            await DeviceStore.UpsertAsync(saved, CancellationToken.None);
+            device.UsageLanOnly = enabled;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to update LAN-only flag for {Mac}", device.Mac);
+            _error = "Could not save usage exclusion. Try again.";
+        }
+        finally { _busy = false; }
+    }
+}

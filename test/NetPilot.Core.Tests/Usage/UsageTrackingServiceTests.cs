@@ -21,7 +21,8 @@ public class UsageTrackingServiceTests
         var log = new InMemoryActivityLogStore();
         var clock = new UsagePeriodClock(timeProvider: timeProvider ??
             new FakeTimeProvider(new DateTimeOffset(2026, 7, 26, 12, 0, 0, TimeSpan.Zero)));
-        var service = new UsageTrackingService(usage, log, clock);
+        var service = new UsageTrackingService(usage, log, clock,
+            new LocalTrafficTracker(new NullLocalTrafficSource(), new InMemoryLocalTrafficStore(), log, clock), new InMemoryDeviceStore());
         return (service, usage, log);
     }
 
