@@ -82,8 +82,8 @@ plan's open item #1 — still not live-confirmed.
 ## 4. Dashboard (Usage tab)
 
 - **Period selector**: Month or Day, plus a date/month picker (native `<input type="month">`
-  / `<input type="date">`). All comparisons are UTC — matches the UTC month/day keys the
-  Agent writes.
+  / `<input type="date">`). Comparisons use `NetPilot:TimeZone` (default `Africa/Cairo`,
+  including DST), matching the month/day keys the Agent writes.
 - **Device selector**: a specific MAC, or all devices.
 - **Total + per-device breakdown**: both built from the same `UsageQuery.BytesByDevice(...)`
   call (`NetPilot.Core/Usage/UsageQuery.cs`) — a pure function blending live state (current
@@ -129,8 +129,10 @@ and the C# fallback.
 
 - **Missed polls**: usage between the last successful poll and a reset is lost — bounded,
   acceptable, not billing-grade.
-- **Month/day boundary is UTC**, not the router's local timezone or an ISP billing cycle
-  start date.
+- **Month/day boundaries use `NetPilot:TimeZone`**, default `Africa/Cairo` (DST applies),
+  rather than an ISP billing cycle start date. Configure the same zone in Agent and Web.
+  Existing history rows keep their old UTC-based keys; the day of deployment may show a
+  slightly shifted boundary. No data migration is performed.
 - **A device that goes offline and never returns** keeps its final period's total trapped
   in a live `usage_state` row that never finalizes to `usage_history` — not lost, just not
   surfaced in either the current or historical view.

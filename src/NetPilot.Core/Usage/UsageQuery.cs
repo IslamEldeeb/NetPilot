@@ -7,10 +7,9 @@ public enum UsagePeriodType { Day, Month }
 /// <summary>
 /// Pure aggregation over already-loaded usage data — blends the live running counter (for
 /// the current day/month) with finalized history (for past periods), keyed by MAC. No I/O;
-/// callers own fetching state/history once per page load. UTC throughout, matching
-/// UsageTrackingService's month/day keys — the caller must derive periodKey and
-/// isCurrentPeriod from DateTimeOffset.UtcNow, never local time, or today's totals will
-/// silently read as zero near the UTC day/month boundary.
+/// callers own fetching state/history once per page load. Derive periodKey and
+/// isCurrentPeriod with UsagePeriodClock so comparisons match the Agent's configured
+/// timezone (Africa/Cairo by default), including near day/month boundaries.
 /// </summary>
 public static class UsageQuery
 {

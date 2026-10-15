@@ -19,14 +19,15 @@ namespace NetPilot.Core.Usage;
 /// baseline-only for the first observation.
 /// Called once per tick with the same snapshot PolicyReconciliationService already fetched
 /// — no extra HTTP call to the router.
+/// Day/month boundaries use the configured timezone (Africa/Cairo by default).
 /// </summary>
-public class UsageTrackingService(IUsageStore usageStore, IActivityLogStore activityLog)
+public class UsageTrackingService(IUsageStore usageStore, IActivityLogStore activityLog, UsagePeriodClock periodClock)
 {
     public async Task TrackAsync(IReadOnlyList<RouterDeviceSnapshot> snapshots, CancellationToken ct)
     {
-        var now = DateTimeOffset.UtcNow;
-        var monthKey = MonthKeyFor(now);
-        var dayKey = DayKeyFor(now);
+        var now = periodClock.GetUtcNow();
+        var monthKey = periodClock.MonthKey(now);
+        var dayKey = periodClock.DayKey(now);
 
         foreach (var snapshot in snapshots)
         {
@@ -92,7 +93,4 @@ public class UsageTrackingService(IUsageStore usageStore, IActivityLogStore acti
             await usageStore.UpsertStateAsync(state, ct);
         }
     }
-
-    private static string MonthKeyFor(DateTimeOffset utc) => utc.ToString("yyyy-MM");
-    private static string DayKeyFor(DateTimeOffset utc) => utc.ToString("yyyy-MM-dd");
 }

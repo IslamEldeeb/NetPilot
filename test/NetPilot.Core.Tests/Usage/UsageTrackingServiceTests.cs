@@ -15,11 +15,13 @@ public class UsageTrackingServiceTests
             new SpeedLimitState(false, null, null, null),
             usage);
 
-    private static (UsageTrackingService Service, InMemoryUsageStore Usage, InMemoryActivityLogStore Log) Build()
+    private static (UsageTrackingService Service, InMemoryUsageStore Usage, InMemoryActivityLogStore Log) Build(TimeProvider? timeProvider = null)
     {
         var usage = new InMemoryUsageStore();
         var log = new InMemoryActivityLogStore();
-        var service = new UsageTrackingService(usage, log);
+        var clock = new UsagePeriodClock(timeProvider: timeProvider ??
+            new FakeTimeProvider(new DateTimeOffset(2026, 7, 26, 12, 0, 0, TimeSpan.Zero)));
+        var service = new UsageTrackingService(usage, log, clock);
         return (service, usage, log);
     }
 
@@ -75,7 +77,7 @@ public class UsageTrackingServiceTests
         {
             Mac = mac,
             LastRawCounterBytes = 1000,
-            LastPollAtUtc = DateTimeOffset.UtcNow.AddMonths(-2),
+            LastPollAtUtc = new DateTimeOffset(2020, 1, 31, 12, 0, 0, TimeSpan.Zero),
             CurrentMonthKey = "2020-01",
             CurrentMonthBytes = 5000
         }, CancellationToken.None);
@@ -89,31 +91,38 @@ public class UsageTrackingServiceTests
         Assert.Equal(500, state.CurrentMonthBytes); // only the new month's delta (1500 - 1000)
     }
 
-    [Fact]
-    public async Task DayRollover_FinalizesPreviousDay_ResetsRunningTotal()
+    [Theory]
+    [InlineData(7, 21)]
+    [InlineData(1, 22)]
+    public async Task CairoDayRollover_FinalizesPreviousDay_ResetsRunningTotal(int month, int midnightUtcHour)
     {
-        var (service, usage, _) = Build();
+        var midnightUtc = new DateTimeOffset(2026, month, 25, midnightUtcHour, 0, 0, TimeSpan.Zero);
+        var time = new FakeTimeProvider(midnightUtc.AddSeconds(-1));
+        var (service, usage, log) = Build(time);
         var mac = new MacAddress("AA-BB-CC-DD-EE-01");
-        await usage.UpsertStateAsync(new DeviceUsageState
-        {
-            Mac = mac,
-            LastRawCounterBytes = 1000,
-            LastPollAtUtc = DateTimeOffset.UtcNow.AddDays(-3),
-            CurrentMonthKey = DateTimeOffset.UtcNow.ToString("yyyy-MM"), // same month, so only the day rolls over
-            CurrentMonthBytes = 9000,
-            CurrentDayKey = "2020-01-01",
-            CurrentDayBytes = 5000
-        }, CancellationToken.None);
+
+        await service.TrackAsync([MakeSnapshot(usage: new UsageSnapshot(1000))], CancellationToken.None);
+
+        Assert.Empty(usage.DailyHistory);
+        time.UtcNow = midnightUtc;
 
         await service.TrackAsync([MakeSnapshot(usage: new UsageSnapshot(1500))], CancellationToken.None);
 
-        Assert.Single(usage.DailyHistory, h => h.Mac == mac && h.DayKey == "2020-01-01" && h.TotalBytes == 5000);
+        var history = Assert.Single(usage.DailyHistory);
+        Assert.Equal(mac, history.Mac);
+        Assert.Equal($"2026-{month:00}-25", history.DayKey);
+        Assert.Equal(1000, history.TotalBytes);
+        Assert.Equal(midnightUtc, history.FinalizedAtUtc);
+        Assert.Equal(TimeSpan.Zero, history.FinalizedAtUtc.Offset);
         Assert.Empty(usage.History); // month didn't roll over — no monthly finalization
 
         var state = await usage.FindStateAsync(mac, CancellationToken.None);
-        Assert.NotEqual("2020-01-01", state!.CurrentDayKey);
+        Assert.Equal($"2026-{month:00}-26", state!.CurrentDayKey);
         Assert.Equal(500, state.CurrentDayBytes); // only the new day's delta (1500 - 1000)
-        Assert.Equal(9500, state.CurrentMonthBytes); // month total keeps accumulating (9000 + 500)
+        Assert.Equal(1500, state.CurrentMonthBytes);
+        Assert.Equal(midnightUtc, state.LastPollAtUtc);
+        Assert.Equal(TimeSpan.Zero, state.LastPollAtUtc!.Value.Offset);
+        Assert.Empty(log.Entries);
     }
 
     [Fact]

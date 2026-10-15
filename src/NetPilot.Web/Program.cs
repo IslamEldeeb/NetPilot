@@ -6,6 +6,9 @@ using NetPilot.Web.Components;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddSingleton(new UsagePeriodClock(
+    builder.Configuration["NetPilot:TimeZone"] ?? UsagePeriodClock.DefaultTimeZoneId));
+
 var dataDir = builder.Configuration["NetPilot:DataDirectory"] ?? "../../data";
 Directory.CreateDirectory(dataDir);
 var dbPath = Path.Combine(dataDir, "netpilot.db");
