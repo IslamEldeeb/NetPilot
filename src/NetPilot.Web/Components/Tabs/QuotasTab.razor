@@ -22,11 +22,15 @@
     }
     else
     {
-        @if (Devices.Any(d => QuotaResolver.Resolve(d, _policies).MatchedPolicy is { DryRun: true, Exempt: false }))
+        @if (_policies.Any(p => p.DryRun && !p.Exempt))
         {
-            <div class="alert alert-info" role="status">Dry-run: nothing is enforced yet</div>
+            <div class="alert alert-warning" role="status">Dry-run: nothing is enforced yet<span class="d-block">Applies to policies marked Dry-run; live policies can still enforce.</span></div>
         }
-        <p class="np-device-sub">Quota enforcement is not implemented yet. These settings only save data.</p>
+        else if (_policies.Any(p => !p.Exempt))
+        {
+            <div class="alert alert-info" role="status">All saved non-exempt policies are live. The Agent enforces their configured actions.</div>
+        }
+        <p class="np-device-sub">Quota enforcement runs in the Agent. Policies marked Dry-run only log and notify what they would do. Uncheck Dry-run to enforce.</p>
         <section class="np-card mb-3">
             <QuotaPolicyEditor Label="Global default" InitialPolicy="@PolicyFor("default", QuotaScope.Default)" Exists="@HasPolicy("default")" Changed='p => PolicyChanged("default", p)' />
         </section>

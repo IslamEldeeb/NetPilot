@@ -12,6 +12,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\NetPilot.Notifications.WebPush\NetPilot.Notifications.WebPush.csproj" />
     <ProjectReference Include="..\NetPilot.Core\NetPilot.Core.csproj" />
     <ProjectReference Include="..\NetPilot.Providers.TpLink\NetPilot.Providers.TpLink.csproj" />
     <ProjectReference Include="..\NetPilot.Abstractions\NetPilot.Abstractions.csproj" />

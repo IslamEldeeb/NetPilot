@@ -22,5 +22,15 @@ public sealed class NetPilotDatabase : IDisposable
 
     public ILiteCollection<T> GetCollection<T>(string name) => _db.GetCollection<T>(name);
 
+    internal void InTransaction(Action action)
+    {
+        lock (_db)
+        {
+            _db.BeginTrans();
+            try { action(); _db.Commit(); }
+            catch { _db.Rollback(); throw; }
+        }
+    }
+
     public void Dispose() => _db.Dispose();
 }

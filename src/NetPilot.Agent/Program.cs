@@ -1,8 +1,10 @@
 using NetPilot.Agent;
 using NetPilot.Core.Enforcement;
+using NetPilot.Core.Notifications;
 using NetPilot.Core.Quota;
 using NetPilot.Core.Usage;
 using NetPilot.Data;
+using NetPilot.Notifications.WebPush;
 using NetPilot.Providers.TpLink;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -17,10 +19,12 @@ var keyRingPath = Path.Combine(dataDir, "keys");
 
 builder.Services.AddNetPilotData(dbPath, keyRingPath);
 builder.Services.AddTpLinkProvider();
+builder.Services.AddNetPilotWebPush(builder.Configuration);
 builder.Services.AddSingleton<PolicyReconciliationService>();
 builder.Services.AddSingleton<UsageTrackingService>();
 builder.Services.AddSingleton<IQuotaEventSink, NullQuotaEventSink>();
 builder.Services.AddSingleton<IQuotaEventSink, ActivityLogQuotaEventSink>();
+builder.Services.AddSingleton<IQuotaEventSink, NotificationQuotaEventSink>();
 builder.Services.AddSingleton<QuotaEnforcementService>();
 builder.Services.AddHostedService<Worker>();
 

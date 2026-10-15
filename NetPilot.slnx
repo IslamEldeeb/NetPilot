@@ -4,6 +4,7 @@
     <Project Path="src/NetPilot.Agent/NetPilot.Agent.csproj" />
     <Project Path="src/NetPilot.Core/NetPilot.Core.csproj" />
     <Project Path="src/NetPilot.Data/NetPilot.Data.csproj" />
+    <Project Path="src/NetPilot.Notifications.WebPush/NetPilot.Notifications.WebPush.csproj" />
     <Project Path="src/NetPilot.Providers.TpLink/NetPilot.Providers.TpLink.csproj" />
     <Project Path="src/NetPilot.Web/NetPilot.Web.csproj" />
     <Project Path="src/TpLink.Sdk/TpLink.Sdk.csproj" />
@@ -11,6 +12,7 @@
   <Folder Name="/test/">
     <Project Path="test/NetPilot.Core.Tests/NetPilot.Core.Tests.csproj" />
     <Project Path="test/NetPilot.Data.Tests/NetPilot.Data.Tests.csproj" />
+    <Project Path="test/NetPilot.Notifications.WebPush.Tests/NetPilot.Notifications.WebPush.Tests.csproj" />
     <Project Path="test/TpLink.Sdk.Tests/TpLink.Sdk.Tests.csproj" />
   </Folder>
 </Solution>
