@@ -23,16 +23,31 @@ internal sealed class MemoryFiringStore : IRuleFiringStore
 {
     public Dictionary<string, RuleFiring> Items { get; } = [];
     private readonly Dictionary<string, RuleFiring> _latest = [];
+    private readonly object _gate = new();
     public Task<IReadOnlyList<RuleFiring>> GetAllAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<RuleFiring>>(Items.Values.ToArray());
     public Task<RuleFiring?> FindAsync(string id, CancellationToken ct) => Task.FromResult(Items.GetValueOrDefault(id));
     public Task<RuleFiring?> FindLatestAsync(Guid id, string subject, CancellationToken ct) => Task.FromResult(_latest.GetValueOrDefault($"{id}|{subject}"));
     public Task<RuleFiring> UpdateAsync(string id, Func<RuleFiring?, RuleFiring> update, CancellationToken ct)
     {
-        var value = update(Items.GetValueOrDefault(id));
-        Items[id] = value;
-        var key = $"{value.RuleId}|{value.Subject}";
-        if (!_latest.TryGetValue(key, out var latest) || latest.FiredAtUtc <= value.FiredAtUtc) _latest[key] = value;
-        return Task.FromResult(value);
+        lock (_gate)
+        {
+            var value = update(Items.GetValueOrDefault(id));
+            Items[id] = value;
+            var key = $"{value.RuleId}|{value.Subject}";
+            if (!_latest.TryGetValue(key, out var latest) || latest.FiredAtUtc <= value.FiredAtUtc) _latest[key] = value;
+            return Task.FromResult(value);
+        }
+    }
+    public Task<bool> RequestReleaseAsync(string id, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            if (!Items.TryGetValue(id, out var current) || current.Status != RuleFiringStatus.Active)
+                return Task.FromResult(false);
+            UpdateAsync(id, row => row! with { ReleaseRequested = true }, ct);
+            return Task.FromResult(true);
+        }
     }
     public Task PruneAsync(int keepNewest, CancellationToken ct)
     {

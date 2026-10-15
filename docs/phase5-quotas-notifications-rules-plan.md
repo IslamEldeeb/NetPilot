@@ -1,6 +1,6 @@
 # NetPilot — Phase 5 Plan: Daily Quotas, Web Push Notifications, Rules Engine
 
-**Status:** T1–T5 implemented (timezone, quota model/UI, enforcement, notification server, Web Push client); T6 supplies HTTPS access/deployment docs. Live HTTPS/Android checks remain deployment verification. T8 LAN-traffic exclusion is implemented but not live-verified; T7 rules engine is planned. This document retains the original design sketches; see [server notifications](server-notifications.md) for implemented notification behaviour.
+**Status:** T1–T5 implemented (timezone, quota model/UI, enforcement, notification server, Web Push client); T6 supplies HTTPS access/deployment docs. Live HTTPS/Android checks remain deployment verification. T8 LAN-traffic exclusion is implemented but not live-verified; T7 rules engine and Web UI are implemented; live verification remains. This document retains the original design sketches; see [server notifications](server-notifications.md) for implemented notification behaviour.
 
 **Decisions taken with the user**
 
@@ -93,34 +93,21 @@ interface INotificationChannel { string Id { get; } Task SendAsync(NotificationM
 
 ## 4. Rules engine
 
-Built **after** quotas work in dry-run, so the generic model is shaped by a real first user. The built-in quota behavior becomes "quota rules" expressed in the same engine only if that stays simple; otherwise quotas remain a first-class feature and the engine covers everything else. Decide at T7 kickoff.
+T7a action claims, T7b evaluation/persistence and T7c Web UI are implemented. See [Rules](rules.md) for the delivered model, six starter templates, dry-run rollout, claims composition, firing history and Release now. Live UI/router verification remains a deployment check; keep forced dry-run enabled until Internet usage and T8 exclusions are verified.
 
-### 4.1 Model
+### 4.1 Model and evaluation
 
-```
-Rule { Id, Name, Enabled, DryRun, Scope(all|category|device list), Trigger, Conditions[], Actions[], CooldownMinutes, OncePerPeriod(day|month|none), RevertPolicy }
-```
+Rules select all devices, one category or a device list. Five triggers are implemented: UsageOver (Day/Month byte threshold), HouseholdUsageOver (whole-household usage; scope selects action targets), TimeWindow (HH:mm + weekdays in the app timezone), DeviceJoined and DeviceIdle. Actions are Notify, symmetric Throttle(Kbps), Block and SetWireless (guest/IoT only). Revert policies are None, AtPeriodEnd, AfterMinutes and WhenTriggerEnds (TimeWindow only). Cooldown and OncePer (None/Day/Month) suppress repeat firings.
 
-**Triggers (v1):** `UsageOver(period, bytes|percentOfQuota)`, `TimeWindow(start, end, days, tz)`, `DeviceJoined`, `DeviceOnline/Offline`. **Later:** household total over X, idle for N days, sustained rate over X for N min (needs a live-rate field from the provider — check snapshot first), category-specific spikes.
+Quotas remain first-class and share the persisted action-claims layer with rules: Block wins, otherwise the lowest Kbps cap wins. Protected devices are exempt from Throttle/Block. Only the Agent evaluates and applies effects; the Web edits data and atomically requests releases. RuleFiring captures action intent, outcome, progress and restart-safe revert state. Automatic router writes have a per-tick cap, with reverts taking priority.
 
-**Actions (v1):** `Notify`, `Throttle(kbps)`, `Block`, `Unblock`, `RestoreLimit`, `SetWireless(guest|iot, enabled)` (writes already exist), each with optional `RevertAfter` / `RevertAtPeriodEnd`.
+### 4.2 Web UI and safety
 
-### 4.2 Evaluation
+The Rules tab provides rule creation/editing, immediate enabled/dry-run toggles, confirmed deletion, validation, an unsaved template gallery and newest-first firing history. Selecting a device shows its active rule and quota claims; Release now requests release on the next Agent tick. New rules default Enabled=true and DryRun=true. Both hosts bind NetPilot:Rules; Compose shares forced dry-run (default true), the enabled kill switch and polling interval so Web can display deployment state and timing.
 
-`RuleEvaluationService` in the Agent loop, over a context (device snapshot + usage state + now-in-Cairo). Fires write `RuleFiring` rows (rule, subject, time, outcome incl. dry-run) so the dashboard can answer "why was this device throttled?".
+### 4.3 Starter templates
 
-Safety rails: per-tick cap on automatic router writes; protected-devices exemption; cooldown/once-per-period; revert state persisted so a restart never strands a throttled/blocked device.
-
-### 4.3 Starter rule templates
-
-1. Over daily quota → throttle, revert at midnight.
-2. Kids' devices 22:00–07:00 → throttle hard, restore after.
-3. New unknown device joins → notify + low "guest" limit until approved.
-4. TV/console over 10 GB/day → notify (binge alert).
-5. IP camera upload far above its own baseline → notify (possible compromise).
-6. Household monthly total at 80% of ISP cap → notify, tighten default limits.
-7. Device silent 14 days → notify, offer cleanup.
-8. Guest WiFi auto-off after 2 hours.
+Delivered templates: Bedtime throttle; Binge alert; New device guard (Release now approves); Household monthly ISP cap warning; Idle device cleanup reminder; Guest WiFi off at night. Required inputs and safety notes are documented in [Rules → Starter templates](rules.md#starter-templates). Camera baseline/rate triggers and guest-off-after-two-hours are deferred, not available editor options.
 
 ## 5. Data and API additions
 
@@ -147,7 +134,7 @@ Push sends need outbound Internet from Agent/Web. The phone needs HTTPS reachabi
 - `trafficUsage` unit/reset verification (blocks turning dry-run off).
 - Whether the TP-Link snapshot exposes a live rate (needed for the sustained-rate trigger).
 - Activate and verify the selected HTTPS option (§6); Tailscale is recommended, not yet enrolled by T6.
-- Whether quotas become rules in the engine or stay separate (decide at T7).
+- Live rules UI/router verification; quotas remain first-class and compose with rules through action claims.
 
 ## 8. Delegation to Codex — task breakdown
 

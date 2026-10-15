@@ -46,15 +46,35 @@ public class LiteRuleFiringStore : IRuleFiringStore
             var current = _firings.FindById(id);
             updated = update(current is null ? null : Read(current));
             if (updated.Id != id) throw new ArgumentException("Rule firing identity cannot change.");
-            var doc = Document(updated);
-            _firings.Upsert(doc);
-            var latestId = $"{updated.RuleId}|{updated.Subject}";
-            var latest = _latest.FindById(latestId);
-            if (latest is not null && latest.FiredAtTicks > doc.FiredAtTicks) return;
-            doc.Id = latestId;
-            _latest.Upsert(doc);
+            Write(updated);
         });
         return Task.FromResult(updated);
+    }
+
+    public Task<bool> RequestReleaseAsync(string id, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var requested = false;
+        _db.InTransaction(() =>
+        {
+            var doc = _firings.FindById(id);
+            if (doc is null || doc.Status != RuleFiringStatus.Active) return;
+            var current = Read(doc);
+            if (!current.ReleaseRequested) Write(current with { ReleaseRequested = true });
+            requested = true;
+        });
+        return Task.FromResult(requested);
+    }
+
+    private void Write(RuleFiring firing)
+    {
+        var doc = Document(firing);
+        _firings.Upsert(doc);
+        var latestId = $"{firing.RuleId}|{firing.Subject}";
+        var latest = _latest.FindById(latestId);
+        if (latest is not null && latest.FiredAtTicks > doc.FiredAtTicks) return;
+        doc.Id = latestId;
+        _latest.Upsert(doc);
     }
 
     public Task PruneAsync(int keepNewest, CancellationToken ct)

@@ -1,0 +1,59 @@
+@using NetPilot.Core.Rules
+@using NetPilot.Core.Rules.Presentation
+
+<div class="np-rules">
+    <div class="np-section-head"><h3>Rules</h3><button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="RefreshAsync">Refresh</button></div>
+    @if (Options.ForceDryRun)
+    { <div class="alert alert-warning" role="status"><strong>Rules are in forced dry-run: nothing is applied. Set NETPILOT_RULES_FORCE_DRYRUN=false and redeploy to enforce.</strong><div>Existing live effects are released on the Agent's next tick.</div></div> }
+    @if (!Options.Enabled)
+    { <div class="alert alert-warning" role="status"><strong>Rules are disabled: the kill switch (NetPilot:Rules:Enabled=false) is active.</strong><div>The Agent stops new firings and releases existing effects on its next tick.</div></div> }
+    <p class="np-device-sub">Enforcement changes take effect on the Agent's next tick (about @TickMinutes minutes). Dry-run logs and notifies what would happen without changing the router. Notifications are configured in the Notifications tab.</p>
+    @if (_error is not null) { <div class="alert alert-danger" role="alert">@_error</div> }
+    @if (_message is not null) { <div class="alert alert-success" role="status">@_message</div> }
+    @if (!_loaded) { <p class="np-empty">Rules have not loaded. Use Refresh to retry.</p> }
+    else
+    {
+        <section class="mb-4">
+            <div class="np-section-head"><h4>Start from a template</h4><button type="button" class="np-save-btn" disabled="@_busy" @onclick="NewRule">Create blank rule</button></div>
+            <p class="np-device-sub">Templates prefill the editor. Nothing is saved until you click Save rule.</p>
+            <div class="np-template-grid">
+                @foreach (var template in TemplateCatalog.All)
+                {
+                    <article class="np-card"><h5>@template.Name</h5><p>@template.Description</p><p class="np-device-sub">@template.Hint</p>
+                        <button type="button" class="btn btn-outline-primary btn-sm" disabled="@_busy" @onclick="() => StartTemplate(template)">Start from @template.Name</button>
+                    </article>
+                }
+            </div>
+        </section>
+        @if (_editing is not null)
+        {
+            <RuleEditor @key="_editorKey" InitialRule="_editing" IsNew="_isNew" Devices="_devices" Categories="_categories" Hint="@_hint" TickMinutes="@TickMinutes" Busy="_busy" Saved="SaveAsync" Cancelled="CancelEditor" />
+        }
+        <section class="mb-4" aria-label="Saved rules">
+            <h4>Saved rules</h4>
+            @if (_rules.Count == 0) { <p class="np-empty">No rules yet. Start with a template or create a blank rule.</p> }
+            @foreach (var rule in _rules.OrderBy(r => r.Name))
+            {
+                var firings = _firings.Where(f => f.RuleId == rule.Id).ToArray();
+                <article class="np-card mb-2" @key="rule.Id">
+                    <h5>@rule.Name</h5><p>@RuleSummary.Describe(rule)</p>
+                    <p class="np-device-sub">Last fired: @LocalTime(firings.OrderByDescending(f => f.FiredAtUtc).FirstOrDefault()?.FiredAtUtc) · Active firings: @firings.Count(f => f.Status == RuleFiringStatus.Active)</p>
+                    <div class="np-rule-controls">
+                        <label class="np-check"><input type="checkbox" checked="@rule.Enabled" disabled="@_busy" @onchange="e => ToggleAsync(rule.Id, false, e.Value is true)" />Enabled</label>
+                        <label class="np-check"><input type="checkbox" checked="@rule.DryRun" disabled="@_busy" @onchange="e => ToggleAsync(rule.Id, true, e.Value is true)" />Dry-run: log and notify; no router changes</label>
+                        <button type="button" class="btn btn-link btn-sm" disabled="@_busy" @onclick="() => Edit(rule)">Edit</button>
+                        <button type="button" class="btn btn-outline-danger btn-sm" disabled="@_busy" @onclick="() => _deleteId = rule.Id">Delete</button>
+                    </div>
+                    @if (_deleteId == rule.Id)
+                    {
+                        <div class="alert alert-warning mt-2" role="alert">Delete “@rule.Name”? Its active effects will be released on the Agent's next tick (about @TickMinutes minutes). Other rules and quotas may still restrict devices.
+                            <button type="button" class="btn btn-danger btn-sm" disabled="@_busy" @onclick="() => DeleteAsync(rule.Id)">Confirm delete</button>
+                            <button type="button" class="btn btn-link btn-sm" @onclick="() => _deleteId = null">Cancel</button>
+                        </div>
+                    }
+                </article>
+            }
+        </section>
+        <RuleFiringHistory Firings="_firings" Rules="_rules" Devices="_devices" Claims="_claims" TickMinutes="@TickMinutes" Busy="_busy" ReleaseRequested="RequestReleaseAsync" />
+    }
+</div>

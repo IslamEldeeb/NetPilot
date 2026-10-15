@@ -1,0 +1,29 @@
+.np-rules ::deep .np-section-head, .np-rules ::deep .np-rule-controls {
+    display: flex; align-items: center; flex-wrap: wrap; gap: .75rem; margin-bottom: .9rem;
+}
+.np-rules h3 { margin: 0; font-size: 1.3rem; font-weight: 700; }
+.np-rules ::deep h4 { font-size: 1.1rem; }
+.np-rules ::deep h5 { font-size: .95rem; font-weight: 600; }
+.np-rules ::deep .np-card {
+    background: #fff; border: 1px solid var(--np-border); border-radius: 12px; padding: 1rem 1.4rem;
+}
+.np-template-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }
+.np-template-grid p { font-size: .85rem; }
+.np-rules ::deep .np-rule-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }
+.np-rules ::deep label { font-size: .85rem; }
+.np-rules ::deep .np-check { display: flex; align-items: center; gap: .4rem; }
+.np-rules ::deep .np-device-sub { font-size: .8rem; color: var(--np-text-muted); margin: .6rem 0; }
+.np-rules ::deep .np-empty { color: var(--np-text-muted); padding: 1rem 0; }
+.np-rules ::deep .np-device-picker { max-height: 18rem; overflow: auto; padding: .7rem; border: 1px solid var(--np-border); border-radius: 8px; }
+.np-rules ::deep legend { float: none; width: auto; font-size: .85rem; }
+.np-rules ::deep .np-weekdays { display: flex; gap: .8rem; flex-wrap: wrap; margin: .5rem 0; }
+.np-rules ::deep .np-action-row { border: 1px solid var(--np-border); border-radius: 8px; padding: .8rem; margin-bottom: .6rem; }
+.np-rules ::deep .np-action-row label { display: block; margin-bottom: .5rem; }
+.np-rules ::deep .np-save-btn { border: none; background: var(--np-blue); color: #fff; border-radius: 8px; padding: .4rem .8rem; font-size: .85rem; font-weight: 600; }
+.np-rules ::deep .np-save-btn:disabled { opacity: .6; }
+.np-rules ::deep .np-history-scroll { overflow-x: auto; }
+.np-rules ::deep .np-history-table { font-size: .82rem; min-width: 1050px; }
+.np-rules ::deep .np-history-table td { min-width: 6rem; overflow-wrap: anywhere; }
+.np-rules ::deep .np-dry-firing td { background: #fffbeb; border-bottom-color: #fde68a; }
+@media (max-width: 900px) { .np-template-grid, .np-rules ::deep .np-rule-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 550px) { .np-template-grid, .np-rules ::deep .np-rule-fields { grid-template-columns: 1fr; } }

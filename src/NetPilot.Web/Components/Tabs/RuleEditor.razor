@@ -1,0 +1,153 @@
+@using NetPilot.Core.Rules
+@using NetPilot.Core.Rules.Presentation
+@using NetPilot.Core.Devices
+@using NetPilot.Core.Usage
+@inject UsagePeriodClock Clock
+
+<section class="np-card mb-3" aria-label="Rule editor">
+    <h4>@(IsNew ? "Create rule" : "Edit rule")</h4>
+    @if (!string.IsNullOrEmpty(Hint)) { <p class="alert alert-info">@Hint</p> }
+    <form @onsubmit="SaveAsync" @onsubmit:preventDefault>
+        <fieldset disabled="@Busy">
+            <div class="np-rule-fields">
+                <label>Name<input class="form-control" maxlength="80" @bind="_form.Name" /></label>
+                <label>Scope<select class="form-select" @bind="_form.Scope">
+                    <option value="All">All devices</option><option value="Category">A category</option><option value="Devices">Specific devices</option>
+                </select></label>
+                @if (_form.Scope == RuleScopeKind.Category)
+                {
+                    <label>Category<select class="form-select" @bind="_form.Category"><option value="">Choose a category</option>
+                        @foreach (var category in Categories) { <option value="@category">@category.Replace('_', ' ')</option> }
+                    </select></label>
+                }
+            </div>
+            @if (_form.Scope == RuleScopeKind.Devices)
+            {
+                <fieldset class="np-device-picker"><legend>Devices (select one or more)</legend>
+                    @foreach (var device in Devices.OrderBy(RuleSummary.DeviceName))
+                    {
+                        var mac = device.Mac.ToString();
+                        <label class="np-check"><input type="checkbox" checked="@_form.Devices.Contains(mac)" @onchange="e => SelectDevice(mac, e.Value is true)" />@RuleSummary.DeviceName(device) (@mac)</label>
+                    }
+                    @foreach (var missing in _form.Devices.Except(Devices.Select(d => d.Mac.ToString())).ToArray())
+                    {
+                        <label class="np-check"><input type="checkbox" checked @onchange="e => SelectDevice(missing, e.Value is true)" />@missing (no longer in device list)</label>
+                    }
+                </fieldset>
+            }
+            <div class="np-rule-fields mt-3">
+                <label>Trigger<select class="form-select" @bind="_form.Trigger" @bind:after="TriggerChanged">
+                    <option value="UsageOver">Device Internet usage over</option><option value="HouseholdUsageOver">Household Internet usage over</option>
+                    <option value="TimeWindow">Time window</option><option value="DeviceJoined">New device joined</option><option value="DeviceIdle">Device idle</option>
+                </select></label>
+                @if (_form.Trigger is RuleTriggerKind.UsageOver or RuleTriggerKind.HouseholdUsageOver)
+                {
+                    <label>Period<select class="form-select" @bind="_form.Period"><option value="Day">Day</option><option value="Month">Month</option></select></label>
+                    <label>Threshold (decimal GB)<input class="form-control" inputmode="decimal" @bind="_form.Gigabytes" /></label>
+                }
+                @if (_form.Trigger == RuleTriggerKind.TimeWindow)
+                {
+                    <label>Start (HH:mm)<input type="time" class="form-control" value="@_form.Start" @onchange="e => _form.Start = e.Value?.ToString() ?? string.Empty" /></label>
+                    <label>End (HH:mm)<input type="time" class="form-control" value="@_form.End" @onchange="e => _form.End = e.Value?.ToString() ?? string.Empty" /></label>
+                }
+                @if (_form.Trigger == RuleTriggerKind.DeviceIdle)
+                {
+                    <label>Days without being seen<input class="form-control" inputmode="numeric" @bind="_form.IdleDays" /></label>
+                }
+            </div>
+            <p class="np-device-sub">Timezone: @Clock.TimeZone.Id. 1 GB = 1,000,000,000 bytes of Internet usage.</p>
+            @if (_form.Trigger == RuleTriggerKind.HouseholdUsageOver)
+            { <p class="np-device-sub">Usage totals the whole household; the scope selects devices targeted by actions.</p> }
+            @if (_form.Trigger == RuleTriggerKind.DeviceJoined)
+            { <p class="np-device-sub">Matches devices first discovered after this rule was created.</p> }
+            @if (_form.Trigger == RuleTriggerKind.TimeWindow)
+            {
+                <fieldset class="np-weekdays"><legend>Weekdays (day the window starts)</legend>
+                    @foreach (var day in Enum.GetValues<DayOfWeek>())
+                    { <label class="np-check"><input type="checkbox" checked="@_form.Days.Contains(day)" @onchange="e => SelectDay(day, e.Value is true)" />@day</label> }
+                </fieldset>
+            }
+            <h5 class="mt-3">Actions</h5>
+            @foreach (var action in _form.Actions)
+            {
+                <div class="np-action-row" @key="action">
+                    <label>Action<select class="form-select" @bind="action.Kind">
+                        <option value="Notify">Notify</option><option value="Throttle">Throttle</option><option value="Block">Block</option><option value="SetWireless">Set guest/IoT WiFi</option>
+                    </select></label>
+                    @if (action.Kind == RuleActionKind.Notify)
+                    {
+                        <label>Title template<input class="form-control" @bind="action.Title" /></label>
+                        <label>Body template<textarea class="form-control" @bind="action.Body"></textarea></label>
+                        <p class="np-device-sub">Placeholders: {rule} = rule name, {device} = device name, {used} = used bytes, {cap} = threshold bytes.</p>
+                    }
+                    @if (action.Kind == RuleActionKind.Throttle)
+                    { <label>Symmetric limit (Kbps)<input class="form-control" inputmode="numeric" @bind="action.Kbps" /></label> }
+                    @if (action.Kind == RuleActionKind.SetWireless)
+                    {
+                        <label>Guest/IoT network<select class="form-select" @bind="action.NetworkId"><option value="">Choose a network</option>
+                            @foreach (var id in RuleForm.SafeNetworkIds) { <option value="@id">@id</option> }
+                        </select></label>
+                        <label>State<select class="form-select" @bind="action.WirelessEnabled"><option value="false">Off</option><option value="true">On</option></select></label>
+                        <p class="np-device-sub">Main WiFi cannot be selected. Choose a network supported by your router; an unavailable network records a failed firing.</p>
+                    }
+                    <button type="button" class="btn btn-link btn-sm" @onclick="() => _form.Actions.Remove(action)">Remove action</button>
+                </div>
+            }
+            <button type="button" class="btn btn-outline-primary btn-sm mb-3" @onclick="() => _form.Actions.Add(new())">Add action</button>
+            @if (_form.Actions.Any(a => a.Kind is RuleActionKind.Throttle or RuleActionKind.Block))
+            { <p class="alert alert-info">Protected devices (managed in Quotas) are never throttled or blocked by rules.</p> }
+            <div class="np-rule-fields">
+                <label>Revert policy<select class="form-select" @bind="_form.Revert">
+                    <option value="None">Manual release only</option><option value="AtPeriodEnd">At period end (day/month)</option><option value="AfterMinutes">After a delay</option>
+                    @if (_form.Trigger == RuleTriggerKind.TimeWindow) { <option value="WhenTriggerEnds">When the time window ends</option> }
+                </select></label>
+                @if (_form.Revert == RuleRevertKind.AfterMinutes)
+                { <label>Revert after (minutes)<input class="form-control" inputmode="numeric" @bind="_form.RevertMinutes" /></label> }
+                <label>Cooldown (minutes)<input class="form-control" inputmode="numeric" @bind="_form.CooldownMinutes" /></label>
+                <label>Once per<select class="form-select" @bind="_form.OncePer"><option value="None">No period limit</option><option value="Day">Day</option><option value="Month">Month</option></select></label>
+            </div>
+            <p class="np-device-sub">Period-end means the usage period for usage triggers and midnight for other triggers. Notify-only firings have no restriction to release.</p>
+            <div class="np-rule-controls">
+                <label class="np-check"><input type="checkbox" @bind="_form.Enabled" />Enabled</label>
+                <label class="np-check"><input type="checkbox" @bind="_form.DryRun" />Dry-run: log and notify; no router changes</label>
+            </div>
+            @{
+                var validRule = _form.Build(out var errors);
+            }
+            @if (errors.Count > 0)
+            {
+                <ul class="text-danger" role="alert">@foreach (var error in errors) { <li>@error</li> }</ul>
+            }
+            <p class="np-device-sub">Saving takes effect on the Agent's next tick (about @TickMinutes minutes).</p>
+            <div class="np-rule-controls">
+                <button type="submit" class="np-save-btn" disabled="@(Busy || validRule is null)">@(Busy ? "Saving…" : "Save rule")</button>
+                <button type="button" class="btn btn-link" @onclick="() => Cancelled.InvokeAsync()">Cancel</button>
+            </div>
+        </fieldset>
+    </form>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public Rule InitialRule { get; set; } = new();
+    [Parameter] public bool IsNew { get; set; }
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public string Hint { get; set; } = "";
+    [Parameter] public string TickMinutes { get; set; } = "3";
+    [Parameter] public IReadOnlyList<Device> Devices { get; set; } = [];
+    [Parameter] public IReadOnlyList<string> Categories { get; set; } = [];
+    [Parameter] public EventCallback<Rule> Saved { get; set; }
+    [Parameter] public EventCallback Cancelled { get; set; }
+    private RuleForm _form = new();
+    protected override void OnInitialized() => _form = RuleForm.From(InitialRule);
+    private void SelectDevice(string mac, bool selected) { if (selected) _form.Devices.Add(mac); else _form.Devices.Remove(mac); }
+    private void SelectDay(DayOfWeek day, bool selected) { if (selected) _form.Days.Add(day); else _form.Days.Remove(day); }
+    private void TriggerChanged()
+    {
+        if (_form.Trigger != RuleTriggerKind.TimeWindow && _form.Revert == RuleRevertKind.WhenTriggerEnds)
+            _form.Revert = RuleRevertKind.None;
+    }
+    private async Task SaveAsync()
+    {
+        if (_form.Build(out _) is { } rule) await Saved.InvokeAsync(rule);
+    }
+}

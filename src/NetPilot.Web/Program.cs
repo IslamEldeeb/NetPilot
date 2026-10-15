@@ -1,4 +1,5 @@
 using NetPilot.Core.Enforcement;
+using NetPilot.Core.Rules;
 using NetPilot.Core.Usage;
 using NetPilot.Data;
 using NetPilot.Notifications.WebPush;
@@ -15,6 +16,11 @@ var dataDir = builder.Configuration["NetPilot:DataDirectory"] ?? "../../data";
 Directory.CreateDirectory(dataDir);
 var dbPath = Path.Combine(dataDir, "netpilot.db");
 var keyRingPath = Path.Combine(dataDir, "keys");
+
+var rulesOptions = new RulesOptions();
+builder.Configuration.GetSection("NetPilot:Rules").Bind(rulesOptions);
+rulesOptions.Validate();
+builder.Services.AddSingleton(rulesOptions);
 
 builder.Services.AddNetPilotData(dbPath, keyRingPath);
 builder.Services.AddTpLinkProvider();

@@ -56,6 +56,8 @@ public interface IRuleFiringStore
     Task<RuleFiring?> FindAsync(string id, CancellationToken ct);
     Task<RuleFiring?> FindLatestAsync(Guid ruleId, string subject, CancellationToken ct);
     Task<RuleFiring> UpdateAsync(string id, Func<RuleFiring?, RuleFiring> update, CancellationToken ct);
+    // Returns false if missing or no longer active; repeated active requests succeed.
+    Task<bool> RequestReleaseAsync(string id, CancellationToken ct);
     Task PruneAsync(int keepNewest, CancellationToken ct);
 }
 

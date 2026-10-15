@@ -1,0 +1,111 @@
+@using NetPilot.Core.Rules
+@using NetPilot.Core.Rules.Presentation
+@using NetPilot.Core.Devices
+@using NetPilot.Core.Enforcement.Claims
+@using NetPilot.Core.Usage
+@inject UsagePeriodClock Clock
+
+<section aria-label="Activity from rules">
+    <h4>Activity from rules</h4>
+    <p class="np-device-sub">Dry-run results say “Would have” and create no router restrictions. Refresh to see the Agent's latest results. Times: @Clock.TimeZone.Id.</p>
+    <div class="np-rule-fields mb-3">
+        <label>Filter by rule<select class="form-select" @bind="_ruleId"><option value="">All rules</option>
+            @foreach (var rule in Rules.Select(r => (r.Id, r.Name)).UnionBy(Firings.Select(f => (Id: f.RuleId, Name: f.RuleName)), r => r.Id).OrderBy(r => r.Name))
+            { <option value="@rule.Id.ToString()">@rule.Name</option> }
+        </select></label>
+        <label>Why is this device restricted? / Filter by device<select class="form-select" @bind="_mac"><option value="">All devices / household</option>
+            @foreach (var device in Devices.OrderBy(RuleSummary.DeviceName))
+            { <option value="@device.Mac.ToString()">@RuleSummary.DeviceName(device) (@device.Mac)</option> }
+            @foreach (var missing in Claims.Select(c => c.Mac.ToString()).Concat(Firings.SelectMany(f => f.TargetMacs.Select(m => m.ToString()))).Except(Devices.Select(d => d.Mac.ToString())).Distinct().Order())
+            { <option value="@missing">@missing (no longer in device list)</option> }
+        </select></label>
+        <label>Results<select class="form-select" @bind="_results"><option value="all">All results</option><option value="dry">Dry-run results</option><option value="live">Live results</option></select></label>
+    </div>
+    @if (_mac.Length > 0)
+    {
+        var claims = Claims.Where(c => c.Mac.ToString() == _mac).ToArray();
+        var active = Firings.Where(f => f.Status == RuleFiringStatus.Active && MatchesDevice(f)).ToArray();
+        var effective = EffectiveRestriction.Compute(claims);
+        <aside class="np-card mb-3" aria-label="Active restrictions">
+            <h5>Active claims for @DeviceLabel(_mac)</h5>
+            <p>@(effective.IsBlocked ? "Block wins over every throttle." : effective.Throttle is { } throttle ? $"Lowest active cap wins: {throttle.DownloadKbps} Kbps in both directions." : "No active automatic throttle or block claims.")</p>
+            @foreach (var claim in claims) { <p>@RuleSummary.Claim(claim, Rules) <small>(@claim.Source)</small></p> }
+            @foreach (var firing in active)
+            {
+                <p><strong>@firing.RuleName</strong>: @RuleSummary.FiringReason(firing) · @RuleSummary.FiringActions(firing) · @RevertText(firing)
+                    @if (firing.ReleaseRequested) { <span> · Release requested – waiting for the Agent's next tick (about @TickMinutes minutes).</span> }
+                    @if (firing.AppliedClaimIds.Length == 0) { <span> · Active firing; no device claim recorded yet.</span> }
+                </p>
+            }
+            <p class="np-device-sub">Claims show persisted enforcement intent, not a fresh router read. Failed firings can be pending or partly applied. Release removes only that firing's claims; another rule or quota can keep the restriction. Base device/category speed limits can also remain.</p>
+        </aside>
+    }
+    <div class="np-history-scroll">
+        <table class="table np-history-table">
+            <caption>Newest first. Use Release now on an active firing to request release.</caption>
+            <thead><tr><th>When (@Clock.TimeZone.Id)</th><th>Rule</th><th>Subject</th><th>Outcome</th><th>Status</th><th>Actions</th><th>Revert time / condition</th><th>Error / detail</th><th>Release</th></tr></thead>
+            <tbody>
+                @foreach (var firing in Filtered())
+                {
+                    <tr class="@(firing.DryRun ? "np-dry-firing" : "")" @key="firing.Id">
+                        <td>@LocalTime(firing.FiredAtUtc)</td><td>@firing.RuleName</td><td>@Subject(firing)</td><td>@firing.Outcome</td>
+                        <td>@firing.Status @(firing.Reverting ? "(releasing)" : "")</td><td>@RuleSummary.FiringActions(firing)<div class="np-device-sub">@RuleSummary.FiringReason(firing)</div></td><td>@RevertText(firing)</td><td>@firing.Error</td>
+                        <td>
+                            @if (firing.Status == RuleFiringStatus.Active)
+                            {
+                                @if (firing.ReleaseRequested)
+                                { <span role="status">Release requested – the Agent will release it on its next tick (about @TickMinutes minutes).</span> }
+                                else
+                                {
+                                    <button type="button" class="btn btn-outline-primary btn-sm" disabled="@Busy" @onclick="() => _confirmId = firing.Id">Release now</button>
+                                    @if (_confirmId == firing.Id)
+                                    {
+                                        <div class="alert alert-warning" role="alert">Release “@firing.RuleName” for @Subject(firing)? Takes effect on the Agent's next tick (about @TickMinutes minutes). Other rules and quotas may still restrict it; usage rules can fire again after their cooldown or once-per period.
+                                            <button type="button" class="btn btn-primary btn-sm" disabled="@Busy" @onclick="() => ConfirmReleaseAsync(firing.Id)">Confirm release</button>
+                                            <button type="button" class="btn btn-link btn-sm" @onclick="() => _confirmId = null">Cancel</button>
+                                        </div>
+                                    }
+                                }
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    @if (!Filtered().Any()) { <p class="np-empty">No matching firings yet.</p> }
+</section>
+
+@code {
+    [Parameter] public IReadOnlyList<RuleFiring> Firings { get; set; } = [];
+    [Parameter] public IReadOnlyList<Rule> Rules { get; set; } = [];
+    [Parameter] public IReadOnlyList<Device> Devices { get; set; } = [];
+    [Parameter] public IReadOnlyList<ActionClaim> Claims { get; set; } = [];
+    [Parameter] public string TickMinutes { get; set; } = "3";
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public EventCallback<string> ReleaseRequested { get; set; }
+    private string _ruleId = "", _mac = "", _results = "all";
+    private string? _confirmId;
+    private bool MatchesDevice(RuleFiring firing) => firing.Subject == _mac || firing.TargetMacs.Any(m => m.ToString() == _mac);
+    private IEnumerable<RuleFiring> Filtered() => Firings.Where(f => (_ruleId.Length == 0 || f.RuleId.ToString() == _ruleId)
+        && (_mac.Length == 0 || MatchesDevice(f)) && (_results == "all" || f.DryRun == (_results == "dry"))).OrderByDescending(f => f.FiredAtUtc);
+    private string LocalTime(DateTimeOffset utc) => TimeZoneInfo.ConvertTime(utc, Clock.TimeZone).ToString("yyyy-MM-dd HH:mm:ss");
+    private string DeviceLabel(string mac) => Devices.FirstOrDefault(d => d.Mac.ToString() == mac) is { } device ? $"{RuleSummary.DeviceName(device)} ({mac})" : mac;
+    private string Subject(RuleFiring firing)
+    {
+        var subject = firing.Subject == "household" ? "Household"
+            : !Devices.Any(d => d.Mac.ToString() == firing.Subject) && !string.IsNullOrWhiteSpace(firing.DeviceName)
+                ? $"{firing.DeviceName} ({firing.Subject})" : DeviceLabel(firing.Subject);
+        var networks = firing.Actions.OfType<SetWireless>().Select(w => w.NetworkId).Distinct().ToArray();
+        return networks.Length > 0 ? $"{subject} · wireless: {string.Join(", ", networks)}" : subject;
+    }
+    private string RevertText(RuleFiring firing) => firing.RevertAtUtc is { } at ? LocalTime(at)
+        : firing.RevertWhenTriggerEnds ? $"When time window ends ({firing.Window?.End})"
+        : firing.RevertPeriod is { } period ? $"At end of {period.ToString().ToLowerInvariant()} {firing.RevertPeriodKey}"
+        : "Manual release (no scheduled revert)";
+    private async Task ConfirmReleaseAsync(string id)
+    {
+        await ReleaseRequested.InvokeAsync(id);
+        _confirmId = null;
+    }
+}

@@ -167,8 +167,9 @@ For the LAN-only Caddy option, use `docker-compose.caddy.yml` as the second file
 | [`docs/deployment.md`](docs/deployment.md) | How to deploy with Docker Compose |
 | [`docs/https-access.md`](docs/https-access.md) | Android push over private Tailscale HTTPS, LAN Caddy alternative, troubleshooting |
 | [`docs/server-notifications.md`](docs/server-notifications.md) | Notification configuration, subscriptions, delivery and scoped actions |
+| [`docs/rules.md`](docs/rules.md) | Rules editor, templates, dry-run rollout, firing history and release requests |
 | [`docs/lan-traffic-exclusion.md`](docs/lan-traffic-exclusion.md) | Internet/LAN usage, Proxmox bridge counter verification and optional exporter setup |
-| [`docs/phase5-quotas-notifications-rules-plan.md`](docs/phase5-quotas-notifications-rules-plan.md) | Quotas, notifications, LAN-traffic exclusion and planned rules |
+| [`docs/phase5-quotas-notifications-rules-plan.md`](docs/phase5-quotas-notifications-rules-plan.md) | Quotas, notifications, LAN-traffic exclusion and rules |
 | `docs/phase2-*.md` | Usage-tracking feature planning |
 | `docs/NetPilot_Research_Findings_and_Architecture.md` | Earlier, superseded research (background only) |
 

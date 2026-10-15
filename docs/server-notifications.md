@@ -49,3 +49,7 @@ The token is the credential; there is no login. Data Protection binds MAC, perio
 **+1 GB today** adds exactly 1,000,000,000 bytes to the named daily row; monthly notifications say **+1 GB this month** and extend only that monthly row. **Restore now** sets `ReleaseRequested`; the Agent releases that claim through the existing revert/event path and sets `ActionSuppressedForPeriod`, preventing re-enforcement for that period. A request before enforcement suppresses the period without a router write or `Reverted` event. Another active daily/monthly claim can keep the shared router action in place. New periods enforce again; an extended cap can be exceeded again. Both operations change persisted state only: **the Agent applies effects on its next tick (default 180 seconds)**. The Web action route never calls the router.
 
 The Agent image now uses the ASP.NET runtime for the Data implementation's time-limited Data Protection API; no new NuGet package was added.
+
+## Rules
+
+Rules use the same notification dispatcher and subscriptions. Configure and inspect them in the **Rules** tab; see [Rules](rules.md) for templates, forced dry-run, firing history, claims and Release now. Rule notification placeholders `{used}` and `{cap}` contain raw bytes. Release now writes a request only; the Agent releases effects on its next tick (default about 3 minutes).

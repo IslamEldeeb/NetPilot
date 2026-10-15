@@ -10,6 +10,8 @@ services:
       - ROUTER_HOST=${ROUTER_HOST:-}
       - ROUTER_PASSWORD=${ROUTER_PASSWORD:-}
       - NetPilot__Rules__ForceDryRun=${NETPILOT_RULES_FORCE_DRYRUN:-true}
+      - NetPilot__Rules__Enabled=${NETPILOT_RULES_ENABLED:-true}
+      - NetPilot__PollIntervalSeconds=${NETPILOT_POLL_INTERVAL_SECONDS:-180}
       - NetPilot__Notifications__VapidSubject=${NETPILOT_VAPID_SUBJECT:-mailto:netpilot@localhost}
       - NetPilot__LocalTraffic__Url=${NETPILOT_LANTRAFFIC_URL:-}
       - NetPilot__LocalTraffic__Token=${NETPILOT_LANTRAFFIC_TOKEN:-}
@@ -29,6 +31,9 @@ services:
     volumes:
       - netpilot-data:/data
     environment:
+      - NetPilot__Rules__ForceDryRun=${NETPILOT_RULES_FORCE_DRYRUN:-true}
+      - NetPilot__Rules__Enabled=${NETPILOT_RULES_ENABLED:-true}
+      - NetPilot__PollIntervalSeconds=${NETPILOT_POLL_INTERVAL_SECONDS:-180}
       - NetPilot__Notifications__VapidSubject=${NETPILOT_VAPID_SUBJECT:-mailto:netpilot@localhost}
       - NetPilot__LocalTraffic__Url=${NETPILOT_LANTRAFFIC_URL:-}
       - NetPilot__LocalTraffic__Token=${NETPILOT_LANTRAFFIC_TOKEN:-}

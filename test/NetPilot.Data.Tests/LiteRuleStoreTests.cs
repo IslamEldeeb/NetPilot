@@ -149,6 +149,42 @@ public class LiteRuleStoreTests : IDisposable
         Assert.Equal("7", (await store.FindLatestAsync(ruleId, Mac, Ct))!.EpisodeKey);
     }
 
+    [Theory]
+    [InlineData(RuleFiringStatus.Active, true)]
+    [InlineData(RuleFiringStatus.Reverted, false)]
+    [InlineData(RuleFiringStatus.Released, false)]
+    public async Task AtomicRelease_OnlyChangesActiveRowsAndPreservesConcurrentAgentFields(RuleFiringStatus status, bool expected)
+    {
+        using var webDb = new NetPilotDatabase(DbPath);
+        using var agentDb = new NetPilotDatabase(DbPath);
+        var web = new LiteRuleFiringStore(webDb);
+        var agent = new LiteRuleFiringStore(agentDb);
+        var row = new RuleFiring { RuleId = Guid.NewGuid(), Subject = Mac.ToString(), EpisodeKey = "release-test",
+            Status = status, FiredAtUtc = DateTimeOffset.UtcNow, TargetMacs = [Mac], Actions = [new Throttle(256)],
+            AppliedClaimIds = ["claim"], WirelessPrior = [new("guest-5g", true, false)], RevertAtUtc = DateTimeOffset.UtcNow.AddHours(1) };
+        await agent.UpdateAsync(row.Id, _ => row, Ct);
+        Assert.False(await web.RequestReleaseAsync("missing", Ct));
+        await Task.WhenAll(
+            Task.Run(() => web.RequestReleaseAsync(row.Id, Ct)),
+            Task.Run(() => agent.UpdateAsync(row.Id, current => current! with { Error = "Agent progress", CompletedActionKeys = ["0", "1"], Completed = true }, Ct)));
+        Assert.Equal(expected, await web.RequestReleaseAsync(row.Id, Ct));
+        Assert.Equal(expected, await web.RequestReleaseAsync(row.Id, Ct));
+        var saved = (await agent.FindAsync(row.Id, Ct))!;
+        Assert.Equal(expected, saved.ReleaseRequested);
+        Assert.Equal(status, saved.Status);
+        Assert.True(saved.Completed);
+        Assert.Equal("Agent progress", saved.Error);
+        Assert.Equal(new[] { "0", "1" }, saved.CompletedActionKeys);
+        Assert.Equal(row.Actions, saved.Actions);
+        Assert.Equal(row.TargetMacs, saved.TargetMacs);
+        Assert.Equal(row.AppliedClaimIds, saved.AppliedClaimIds);
+        Assert.Equal(row.WirelessPrior, saved.WirelessPrior);
+        Assert.Equal(row.RevertAtUtc, saved.RevertAtUtc);
+        Assert.Equal(expected, (await web.FindLatestAsync(row.RuleId, row.Subject, Ct))!.ReleaseRequested);
+        await agent.UpdateAsync(row.Id, current => current! with { Status = RuleFiringStatus.Reverted }, Ct);
+        Assert.False(await web.RequestReleaseAsync(row.Id, Ct));
+    }
+
     private sealed class RecordingLogger : ILogger<LiteRuleStore>
     {
         public List<string> Warnings { get; } = [];

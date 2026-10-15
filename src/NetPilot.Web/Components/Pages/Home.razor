@@ -93,6 +93,7 @@
         <button type="button" class="np-tab @(_activeTab == Tab.Devices ? "active" : "")" @onclick="() => _activeTab = Tab.Devices">Devices</button>
         <button type="button" class="np-tab @(_activeTab == Tab.Policies ? "active" : "")" @onclick="() => _activeTab = Tab.Policies">Device type policies</button>
         <button type="button" class="np-tab @(_activeTab == Tab.Quotas ? "active" : "")" @onclick="() => _activeTab = Tab.Quotas">Quotas</button>
+        <button type="button" class="np-tab @(_activeTab == Tab.Rules ? "active" : "")" @onclick="() => _activeTab = Tab.Rules">Rules</button>
         <button type="button" class="np-tab @(_activeTab == Tab.Notifications ? "active" : "")" @onclick="() => _activeTab = Tab.Notifications">Notifications</button>
         <button type="button" class="np-tab @(_activeTab == Tab.Activity ? "active" : "")" @onclick="() => _activeTab = Tab.Activity">Activity log</button>
         <button type="button" class="np-tab @(_activeTab == Tab.Usage ? "active" : "")" @onclick="() => _activeTab = Tab.Usage">Usage</button>
@@ -283,6 +284,10 @@
     else if (_activeTab == Tab.Quotas)
     {
         <NetPilot.Web.Components.Tabs.QuotasTab Devices="_devices" UsageStates="_usageStates" />
+    }
+    else if (_activeTab == Tab.Rules)
+    {
+        <NetPilot.Web.Components.Tabs.RulesTab />
     }
     else if (_activeTab == Tab.Notifications)
     {
@@ -550,7 +555,7 @@
 </div>
 
 @code {
-    private enum Tab { Devices, Policies, Quotas, Notifications, Activity, Usage, Management, Wireless }
+    private enum Tab { Devices, Policies, Quotas, Rules, Notifications, Activity, Usage, Management, Wireless }
 
     private RouterConnection? _connection;
     private List<Device> _devices = [];
