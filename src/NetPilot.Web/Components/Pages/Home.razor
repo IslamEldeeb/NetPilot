@@ -91,6 +91,7 @@
     <div class="np-tabs">
         <button type="button" class="np-tab @(_activeTab == Tab.Devices ? "active" : "")" @onclick="() => _activeTab = Tab.Devices">Devices</button>
         <button type="button" class="np-tab @(_activeTab == Tab.Policies ? "active" : "")" @onclick="() => _activeTab = Tab.Policies">Device type policies</button>
+        <button type="button" class="np-tab @(_activeTab == Tab.Quotas ? "active" : "")" @onclick="() => _activeTab = Tab.Quotas">Quotas</button>
         <button type="button" class="np-tab @(_activeTab == Tab.Activity ? "active" : "")" @onclick="() => _activeTab = Tab.Activity">Activity log</button>
         <button type="button" class="np-tab @(_activeTab == Tab.Usage ? "active" : "")" @onclick="() => _activeTab = Tab.Usage">Usage</button>
         <button type="button" class="np-tab @(_activeTab == Tab.Management ? "active" : "")" @onclick="() => _activeTab = Tab.Management">Management</button>
@@ -276,6 +277,10 @@
                 }
             </div>
         </section>
+    }
+    else if (_activeTab == Tab.Quotas)
+    {
+        <NetPilot.Web.Components.Tabs.QuotasTab Devices="_devices" UsageStates="_usageStates" />
     }
     else if (_activeTab == Tab.Activity)
     {
@@ -531,7 +536,7 @@
 </div>
 
 @code {
-    private enum Tab { Devices, Policies, Activity, Usage, Management, Wireless }
+    private enum Tab { Devices, Policies, Quotas, Activity, Usage, Management, Wireless }
 
     private RouterConnection? _connection;
     private List<Device> _devices = [];

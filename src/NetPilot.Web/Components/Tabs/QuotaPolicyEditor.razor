@@ -1,0 +1,156 @@
+@using System.Globalization
+@using NetPilot.Core.Quota
+@inject IQuotaStore QuotaStore
+@inject ILogger<QuotaPolicyEditor> Logger
+
+<form @onsubmit="SaveAsync" @onsubmit:preventDefault>
+    <fieldset disabled="@_busy">
+        <div class="d-flex align-items-center gap-2 mb-2">
+            <strong>@Label</strong>
+            <span class="np-version-chip">@(_exists ? "Override saved" : InitialPolicy.Scope == QuotaScope.Default ? "Not configured" : "Inherits")</span>
+        </div>
+        <div class="np-quota-fields">
+            <label>Daily cap (GB)<input type="text" inputmode="decimal" class="np-mbps-input" placeholder="No cap" @bind="_dailyGb" /></label>
+            <label>Monthly cap (GB)<input type="text" inputmode="decimal" class="np-mbps-input" placeholder="No cap" @bind="_monthlyGb" /></label>
+            <label>Action<select class="form-select form-select-sm" @bind="_action">
+                @foreach (var action in Enum.GetValues<QuotaAction>())
+                {
+                    <option value="@action">@action</option>
+                }
+            </select></label>
+            <label>Throttle Kbps<input type="text" inputmode="numeric" class="np-mbps-input" disabled="@(_action != QuotaAction.Throttle)" @bind="_throttleKbps" /></label>
+            <label>Warn percents<input type="text" class="np-mbps-input" placeholder="80,90" @bind="_warnPercents" /></label>
+        </div>
+        <div class="d-flex align-items-center gap-3 flex-wrap mt-2">
+            <label class="np-check"><input type="checkbox" @bind="_exempt" />Exempt</label>
+            <label class="np-check"><input type="checkbox" @bind="_dryRun" />Dry-run</label>
+            <button type="submit" class="np-save-btn">@(_busy ? "Saving..." : "Save")</button>
+            @if (_exists)
+            {
+                <button type="button" class="btn btn-link btn-sm" @onclick="RemoveAsync">@(InitialPolicy.Scope == QuotaScope.Default ? "Remove default" : "Remove override")</button>
+            }
+            @if (_savedMessage is not null)
+            {
+                <span class="text-success" role="status">@_savedMessage</span>
+            }
+        </div>
+        @if (_error is not null)
+        {
+            <div class="text-danger mt-2" role="alert">@_error</div>
+        }
+    </fieldset>
+</form>
+
+@code {
+    [Parameter, EditorRequired] public QuotaPolicy InitialPolicy { get; set; } = default!;
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter] public bool Exists { get; set; }
+    [Parameter] public EventCallback<QuotaPolicy?> Changed { get; set; }
+
+    private const decimal BytesPerGb = 1_000_000_000m;
+    private string _dailyGb = "", _monthlyGb = "", _throttleKbps = "", _warnPercents = "";
+    private QuotaAction _action;
+    private bool _exempt, _dryRun, _exists, _busy;
+    private string? _error, _savedMessage;
+
+    protected override void OnInitialized()
+    {
+        _exists = Exists;
+        LoadFields(InitialPolicy);
+    }
+
+    private void LoadFields(QuotaPolicy policy)
+    {
+        _dailyGb = (policy.DailyBytes / BytesPerGb)?.ToString(CultureInfo.InvariantCulture) ?? "";
+        _monthlyGb = (policy.MonthlyBytes / BytesPerGb)?.ToString(CultureInfo.InvariantCulture) ?? "";
+        _throttleKbps = policy.ThrottleKbps?.ToString(CultureInfo.InvariantCulture) ?? "";
+        _warnPercents = string.Join(",", policy.WarnPercents);
+        _action = policy.Action;
+        _exempt = policy.Exempt;
+        _dryRun = policy.DryRun;
+    }
+
+    private static long? ParseCap(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        if (!decimal.TryParse(text.Trim(), NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var gb)
+            || gb <= 0 || gb > long.MaxValue / BytesPerGb)
+            throw new ArgumentException("Caps must be positive decimal GB within the supported range (use a decimal point).");
+        var bytes = gb * BytesPerGb;
+        if (bytes != decimal.Truncate(bytes))
+            throw new ArgumentException("Caps must represent a whole number of bytes (at most 9 decimal places in GB).");
+        return (long)bytes;
+    }
+
+    private QuotaPolicy ReadPolicy()
+    {
+        int? throttle = null;
+        if (_action == QuotaAction.Throttle)
+        {
+            if (!int.TryParse(_throttleKbps, out var kbps))
+                throw new ArgumentException("Throttle Kbps must be a positive integer.");
+            throttle = kbps;
+        }
+        List<int> warnings = [];
+        if (!string.IsNullOrWhiteSpace(_warnPercents))
+            foreach (var part in _warnPercents.Split(','))
+            {
+                if (!int.TryParse(part.Trim(), out var percent))
+                    throw new ArgumentException("Warn percents must be comma-separated integers, for example 80,90.");
+                warnings.Add(percent);
+            }
+        return InitialPolicy with
+        {
+            DailyBytes = ParseCap(_dailyGb), MonthlyBytes = ParseCap(_monthlyGb), Action = _action,
+            ThrottleKbps = throttle, WarnPercents = warnings.ToArray(), Exempt = _exempt, DryRun = _dryRun
+        };
+    }
+
+    private async Task SaveAsync()
+    {
+        _error = _savedMessage = null;
+        QuotaPolicy policy;
+        try
+        {
+            policy = ReadPolicy();
+            var errors = policy.Validate();
+            if (errors.Count > 0) { _error = string.Join(" ", errors); return; }
+        }
+        catch (ArgumentException ex) { _error = ex.Message; return; }
+
+        _busy = true;
+        try
+        {
+            await QuotaStore.UpsertAsync(policy, CancellationToken.None);
+            _exists = true;
+            await Changed.InvokeAsync(policy);
+            _savedMessage = "Saved";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to save quota {QuotaId}", InitialPolicy.Id);
+            _error = "Could not save this quota. Try again.";
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task RemoveAsync()
+    {
+        _error = _savedMessage = null;
+        _busy = true;
+        try
+        {
+            await QuotaStore.DeleteAsync(InitialPolicy.Id, CancellationToken.None);
+            _exists = false;
+            LoadFields(new QuotaPolicy { Id = InitialPolicy.Id, Scope = InitialPolicy.Scope, CategoryKey = InitialPolicy.CategoryKey, Mac = InitialPolicy.Mac });
+            await Changed.InvokeAsync(null);
+            _savedMessage = "Removed";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to remove quota {QuotaId}", InitialPolicy.Id);
+            _error = "Could not remove this quota. Try again.";
+        }
+        finally { _busy = false; }
+    }
+}

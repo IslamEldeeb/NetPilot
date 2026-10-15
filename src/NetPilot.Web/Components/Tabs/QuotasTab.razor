@@ -1,0 +1,218 @@
+@using System.Globalization
+@using NetPilot.Core.Devices
+@using NetPilot.Core.Policy
+@using NetPilot.Core.Quota
+@using NetPilot.Core.Usage
+@inject IQuotaStore QuotaStore
+@inject IProtectedDeviceStore ProtectedDeviceStore
+@inject IPolicyStore PolicyStore
+@inject UsagePeriodClock PeriodClock
+@inject ILogger<QuotasTab> Logger
+
+<div class="np-quotas">
+    <div class="np-section-head"><h3>Quotas</h3></div>
+    <p class="np-device-sub">1 GB = 1,000,000,000 bytes. Blank caps mean no cap and still override lower scopes. Remove an override to inherit. Warn percents: sorted, distinct, 1–99; blank disables warnings.</p>
+    @if (_error is not null)
+    {
+        <div class="alert alert-danger" role="alert">@_error</div>
+    }
+    @if (!_loaded)
+    {
+        <p class="np-empty">@(_error is null ? "Loading quotas..." : "Quotas could not be loaded. Reopen this tab to retry.")</p>
+    }
+    else
+    {
+        @if (Devices.Any(d => QuotaResolver.Resolve(d, _policies).MatchedPolicy is { DryRun: true, Exempt: false }))
+        {
+            <div class="alert alert-info" role="status">Dry-run: nothing is enforced yet</div>
+        }
+        <p class="np-device-sub">Quota enforcement is not implemented yet. These settings only save data.</p>
+        <section class="np-card mb-3">
+            <QuotaPolicyEditor Label="Global default" InitialPolicy="@PolicyFor("default", QuotaScope.Default)" Exists="@HasPolicy("default")" Changed='p => PolicyChanged("default", p)' />
+        </section>
+
+        <section class="mb-4">
+            <div class="np-section-head"><h3>Category overrides</h3></div>
+            <div class="np-policy-grid">
+                @foreach (var category in _categories.Union(Devices.Select(d => d.CategoryKey)).Order())
+                {
+                    var id = $"cat:{category}";
+                    <div class="np-policy-row" @key="id">
+                        <QuotaPolicyEditor Label="@category.Replace('_', ' ')" InitialPolicy="@PolicyFor(id, QuotaScope.Category, category)" Exists="@HasPolicy(id)" Changed="p => PolicyChanged(id, p)" />
+                    </div>
+                }
+            </div>
+        </section>
+
+        <section class="mb-4">
+            <div class="np-section-head"><h3>Per-device overrides</h3></div>
+            <div class="np-bulk-bar">
+                <label for="quota-device">Choose device</label>
+                <select id="quota-device" class="form-select form-select-sm" @bind="_selectedMac">
+                    <option value="">Select a device</option>
+                    @foreach (var device in Devices.Where(d => !_deviceEditors.Contains((string)d.Mac)).OrderBy(DeviceName))
+                    {
+                        <option value="@((string)device.Mac)">@DeviceName(device) (@device.Mac)</option>
+                    }
+                </select>
+                <button type="button" class="np-save-btn" disabled="@(string.IsNullOrEmpty(_selectedMac))" @onclick="AddDeviceEditor">Add override</button>
+            </div>
+            <div class="np-policy-grid">
+                @foreach (var mac in _deviceEditors.Order())
+                {
+                    var id = $"dev:{mac}";
+                    <div class="np-policy-row" @key="id">
+                        <QuotaPolicyEditor Label="@DeviceLabel(mac)" InitialPolicy="@PolicyFor(id, QuotaScope.Device, mac: new MacAddress(mac))" Exists="@HasPolicy(id)" Changed="p => DevicePolicyChanged(mac, p)" />
+                        @if (!HasPolicy(id))
+                        {
+                            <button type="button" class="btn btn-link btn-sm" @onclick="() => _deviceEditors.Remove(mac)">Cancel</button>
+                        }
+                    </div>
+                }
+            </div>
+        </section>
+
+        <section class="mb-4">
+            <div class="np-section-head"><h3>Today's progress</h3><span class="np-device-sub">@PeriodClock.TodayKey() · @PeriodClock.TimeZone.Id · decimal GB</span></div>
+            @{
+                var today = UsageQuery.BytesByDevice(UsagePeriodType.Day, PeriodClock.TodayKey(), true, UsageStates, [], []);
+            }
+            @foreach (var device in Devices.OrderBy(DeviceName))
+            {
+                var resolved = QuotaResolver.Resolve(device, _policies);
+                var used = today.GetValueOrDefault((string)device.Mac);
+                var cap = resolved.Kind == QuotaResolutionKind.Policy ? resolved.MatchedPolicy?.DailyBytes : null;
+                var percent = cap is > 0 ? used * 100m / cap.Value : 0;
+                <div class="np-card np-quota-progress mb-2" @key="device.Mac">
+                    <div class="np-device-name">@DeviceName(device)<span class="np-device-sub">@device.Mac</span></div>
+                    <div class="np-device-sub">@Gb(used) GB used today</div>
+                    @if (cap is > 0)
+                    {
+                        <div class="np-usage-bar" role="progressbar" aria-label="@($"Daily quota for {DeviceName(device)}")" aria-valuemin="0" aria-valuemax="100" aria-valuenow="@Math.Clamp(percent, 0, 100).ToString(CultureInfo.InvariantCulture)">
+                            <div class="np-usage-bar-fill" style="width:@(Math.Clamp(percent, 0, 100).ToString(CultureInfo.InvariantCulture))%"></div>
+                        </div>
+                        <span>@Gb(cap.Value) GB cap · @percent.ToString("0.#")%</span>
+                    }
+                    else
+                    {
+                        <span>@(resolved.Kind == QuotaResolutionKind.Exempt ? "Exempt" : resolved.Kind == QuotaResolutionKind.NotConfigured ? "No cap (not configured)" : "No daily cap")</span>
+                    }
+                </div>
+            }
+            @if (Devices.Count == 0) { <p class="np-empty">No devices yet.</p> }
+        </section>
+
+        <section class="mb-4">
+            <div class="np-section-head"><h3>Protected devices</h3></div>
+            <p class="np-device-sub">Protected devices will be exempt from automatic Throttle and Block actions. Usage tracking and notifications still apply.</p>
+            <div class="np-bulk-bar">
+                <label for="protected-device">Choose device</label>
+                <select id="protected-device" class="form-select form-select-sm" @bind="_protectMac" disabled="@_protectBusy">
+                    <option value="">Select a device</option>
+                    @foreach (var device in Devices.Where(d => !_protected.Contains(d.Mac)).OrderBy(DeviceName))
+                    {
+                        <option value="@((string)device.Mac)">@DeviceName(device) (@device.Mac)</option>
+                    }
+                </select>
+                <button type="button" class="np-save-btn" disabled="@(_protectBusy || string.IsNullOrEmpty(_protectMac))" @onclick="ProtectAsync">Protect</button>
+            </div>
+            @foreach (var mac in _protected.OrderBy(m => m.ToString()))
+            {
+                <div class="np-card d-flex justify-content-between align-items-center mb-2" @key="mac">
+                    <span>@DeviceLabel(mac)</span>
+                    <button type="button" class="btn btn-link btn-sm" disabled="@_protectBusy" @onclick="() => RemoveProtectionAsync(mac)">Remove protection</button>
+                </div>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<Device> Devices { get; set; } = [];
+    [Parameter] public IReadOnlyList<DeviceUsageState> UsageStates { get; set; } = [];
+    private List<QuotaPolicy> _policies = [];
+    private HashSet<string> _categories = [], _deviceEditors = [];
+    private HashSet<MacAddress> _protected = [];
+    private string _selectedMac = "", _protectMac = "";
+    private bool _loaded, _protectBusy;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _policies = (await QuotaStore.GetAllAsync(CancellationToken.None)).ToList();
+            _protected = (await ProtectedDeviceStore.GetAllAsync(CancellationToken.None)).ToHashSet();
+            _categories = (await PolicyStore.GetAllAsync(CancellationToken.None)).Select(p => p.CategoryKey)
+                .Union(_policies.Where(p => p.Scope == QuotaScope.Category).Select(p => p.CategoryKey!)).ToHashSet();
+            _deviceEditors = _policies.Where(p => p.Scope == QuotaScope.Device).Select(p => p.Mac!.Value.ToString()).ToHashSet();
+            _loaded = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load quotas");
+            _error = "Could not load quota settings.";
+        }
+    }
+
+    private bool HasPolicy(string id) => _policies.Any(p => p.Id == id);
+    private QuotaPolicy PolicyFor(string id, QuotaScope scope, string? category = null, MacAddress? mac = null) =>
+        _policies.FirstOrDefault(p => p.Id == id) ?? new() { Id = id, Scope = scope, CategoryKey = category, Mac = mac };
+
+    private void PolicyChanged(string id, QuotaPolicy? policy)
+    {
+        _policies.RemoveAll(p => p.Id == id);
+        if (policy is not null) _policies.Add(policy);
+    }
+
+    private void DevicePolicyChanged(string mac, QuotaPolicy? policy)
+    {
+        PolicyChanged($"dev:{mac}", policy);
+        if (policy is null) _deviceEditors.Remove(mac);
+    }
+
+    private void AddDeviceEditor()
+    {
+        if (Devices.Any(d => (string)d.Mac == _selectedMac)) _deviceEditors.Add(_selectedMac);
+        _selectedMac = "";
+    }
+
+    private async Task ProtectAsync()
+    {
+        var device = Devices.FirstOrDefault(d => (string)d.Mac == _protectMac);
+        if (device is null) return;
+        await ChangeProtectionAsync(device.Mac, true);
+        _protectMac = "";
+    }
+
+    private Task RemoveProtectionAsync(MacAddress mac) => ChangeProtectionAsync(mac, false);
+
+    private async Task ChangeProtectionAsync(MacAddress mac, bool protect)
+    {
+        _protectBusy = true;
+        _error = null;
+        try
+        {
+            if (protect)
+            {
+                await ProtectedDeviceStore.AddAsync(mac, CancellationToken.None);
+                _protected.Add(mac);
+            }
+            else
+            {
+                await ProtectedDeviceStore.RemoveAsync(mac, CancellationToken.None);
+                _protected.Remove(mac);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to update protection for {Mac}", mac);
+            _error = "Could not update device protection. Try again.";
+        }
+        finally { _protectBusy = false; }
+    }
+
+    private static string DeviceName(Device device) => device.FriendlyName ?? (string.IsNullOrEmpty(device.Hostname) ? device.Mac.ToString() : device.Hostname);
+    private string DeviceLabel(string mac) => Devices.FirstOrDefault(d => (string)d.Mac == mac) is { } device ? $"{DeviceName(device)} ({mac})" : mac;
+    private static string Gb(long bytes) => (bytes / 1_000_000_000m).ToString("0.###");
+}

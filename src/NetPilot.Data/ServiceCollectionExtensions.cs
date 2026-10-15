@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using NetPilot.Core.Devices;
 using NetPilot.Core.Enforcement;
 using NetPilot.Core.Policy;
+using NetPilot.Core.Quota;
 using NetPilot.Core.RouterConnection;
 using NetPilot.Core.Usage;
 
@@ -25,6 +26,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton(_ => new NetPilotDatabase(dbPath));
         services.AddSingleton<IDeviceStore, LiteDeviceStore>();
         services.AddSingleton<IPolicyStore, LitePolicyStore>();
+        services.AddSingleton<IQuotaStore, LiteQuotaStore>();
+        services.AddSingleton<IProtectedDeviceStore, LiteProtectedDeviceStore>();
         services.AddSingleton<IActivityLogStore, LiteActivityLogStore>();
         services.AddSingleton<IRouterConnectionStore, LiteRouterConnectionStore>();
         services.AddSingleton<IUsageStore, LiteUsageStore>();

@@ -1,0 +1,67 @@
+.np-quotas .np-section-head {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    flex-wrap: wrap;
+    margin-bottom: .9rem;
+}
+
+.np-quotas h3 { margin: 0; font-size: 1.3rem; font-weight: 700; }
+
+.np-card, .np-policy-row {
+    background: #fff;
+    border: 1px solid var(--np-border);
+    border-radius: 12px;
+    padding: 1rem 1.4rem;
+}
+
+.np-policy-grid { display: flex; flex-direction: column; gap: .5rem; }
+
+.np-bulk-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .75rem;
+    background: var(--np-gray-light);
+    border: 1px dashed #d1d5db;
+    border-radius: 12px;
+    padding: .6rem 1rem;
+    margin-bottom: 1rem;
+}
+
+.np-bulk-bar select { max-width: 24rem; }
+.np-device-name { font-weight: 600; }
+.np-device-sub { font-size: .78rem; color: var(--np-text-muted); }
+.np-empty { color: var(--np-text-muted); padding: 1.5rem 0; }
+.np-quota-progress { display: grid; grid-template-columns: 1fr 1fr 2fr 1fr; gap: .9rem; align-items: center; font-size: .85rem; }
+.np-quota-progress .np-device-sub { display: block; }
+.np-usage-bar { background: var(--np-gray-light); border-radius: 999px; height: 8px; overflow: hidden; }
+.np-usage-bar-fill { background: var(--np-blue); height: 100%; border-radius: 999px; }
+
+.np-quotas ::deep .np-save-btn {
+    border: none;
+    background: var(--np-blue);
+    color: #fff;
+    border-radius: 8px;
+    padding: .35rem .8rem;
+    font-size: .82rem;
+    font-weight: 600;
+}
+
+.np-quotas ::deep .np-save-btn:disabled { opacity: .6; }
+.np-quotas ::deep .np-save-btn:hover { background: #1d4ed8; }
+.np-quotas ::deep .np-version-chip { background: var(--np-gray-light); color: var(--np-text-muted); border-radius: 999px; padding: .15rem .5rem; font-size: .78rem; }
+.np-quotas ::deep .np-quota-fields { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .75rem; }
+.np-quotas ::deep .np-quota-fields label { font-size: .8rem; color: var(--np-text-muted); }
+.np-quotas ::deep .np-mbps-input { border: 1px solid var(--np-border); border-radius: 8px; padding: .35rem .6rem; font-size: .88rem; width: 100%; }
+.np-quotas ::deep .np-mbps-input:focus { outline: none; border-color: var(--np-blue); box-shadow: 0 0 0 3px var(--np-blue-light); }
+.np-quotas ::deep .np-check { display: flex; align-items: center; gap: .4rem; font-size: .88rem; color: var(--np-text-muted); cursor: pointer; }
+
+@media (max-width: 900px) {
+    .np-quotas ::deep .np-quota-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .np-quota-progress { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 500px) {
+    .np-quotas ::deep .np-quota-fields, .np-quota-progress { grid-template-columns: 1fr; }
+}

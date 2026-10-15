@@ -1,6 +1,7 @@
 using NetPilot.Core.Devices;
 using NetPilot.Core.Enforcement;
 using NetPilot.Core.Policy;
+using NetPilot.Core.Quota;
 using NetPilot.Core.Usage;
 
 namespace NetPilot.Core.Tests.Fakes;
@@ -104,4 +105,52 @@ public class InMemoryUsageStore : IUsageStore
 
     public Task<IReadOnlyList<UsageDailyHistoryEntry>> GetAllDailyHistoryAsync(CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<UsageDailyHistoryEntry>>(_dailyHistory.Values.ToList());
+}
+
+public class InMemoryQuotaStore : IQuotaStore
+{
+    private readonly Dictionary<string, QuotaPolicy> _policies = [];
+
+    public Task<IReadOnlyList<QuotaPolicy>> GetAllAsync(CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<QuotaPolicy>>(_policies.Values.ToList());
+
+    public Task<QuotaPolicy?> FindAsync(string id, CancellationToken ct) =>
+        Task.FromResult(_policies.GetValueOrDefault(id));
+
+    public Task UpsertAsync(QuotaPolicy policy, CancellationToken ct)
+    {
+        var errors = policy.Validate();
+        if (errors.Count > 0)
+            throw new ArgumentException(string.Join(" ", errors), nameof(policy));
+        _policies[policy.Id] = policy;
+        return Task.CompletedTask;
+    }
+
+    public Task DeleteAsync(string id, CancellationToken ct)
+    {
+        _policies.Remove(id);
+        return Task.CompletedTask;
+    }
+}
+
+public class InMemoryProtectedDeviceStore : IProtectedDeviceStore
+{
+    private readonly HashSet<MacAddress> _macs = [];
+
+    public Task<IReadOnlyList<MacAddress>> GetAllAsync(CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<MacAddress>>(_macs.ToList());
+
+    public Task AddAsync(MacAddress mac, CancellationToken ct)
+    {
+        _macs.Add(mac);
+        return Task.CompletedTask;
+    }
+
+    public Task RemoveAsync(MacAddress mac, CancellationToken ct)
+    {
+        _macs.Remove(mac);
+        return Task.CompletedTask;
+    }
+
+    public Task<bool> IsProtectedAsync(MacAddress mac, CancellationToken ct) => Task.FromResult(_macs.Contains(mac));
 }
