@@ -1,5 +1,6 @@
 using NetPilot.Agent;
 using NetPilot.Core.Enforcement;
+using NetPilot.Core.Enforcement.Claims;
 using NetPilot.Core.Notifications;
 using NetPilot.Core.Quota;
 using NetPilot.Core.Usage;
@@ -25,6 +26,7 @@ builder.Services.AddSingleton<UsageTrackingService>();
 builder.Services.AddSingleton<IQuotaEventSink, NullQuotaEventSink>();
 builder.Services.AddSingleton<IQuotaEventSink, ActivityLogQuotaEventSink>();
 builder.Services.AddSingleton<IQuotaEventSink, NotificationQuotaEventSink>();
+builder.Services.AddSingleton<ClaimEnforcementService>();
 builder.Services.AddSingleton<QuotaEnforcementService>();
 builder.Services.AddHostedService<Worker>();
 

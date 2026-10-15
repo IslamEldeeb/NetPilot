@@ -12,6 +12,7 @@ public class Device
     public string CategoryKey { get; set; } = DeviceCategory.UnknownKey;
     public ConnectionInfo Connection { get; set; } = new(ConnectionMedium.Unknown, IsOnline: false);
     public SpeedLimit? Override { get; set; }
+    /// <summary>Effective throttle from all action claims; the name preserves policy fingerprints and persisted data.</summary>
     public SpeedLimit? QuotaThrottle { get; set; }
     public bool IsBlocked { get; set; }
 

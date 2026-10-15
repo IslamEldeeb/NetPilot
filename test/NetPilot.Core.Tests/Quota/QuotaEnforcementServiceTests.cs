@@ -1,6 +1,7 @@
 using NetPilot.Abstractions;
 using NetPilot.Core.Devices;
 using NetPilot.Core.Enforcement;
+using NetPilot.Core.Enforcement.Claims;
 using NetPilot.Core.Policy;
 using NetPilot.Core.Quota;
 using NetPilot.Core.Tests.Fakes;
@@ -710,6 +711,7 @@ public class QuotaEnforcementServiceTests
         public InMemoryPolicyStore Policies { get; } = new();
         public InMemoryQuotaStore Quotas { get; } = new();
         public InMemoryQuotaStateStore States { get; } = new();
+        public InMemoryActionClaimStore Claims { get; } = new();
         public InMemoryProtectedDeviceStore Protected { get; } = new();
         public InMemoryActivityLogStore Log { get; } = new();
         public CapturingSink Events { get; } = new();
@@ -741,7 +743,7 @@ public class QuotaEnforcementServiceTests
         }
 
         public QuotaEnforcementService NewService(IUsageStore? usage = null, IEnumerable<IQuotaEventSink>? sinks = null) =>
-            new(Devices, usage ?? Usages, Quotas, States, Protected, Policies, Reconciliation, Log,
+            new(Devices, usage ?? Usages, Quotas, States, Protected, Policies, Claims, new ClaimEnforcementService(Claims, Devices, Policies, Reconciliation), Log,
                 sinks ?? [new NullQuotaEventSink(), Events, new ActivityLogQuotaEventSink(Log)], Clock);
 
         public Task EvaluateAsync() => Service.EvaluateAsync(Provider, Provider.Devices, Ct);

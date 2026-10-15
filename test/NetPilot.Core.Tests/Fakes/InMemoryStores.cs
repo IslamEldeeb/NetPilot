@@ -1,5 +1,6 @@
 using NetPilot.Core.Devices;
 using NetPilot.Core.Enforcement;
+using NetPilot.Core.Enforcement.Claims;
 using NetPilot.Core.Policy;
 using NetPilot.Core.Quota;
 using NetPilot.Core.Usage;
@@ -187,6 +188,47 @@ public class InMemoryQuotaStateStore : IQuotaStateStore
             && DateTime.ParseExact(s.PeriodKey, s.PeriodKind == QuotaPeriodKind.Day ? "yyyy-MM-dd" : "yyyy-MM",
                 System.Globalization.CultureInfo.InvariantCulture) < olderThanUtc.UtcDateTime.Date).ToList())
             _states.Remove(state.Id);
+        return Task.CompletedTask;
+    }
+}
+
+public class InMemoryActionClaimStore : IActionClaimStore
+{
+    private readonly Dictionary<string, ActionClaim> _claims = [];
+    private readonly Dictionary<MacAddress, ClaimDeviceState> _devices = [];
+
+    public Task<IReadOnlyList<ActionClaim>> GetAllAsync(CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<ActionClaim>>(_claims.Values.ToList());
+
+    public Task<IReadOnlyList<ActionClaim>> GetForDeviceAsync(MacAddress mac, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<ActionClaim>>(_claims.Values.Where(c => c.Mac == mac).ToList());
+
+    public Task UpsertAsync(ActionClaim claim, CancellationToken ct)
+    {
+        claim.Validate();
+        _claims[claim.Id] = claim;
+        return Task.CompletedTask;
+    }
+
+    public Task RemoveAsync(string id, CancellationToken ct)
+    {
+        _claims.Remove(id);
+        return Task.CompletedTask;
+    }
+
+    public Task RemoveBySourceAsync(string source, CancellationToken ct)
+    {
+        foreach (var claim in _claims.Values.Where(c => c.Source == source).ToArray())
+            _claims.Remove(claim.Id);
+        return Task.CompletedTask;
+    }
+
+    public Task<ClaimDeviceState?> FindDeviceStateAsync(MacAddress mac, CancellationToken ct) =>
+        Task.FromResult(_devices.GetValueOrDefault(mac));
+
+    public Task UpsertDeviceStateAsync(ClaimDeviceState state, CancellationToken ct)
+    {
+        _devices[state.Mac] = state;
         return Task.CompletedTask;
     }
 }

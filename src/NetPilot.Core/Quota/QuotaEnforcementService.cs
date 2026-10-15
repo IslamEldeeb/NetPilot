@@ -1,6 +1,7 @@
 using NetPilot.Abstractions;
 using NetPilot.Core.Devices;
 using NetPilot.Core.Enforcement;
+using NetPilot.Core.Enforcement.Claims;
 using NetPilot.Core.Policy;
 using NetPilot.Core.Usage;
 
@@ -13,7 +14,8 @@ public class QuotaEnforcementService(
     IQuotaStateStore stateStore,
     IProtectedDeviceStore protectedDevices,
     IPolicyStore policyStore,
-    PolicyReconciliationService reconciliation,
+    IActionClaimStore claimStore,
+    ClaimEnforcementService claimEnforcement,
     IActivityLogStore activityLog,
     IEnumerable<IQuotaEventSink> eventSinks,
     UsagePeriodClock clock)
@@ -139,55 +141,39 @@ public class QuotaEnforcementService(
         var existing = (await stateStore.ListWithActiveActionAsync(ct)).FirstOrDefault(s => s.Mac == state.Mac);
         if (existing is not null)
         {
+            // Keep the existing daily/monthly sharing semantics, including after policy edits.
             state = state with { ActionKind = existing.ActionKind, ActionAppliedAtUtc = existing.ActionAppliedAtUtc,
                 PriorLimit = existing.PriorLimit, BlockToken = existing.BlockToken, AppliedThrottleKbps = existing.AppliedThrottleKbps };
         }
         else
         {
-            // A manual block belongs to the user; never take ownership and unblock it at rollover.
-            if (context.Device.IsBlocked)
+            var ownership = await claimStore.FindDeviceStateAsync(state.Mac, ct);
+            if (context.Device.IsBlocked && ownership?.BlockToken is null)
                 return;
-            state = context.Policy.Action == QuotaAction.Block
-                ? await BlockAsync(provider, context, state, ct)
-                : await ThrottleAsync(provider, context, state, ct);
-            if (state.ActionKind == QuotaActionKind.None)
-                return;
+            if (context.Policy.Action == QuotaAction.Throttle)
+            {
+                var prepared = await claimEnforcement.PrepareStateAsync(new(state.Mac,
+                    state.PriorLimit ?? ownership?.PriorLimit ?? await PriorLimitAsync(context, ct)), ct);
+                state = state with { PriorLimit = prepared.PriorLimit, AppliedThrottleKbps = context.Policy.ThrottleKbps };
+            }
+            // Failed writes leave the claim durable but the quota action unactioned, as before.
+            state = await SaveAgentStateAsync(state, ct);
         }
-
-        // Save the reversal token before the device projection or any event sink can fail.
+        var kind = existing?.ActionKind ?? (context.Policy.Action == QuotaAction.Block ? QuotaActionKind.Block : QuotaActionKind.Throttle);
+        var otherKind = kind == QuotaActionKind.Block ? QuotaActionKind.Throttle : QuotaActionKind.Block;
+        await claimStore.RemoveAsync(ClaimFor(state with { ActionKind = otherKind }).Id, ct);
+        await claimStore.UpsertAsync(ClaimFor(state with { ActionKind = kind }), ct);
+        var wasBlocked = context.Device.IsBlocked;
+        if (!await claimEnforcement.ReconcileDeviceAsync(provider, context.Device, ct))
+            return;
+        var applied = await claimStore.FindDeviceStateAsync(state.Mac, ct);
+        state = state with { ActionKind = kind, ActionAppliedAtUtc = existing?.ActionAppliedAtUtc ?? clock.GetUtcNow(),
+            BlockToken = kind == QuotaActionKind.Block ? applied?.BlockToken : null };
         state = await SaveAgentStateAsync(state, ct);
-        await deviceStore.UpsertAsync(context.Device, ct);
+        if (!wasBlocked && context.Device.IsBlocked)
+            await activityLog.AppendAsync(new(clock.GetUtcNow(), ActivityEventType.DeviceBlocked, state.Mac,
+                $"{DisplayName(context.Device)} blocked by quota"), ct);
         await PublishAsync(CreateEvent(QuotaEventKind.ActionApplied, context, state), ct);
-    }
-
-    private async Task<QuotaPeriodState> BlockAsync(IRouterProvider provider, DeviceQuota context, QuotaPeriodState state, CancellationToken ct)
-    {
-        var token = await provider.BlockDeviceAsync(state.Mac, ct);
-        state = state with { ActionKind = QuotaActionKind.Block, BlockToken = token, ActionAppliedAtUtc = clock.GetUtcNow() };
-        state = await SaveAgentStateAsync(state, ct);
-        context.Device.IsBlocked = true;
-        context.Device.BlockListToken = token;
-        await deviceStore.UpsertAsync(context.Device, ct);
-        await activityLog.AppendAsync(new(clock.GetUtcNow(), ActivityEventType.DeviceBlocked, state.Mac,
-            $"{DisplayName(context.Device)} blocked by quota"), ct);
-        return state;
-    }
-
-    private async Task<QuotaPeriodState> ThrottleAsync(IRouterProvider provider, DeviceQuota context, QuotaPeriodState state, CancellationToken ct)
-    {
-        var prior = state.PriorLimit ?? await PriorLimitAsync(context, ct);
-        // Preserve the original limit even if the process stops immediately after the router write.
-        state = state with { PriorLimit = prior, AppliedThrottleKbps = context.Policy.ThrottleKbps };
-        state = await SaveAgentStateAsync(state, ct);
-        var previousThrottle = context.Device.QuotaThrottle;
-        context.Device.QuotaThrottle = new SpeedLimit(true, context.Policy.ThrottleKbps, context.Policy.ThrottleKbps);
-        if (!await reconciliation.ApplyDevicePolicyAsync(provider, context.Device, ct))
-        {
-            context.Device.QuotaThrottle = previousThrottle;
-            return state;
-        }
-        return state with { ActionKind = QuotaActionKind.Throttle, PriorLimit = prior, ActionAppliedAtUtc = clock.GetUtcNow(),
-            AppliedThrottleKbps = context.Policy.ThrottleKbps };
     }
 
     private async Task<SpeedLimit> PriorLimitAsync(DeviceQuota context, CancellationToken ct)
@@ -201,33 +187,12 @@ public class QuotaEnforcementService(
 
     private async Task RevertExpiredActionsAsync(IRouterProvider provider, IReadOnlyList<QuotaPolicy> policies, CancellationToken ct)
     {
-        foreach (var group in (await stateStore.ListWithActiveActionAsync(ct)).GroupBy(s => s.Mac))
+        foreach (var group in (await StatesWithClaimsAsync(ct)).GroupBy(s => s.Mac))
         {
             ct.ThrowIfCancellationRequested();
             try
             {
-                var device = await deviceStore.FindByMacAsync(group.Key, ct)
-                    ?? throw new InvalidOperationException("Quota action device is missing from the device store.");
-                await RestoreActionProjectionAsync(device, group.First(), ct);
-                var usage = await usageStore.FindStateAsync(device.Mac, ct);
-                var resolution = QuotaResolver.Resolve(device, policies);
-                var expired = group.Select(s => RefreshPeriodUsage(s, usage, resolution))
-                    .Where(s => ShouldRevert(s, usage)).ToArray();
-                if (expired.Length == 0)
-                    continue;
-                // Daily and monthly rows are claims on one action, not independent router writes.
-                if (expired.Length == group.Count() && !await UndoActionAsync(provider, device, expired[0], ct))
-                    continue;
-                foreach (var state in expired)
-                {
-                    await stateStore.UpdateAsync(state.Id, current => current is null ? null : current with
-                    {
-                        ActionKind = QuotaActionKind.None, PriorLimit = null, BlockToken = null, AppliedThrottleKbps = null,
-                        ReleaseRequested = state.ReleaseRequested ? false : current.ReleaseRequested,
-                        ActionSuppressedForPeriod = current.ActionSuppressedForPeriod || state.ReleaseRequested
-                    }, ct);
-                    await PublishAsync(RevertedEvent(device, state), ct);
-                }
+                await RevertDeviceActionsAsync(provider, group.ToArray(), policies, ct);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -236,22 +201,86 @@ public class QuotaEnforcementService(
         }
     }
 
-    private async Task RestoreActionProjectionAsync(Device device, QuotaPeriodState state, CancellationToken ct)
+    private async Task RevertDeviceActionsAsync(IRouterProvider provider, QuotaPeriodState[] states,
+        IReadOnlyList<QuotaPolicy> policies, CancellationToken ct)
     {
-        // A restart can occur after saving the action but before saving the device projection.
-        if (state.ActionKind == QuotaActionKind.Block && (!device.IsBlocked || device.BlockListToken != state.BlockToken))
+        var device = await deviceStore.FindByMacAsync(states[0].Mac, ct)
+            ?? throw new InvalidOperationException("Quota action device is missing from the device store.");
+        var usage = await usageStore.FindStateAsync(device.Mac, ct);
+        var resolution = QuotaResolver.Resolve(device, policies);
+        var refreshed = states.Select(s => RefreshPeriodUsage(s, usage, resolution)).ToArray();
+        var pendingAllowed = resolution is { Kind: QuotaResolutionKind.Policy, MatchedPolicy: { DryRun: false } policy }
+            && policy.Action != QuotaAction.NotifyOnly && !await protectedDevices.IsProtectedAsync(device.Mac, ct);
+        var expired = refreshed.Where(s => ShouldRevert(s, usage)
+            || (s.ActionKind == QuotaActionKind.None && !pendingAllowed)).ToArray();
+        // Pending applies still pass through the current dry-run/protected checks below.
+        if (expired.Length == 0 && refreshed.All(s => s.ActionKind == QuotaActionKind.None))
+            return;
+        await RestoreActionClaimsAsync(device, refreshed, ct);
+        foreach (var state in expired)
         {
-            device.IsBlocked = true;
-            device.BlockListToken = state.BlockToken;
-            await deviceStore.UpsertAsync(device, ct);
+            // An interrupted apply has no ActionKind yet; release either possible claim ID.
+            await claimStore.RemoveAsync(ClaimFor(state with { ActionKind = QuotaActionKind.Throttle }).Id, ct);
+            await claimStore.RemoveAsync(ClaimFor(state with { ActionKind = QuotaActionKind.Block }).Id, ct);
         }
-        else if (state.ActionKind == QuotaActionKind.Throttle && state.AppliedThrottleKbps is { } kbps
-            && device.QuotaThrottle != new SpeedLimit(true, kbps, kbps))
-        {
-            device.QuotaThrottle = new SpeedLimit(true, kbps, kbps);
-            await deviceStore.UpsertAsync(device, ct);
-        }
+        var wasBlocked = device.IsBlocked;
+        if (!await claimEnforcement.ReconcileDeviceAsync(provider, device, ct))
+            return;
+        if (wasBlocked && !device.IsBlocked)
+            await activityLog.AppendAsync(new(clock.GetUtcNow(), ActivityEventType.DeviceUnblocked, device.Mac,
+                $"{DisplayName(device)} unblocked after quota reverted"), ct);
+        foreach (var state in expired)
+            await CompleteRevertAsync(device, state, ct);
     }
+
+    private async Task CompleteRevertAsync(Device device, QuotaPeriodState state, CancellationToken ct)
+    {
+        await stateStore.UpdateAsync(state.Id, current => current is null ? null : current with
+        {
+            ActionKind = QuotaActionKind.None, PriorLimit = null, BlockToken = null, AppliedThrottleKbps = null,
+            ReleaseRequested = state.ReleaseRequested ? false : current.ReleaseRequested,
+            ActionSuppressedForPeriod = current.ActionSuppressedForPeriod || state.ReleaseRequested
+        }, ct);
+        if (state.ActionKind != QuotaActionKind.None)
+            await PublishAsync(RevertedEvent(device, state), ct);
+    }
+
+    private async Task<IReadOnlyList<QuotaPeriodState>> StatesWithClaimsAsync(CancellationToken ct)
+    {
+        var states = (await stateStore.ListWithActiveActionAsync(ct)).ToDictionary(s => s.Id);
+        // Failed applies have a durable claim but no ActionKind yet; rollover must release them too.
+        foreach (var claim in (await claimStore.GetAllAsync(ct)).Where(c => c.Source.StartsWith("quota:", StringComparison.Ordinal)))
+        {
+            var parts = claim.Source.Split(':', 3);
+            if (parts.Length != 3 || parts[1] is not ("day" or "month"))
+                continue;
+            var id = QuotaPeriodState.Key(claim.Mac, parts[1] == "day" ? QuotaPeriodKind.Day : QuotaPeriodKind.Month, parts[2]);
+            if (!states.ContainsKey(id) && await stateStore.FindAsync(id, ct) is { } state)
+                states[id] = state;
+        }
+        return states.Values.ToArray();
+    }
+
+    private async Task RestoreActionClaimsAsync(Device device, QuotaPeriodState[] states, CancellationToken ct)
+    {
+        // Import old reversal metadata only when no claim record exists. A completed unblock must
+        // never re-adopt an old quota token while its bookkeeping is still waiting to be cleared.
+        var active = states.FirstOrDefault(s => s.ActionKind != QuotaActionKind.None);
+        if (active is not null && await claimStore.FindDeviceStateAsync(device.Mac, ct) is null)
+        {
+            if (active.ActionKind == QuotaActionKind.Block && active.BlockToken is null)
+                throw new InvalidOperationException("Quota block token is missing; cannot safely repair claims.");
+            await claimEnforcement.PrepareStateAsync(new(device.Mac, active.PriorLimit, active.BlockToken), ct);
+        }
+        foreach (var state in states.Where(s => s.ActionKind != QuotaActionKind.None))
+            await claimStore.UpsertAsync(ClaimFor(state), ct);
+    }
+
+    private ActionClaim ClaimFor(QuotaPeriodState state) =>
+        new(state.Mac, state.ActionKind == QuotaActionKind.Block ? ClaimKind.Block : ClaimKind.Throttle,
+            $"quota:{(state.PeriodKind == QuotaPeriodKind.Day ? "day" : "month")}:{state.PeriodKey}",
+            state.ActionKind == QuotaActionKind.Block ? null : state.AppliedThrottleKbps,
+            state.ActionAppliedAtUtc ?? clock.GetUtcNow(), "Quota exceeded");
 
     private static QuotaPeriodState RefreshPeriodUsage(QuotaPeriodState state, DeviceUsageState? usage, QuotaResolution resolution)
     {
@@ -275,27 +304,6 @@ public class QuotaEnforcementService(
             return false;
         var usageKey = state.PeriodKind == QuotaPeriodKind.Day ? usage.CurrentDayKey : usage.CurrentMonthKey;
         return usageKey == currentKey && state.UsedBytes < state.EffectiveCapBytes;
-    }
-
-    private async Task<bool> UndoActionAsync(IRouterProvider provider, Device device, QuotaPeriodState state, CancellationToken ct)
-    {
-        if (state.ActionKind == QuotaActionKind.Block)
-        {
-            var token = state.BlockToken ?? throw new InvalidOperationException("Quota block token is missing; cannot safely unblock.");
-            await provider.UnblockDeviceAsync(device.Mac, token, ct);
-            device.IsBlocked = false;
-            device.BlockListToken = null;
-            await activityLog.AppendAsync(new(clock.GetUtcNow(), ActivityEventType.DeviceUnblocked, device.Mac,
-                $"{DisplayName(device)} unblocked after quota reverted"), ct);
-        }
-        else
-        {
-            if (!await reconciliation.RestoreQuotaLimitAsync(provider, device, state.PriorLimit, ct))
-                return false;
-            device.QuotaThrottle = null;
-        }
-        await deviceStore.UpsertAsync(device, ct);
-        return true;
     }
 
     private QuotaEvent CreateEvent(QuotaEventKind kind, DeviceQuota context, QuotaPeriodState state) =>

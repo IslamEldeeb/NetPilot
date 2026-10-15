@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.DependencyInjection;
 using NetPilot.Core.Devices;
 using NetPilot.Core.Enforcement;
+using NetPilot.Core.Enforcement.Claims;
 using NetPilot.Core.Notifications;
 using NetPilot.Core.Policy;
 using NetPilot.Core.Quota;
@@ -32,6 +33,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IVapidKeyStore, VapidKeyStore>();
         services.AddSingleton<IQuotaActionTokenService, QuotaActionTokenService>();
         services.AddSingleton<QuotaActionHandler>();
+        services.AddSingleton<IActionClaimStore, LiteActionClaimStore>();
         services.AddSingleton<IQuotaStore, LiteQuotaStore>();
         services.AddSingleton<IQuotaStateStore, LiteQuotaStateStore>();
         services.AddSingleton<IProtectedDeviceStore, LiteProtectedDeviceStore>();
