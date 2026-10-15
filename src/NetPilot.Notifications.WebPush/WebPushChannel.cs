@@ -37,11 +37,7 @@ public class WebPushChannel : INotificationChannel
     {
         var keyPair = await _keys.GetOrCreateAsync(ct);
         using var authentication = new VapidAuthentication(keyPair.PublicKey, keyPair.PrivateKey) { Subject = _options.VapidSubject };
-        var payload = JsonSerializer.Serialize(new
-        {
-            title = message.Title, body = message.Body, url = message.Url, tag = message.Tag,
-            actions = message.Actions.Select(a => new { action = a.Id, title = a.Title })
-        });
+        var payload = SerializePayload(message);
         var results = new List<PushDeliveryResult>();
         foreach (var subscription in await _subscriptions.GetAllAsync(ct))
         {
@@ -50,6 +46,12 @@ public class WebPushChannel : INotificationChannel
         }
         return results;
     }
+
+    public static string SerializePayload(NotificationMessage message) => JsonSerializer.Serialize(new
+        {
+            title = message.Title, body = message.Body, url = message.Url, tag = message.Tag,
+            actions = message.Actions.Select(a => new { action = a.Id, title = a.Title, token = a.Token })
+        });
 
     private async Task<PushDeliveryResult> SendOneAsync(PushSubscriptionInfo subscription, string payload,
         VapidAuthentication authentication, CancellationToken ct)

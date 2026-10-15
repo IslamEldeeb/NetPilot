@@ -607,6 +607,94 @@ public class QuotaEnforcementServiceTests
         }
     }
 
+    [Theory]
+    [InlineData(QuotaAction.Block)]
+    [InlineData(QuotaAction.Throttle)]
+    public async Task RequestedReleaseRevertsOnce_SuppressesRestOfPeriod_AndEnforcesNextPeriod(QuotaAction action)
+    {
+        var h = await Harness.CreateAsync(Live(action));
+        h.Usage.CurrentDayBytes = 1500;
+        await h.EvaluateAsync();
+        var state = (await h.StateAsync())!;
+        await h.States.UpdateAsync(state.Id, current => current! with { ReleaseRequested = true }, Ct);
+        await h.NewService().EvaluateAsync(h.Provider, h.Provider.Devices, Ct);
+        await h.EvaluateAsync();
+        var released = (await h.StateAsync())!;
+        Assert.Equal(QuotaActionKind.None, released.ActionKind);
+        Assert.True(released.ActionSuppressedForPeriod);
+        Assert.False(released.ReleaseRequested);
+        Assert.Single(h.Events.Events, e => e.Kind == QuotaEventKind.Reverted);
+        Assert.False(h.Device.IsBlocked);
+        Assert.Null(h.Device.QuotaThrottle);
+        h.Time.UtcNow = h.Time.UtcNow.AddDays(1);
+        h.Usage.CurrentDayKey = h.Clock.TodayKey();
+        await h.EvaluateAsync();
+        Assert.NotEqual(QuotaActionKind.None, (await h.StateAsync())!.ActionKind);
+        Assert.False((await h.StateAsync())!.ActionSuppressedForPeriod);
+    }
+
+    [Fact]
+    public async Task ReleaseWithAnotherActivePeriodClearsOnlyItsClaim_UntilOtherPeriodIsReleased()
+    {
+        var h = await Harness.CreateAsync(Live(QuotaAction.Block) with { MonthlyBytes = 1000 });
+        h.Usage.CurrentDayBytes = h.Usage.CurrentMonthBytes = 1500;
+        await h.EvaluateAsync();
+        var day = (await h.StateAsync())!;
+        await h.States.UpdateAsync(day.Id, current => current! with { ReleaseRequested = true }, Ct);
+        await h.EvaluateAsync();
+        Assert.True(h.Device.IsBlocked);
+        Assert.True((await h.StateAsync())!.ActionSuppressedForPeriod);
+        Assert.Equal(QuotaActionKind.None, (await h.StateAsync())!.ActionKind);
+        var month = (await h.StateAsync(QuotaPeriodKind.Month))!;
+        await h.States.UpdateAsync(month.Id, current => current! with { ReleaseRequested = true }, Ct);
+        await h.EvaluateAsync();
+        Assert.False(h.Device.IsBlocked);
+        Assert.Equal(2, h.Events.Events.Count(e => e.Kind == QuotaEventKind.Reverted));
+        Assert.Single(h.Provider.UnblockedMacs);
+    }
+
+    [Fact]
+    public async Task WebAllowanceDuringEventFanoutIsPreserved_AndPreventsStaleAgentAction()
+    {
+        var h = await Harness.CreateAsync(Live(QuotaAction.Block));
+        h.Usage.CurrentDayBytes = 1500;
+        var service = h.NewService(sinks: [new AllowanceSink(h.States), h.Events]);
+        await service.EvaluateAsync(h.Provider, h.Provider.Devices, Ct);
+        Assert.Empty(h.Provider.BlockedMacs);
+        var state = (await h.StateAsync())!;
+        Assert.Equal(1_000_000_000, state.ExtraAllowanceBytes);
+        Assert.Equal(new[] { "consumed-hash" }, state.UsedActionTokenHashes);
+        await h.EvaluateAsync();
+        Assert.Equal(1_000_000_000, (await h.StateAsync())!.ExtraAllowanceBytes);
+        Assert.Empty(h.Provider.BlockedMacs);
+    }
+
+    [Fact]
+    public async Task ReleaseBeforeEnforcementSuppressesPeriodWithoutSpuriousRevertedEvent()
+    {
+        var h = await Harness.CreateAsync(Live(QuotaAction.Block));
+        h.Usage.CurrentDayBytes = 900;
+        await h.EvaluateAsync();
+        var state = (await h.StateAsync())!;
+        await h.States.UpdateAsync(state.Id, current => current! with { ReleaseRequested = true }, Ct);
+        h.Usage.CurrentDayBytes = 1500;
+        await h.EvaluateAsync();
+        Assert.Empty(h.Provider.BlockedMacs);
+        Assert.True((await h.StateAsync())!.ActionSuppressedForPeriod);
+        Assert.False((await h.StateAsync())!.ReleaseRequested);
+        Assert.DoesNotContain(h.Events.Events, e => e.Kind == QuotaEventKind.Reverted);
+    }
+
+    private sealed class AllowanceSink(IQuotaStateStore states) : IQuotaEventSink
+    {
+        public async Task PublishAsync(QuotaEvent quotaEvent, CancellationToken ct)
+        {
+            if (quotaEvent.Kind != QuotaEventKind.Exceeded) return;
+            await states.UpdateAsync(QuotaPeriodState.Key(quotaEvent.Mac, quotaEvent.PeriodKind, quotaEvent.PeriodKey),
+                current => current! with { ExtraAllowanceBytes = 1_000_000_000, UsedActionTokenHashes = ["consumed-hash"] }, ct);
+        }
+    }
+
     private sealed class FailingSink : IQuotaEventSink
     {
         public Task PublishAsync(QuotaEvent quotaEvent, CancellationToken ct) => throw new InvalidOperationException("Sink unavailable");

@@ -7,6 +7,13 @@ namespace NetPilot.Core.Tests.Notifications;
 
 public class NotificationQuotaEventSinkTests
 {
+    private static NotificationMessage ToMessage(QuotaEvent quotaEvent) => NotificationQuotaEventSink.ToMessage(quotaEvent, new TokenService());
+    private sealed class TokenService : IQuotaActionTokenService
+    {
+        public string Create(QuotaActionClaim claim) => $"{claim.Mac}:{claim.PeriodKind}:{claim.PeriodKey}:{claim.Action}:{Guid.NewGuid()}";
+        public QuotaActionTokenResult Validate(string? token) => throw new NotSupportedException();
+    }
+
     private static QuotaEvent Event(QuotaEventKind kind) => new(kind, new("AA:BB:CC:DD:EE:01"), "Phone",
         4_800_000_000, 5_000_000_000, 96, QuotaPeriodKind.Day, "2026-01-15", QuotaAction.Throttle, false,
         DateTimeOffset.Parse("2026-01-15T22:00:00Z"), 512, 80);
@@ -21,28 +28,28 @@ public class NotificationQuotaEventSinkTests
     public void EveryQuotaEventHasStablePeriodSpecificTagAndExpectedBody(QuotaEventKind kind, string body, string suffix)
     {
         var quotaEvent = Event(kind);
-        var message = NotificationQuotaEventSink.ToMessage(quotaEvent);
+        var message = ToMessage(quotaEvent);
         Assert.Equal(body, message.Body);
         Assert.Equal($"quota:AA-BB-CC-DD-EE-01:Day:2026-01-15:{suffix}", message.Tag);
-        Assert.Equal(message.Tag, NotificationQuotaEventSink.ToMessage(quotaEvent with { AtUtc = quotaEvent.AtUtc.AddMinutes(1) }).Tag);
+        Assert.Equal(message.Tag, ToMessage(quotaEvent with { AtUtc = quotaEvent.AtUtc.AddMinutes(1) }).Tag);
         Assert.Equal("NetPilot quota", message.Title);
         Assert.Equal("/", message.Url);
-        Assert.Empty(message.Actions);
+        Assert.Equal(kind is QuotaEventKind.Exceeded or QuotaEventKind.ActionApplied ? 2 : 0, message.Actions.Length);
     }
 
     [Fact]
     public void MonthlyWarningsAndBlockMessagesUseCorrectUnitsAndDistinctTags()
     {
         var warning = Event(QuotaEventKind.Warning) with { PeriodKind = QuotaPeriodKind.Month, PeriodKey = "2026-01", UsedBytes = 480_000_000, CapBytes = 600_000_000, Percent = 80 };
-        var message = NotificationQuotaEventSink.ToMessage(warning);
+        var message = ToMessage(warning);
         Assert.Equal("Phone: 480 MB of 600 MB used this month (80%)", message.Body);
         Assert.Contains(":Month:2026-01:", message.Tag);
-        Assert.NotEqual(message.Tag, NotificationQuotaEventSink.ToMessage(warning with { WarnPercent = 90 }).Tag);
-        Assert.NotEqual(message.Tag, NotificationQuotaEventSink.ToMessage(warning with { PeriodKey = "2026-02" }).Tag);
-        Assert.Equal("Phone reached its monthly limit", NotificationQuotaEventSink.ToMessage(warning with { Kind = QuotaEventKind.Exceeded }).Body);
-        Assert.Equal("Phone blocked", NotificationQuotaEventSink.ToMessage(Event(QuotaEventKind.ActionApplied) with { Action = QuotaAction.Block }).Body);
-        Assert.Equal("[Dry-run] would have blocked Phone", NotificationQuotaEventSink.ToMessage(Event(QuotaEventKind.DryRun) with { Action = QuotaAction.Block }).Body);
-        Assert.Equal("[Dry-run] would have notified for Phone", NotificationQuotaEventSink.ToMessage(Event(QuotaEventKind.DryRun) with { Action = QuotaAction.NotifyOnly }).Body);
+        Assert.NotEqual(message.Tag, ToMessage(warning with { WarnPercent = 90 }).Tag);
+        Assert.NotEqual(message.Tag, ToMessage(warning with { PeriodKey = "2026-02" }).Tag);
+        Assert.Equal("Phone reached its monthly limit", ToMessage(warning with { Kind = QuotaEventKind.Exceeded }).Body);
+        Assert.Equal("Phone blocked", ToMessage(Event(QuotaEventKind.ActionApplied) with { Action = QuotaAction.Block }).Body);
+        Assert.Equal("[Dry-run] would have blocked Phone", ToMessage(Event(QuotaEventKind.DryRun) with { Action = QuotaAction.Block }).Body);
+        Assert.Equal("[Dry-run] would have notified for Phone", ToMessage(Event(QuotaEventKind.DryRun) with { Action = QuotaAction.NotifyOnly }).Body);
     }
 
     [Theory]
@@ -59,9 +66,33 @@ public class NotificationQuotaEventSinkTests
         var dispatcher = new NotificationDispatcher([channel], log,
             new UsagePeriodClock("Africa/Cairo", new MutableTimeProvider { Now = Event(kind).AtUtc }),
             new NotificationOptions { QuietHours = new() { Enabled = true } });
-        await new NotificationQuotaEventSink(dispatcher).PublishAsync(Event(kind) with { DryRun = true }, CancellationToken.None);
+        await new NotificationQuotaEventSink(dispatcher, new TokenService()).PublishAsync(Event(kind) with { DryRun = true }, CancellationToken.None);
         Assert.Equal(suppressed ? 0 : 1, channel.Sends);
         Assert.Equal(suppressed ? NotificationOutcome.SuppressedQuietHours : NotificationOutcome.Sent, Assert.Single(log.Entries).Outcome);
+    }
+
+    [Theory]
+    [InlineData(QuotaEventKind.Warning, false, 0)]
+    [InlineData(QuotaEventKind.DryRun, false, 0)]
+    [InlineData(QuotaEventKind.Reverted, false, 0)]
+    [InlineData(QuotaEventKind.ActionSkippedProtected, false, 0)]
+    [InlineData(QuotaEventKind.Exceeded, true, 0)]
+    [InlineData(QuotaEventKind.ActionApplied, true, 0)]
+    [InlineData(QuotaEventKind.Exceeded, false, 2)]
+    [InlineData(QuotaEventKind.ActionApplied, false, 2)]
+    public void ActionTokensAppearOnlyOnLiveExceededAndAppliedEvents(QuotaEventKind kind, bool dryRun, int count)
+    {
+        var quotaEvent = Event(kind) with { DryRun = dryRun };
+        var message = ToMessage(quotaEvent);
+        Assert.Equal(count, message.Actions.Length);
+        if (count == 0) return;
+        Assert.Equal(new[] { NotificationActionIds.Extend1Gb, NotificationActionIds.RestoreNow }, message.Actions.Select(a => a.Id));
+        foreach (var action in message.Actions)
+        {
+            Assert.Contains($"{quotaEvent.Mac}:{quotaEvent.PeriodKind}:{quotaEvent.PeriodKey}:{action.Id}", action.Token);
+            Assert.NotEqual(action.Token, ToMessage(quotaEvent).Actions.Single(a => a.Id == action.Id).Token);
+        }
+        Assert.Equal("+1 GB this month", ToMessage(quotaEvent with { PeriodKind = QuotaPeriodKind.Month }).Actions[0].Title);
     }
 
     [Fact]

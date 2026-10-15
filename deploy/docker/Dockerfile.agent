@@ -19,7 +19,7 @@ COPY src/NetPilot.Providers.TpLink/ src/NetPilot.Providers.TpLink/
 COPY src/NetPilot.Agent/ src/NetPilot.Agent/
 RUN dotnet publish src/NetPilot.Agent/NetPilot.Agent.csproj -c Release -o /app
 
-FROM mcr.microsoft.com/dotnet/runtime:10.0 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 COPY --from=build /app .
 ENV NetPilot__DataDirectory=/data

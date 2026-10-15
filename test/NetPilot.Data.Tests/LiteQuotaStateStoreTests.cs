@@ -23,7 +23,8 @@ public class LiteQuotaStateStoreTests : IDisposable
             Mac = Mac, PeriodKind = QuotaPeriodKind.Day, PeriodKey = "2026-10-15", WarnedPercents = [50, 80, 90],
             ExceededNotified = true, ActionKind = QuotaActionKind.Throttle,
             ActionAppliedAtUtc = new(2026, 10, 15, 12, 0, 0, TimeSpan.Zero),
-            ExtraAllowanceBytes = 1_000_000_000, PriorLimit = new(true, 5000, 1000), AppliedThrottleKbps = 512,
+            ExtraAllowanceBytes = 1_000_000_000, UsedActionTokenHashes = ["consumed-hash"], ReleaseRequested = true,
+            ActionSuppressedForPeriod = true, PriorLimit = new(true, 5000, 1000), AppliedThrottleKbps = 512,
             DryRunWouldHaveActed = true, ActionSkippedProtected = true, CapBytes = 5_000_000_000, UsedBytes = 6_000_000_000
         };
         var month = day with { PeriodKind = QuotaPeriodKind.Month, PeriodKey = "2026-10", ActionKind = QuotaActionKind.Block,
@@ -45,7 +46,8 @@ public class LiteQuotaStateStoreTests : IDisposable
             var actual = await loaded.FindAsync(expected.Id, Ct);
             Assert.NotNull(actual);
             Assert.Equal(expected.WarnedPercents, actual.WarnedPercents);
-            Assert.Equal(expected with { WarnedPercents = actual.WarnedPercents }, actual);
+            Assert.Equal(expected.UsedActionTokenHashes, actual.UsedActionTokenHashes);
+            Assert.Equal(expected with { WarnedPercents = actual.WarnedPercents, UsedActionTokenHashes = actual.UsedActionTokenHashes }, actual);
         }
         await loaded.UpsertAsync(month with { ActionKind = QuotaActionKind.None, ExtraAllowanceBytes = 2_000_000_000 }, Ct);
         Assert.Equal(day.Id, Assert.Single(await loaded.ListWithActiveActionAsync(Ct)).Id);
@@ -111,7 +113,52 @@ public class LiteQuotaStateStoreTests : IDisposable
         var state = new QuotaPeriodState { Mac = Mac, PeriodKind = QuotaPeriodKind.Day, PeriodKey = "2026-10-15" };
         await store.UpsertAsync(state, Ct);
         var loaded = (await store.FindAsync(state.Id, Ct))!;
-        Assert.Equal(state with { WarnedPercents = loaded.WarnedPercents }, loaded);
+        Assert.Equal(state with { WarnedPercents = loaded.WarnedPercents, UsedActionTokenHashes = loaded.UsedActionTokenHashes }, loaded);
+    }
+
+    [Fact]
+    public async Task AtomicUpdatesAcrossSharedHandlesPreserveAllIncrements_AndNullDoesNotCreate()
+    {
+        using var firstDb = new NetPilotDatabase(DbPath);
+        using var secondDb = new NetPilotDatabase(DbPath);
+        var first = new LiteQuotaStateStore(firstDb);
+        var second = new LiteQuotaStateStore(secondDb);
+        var state = new QuotaPeriodState { Mac = Mac, PeriodKind = QuotaPeriodKind.Day, PeriodKey = "2026-10-15" };
+        Assert.Null(await first.UpdateAsync(state.Id, current => current, Ct));
+        Assert.Null(await second.FindAsync(state.Id, Ct));
+        await first.UpdateAsync(state.Id, current => state, Ct);
+        await Task.WhenAll(new[] { first, second }.Select(store => Task.Run(async () =>
+        {
+            for (var index = 0; index < 25; index++)
+                await store.UpdateAsync(state.Id, current => current! with { ExtraAllowanceBytes = current.ExtraAllowanceBytes + 1 }, Ct);
+        })));
+        Assert.Equal(50, (await second.FindAsync(state.Id, Ct))!.ExtraAllowanceBytes);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => first.UpdateAsync(state.Id, _ => throw new InvalidOperationException("abort"), Ct));
+        Assert.Equal(50, (await second.FindAsync(state.Id, Ct))!.ExtraAllowanceBytes);
+        Assert.Null(await first.UpdateAsync(state.Id, _ => null, Ct));
+        Assert.NotNull(await second.FindAsync(state.Id, Ct));
+    }
+
+    [Fact]
+    public async Task LegacyQuotaRowsWithoutActionFieldsRetainReversalDataOnAtomicUpdate()
+    {
+        using var db = new NetPilotDatabase(DbPath);
+        var id = QuotaPeriodState.Key(Mac, QuotaPeriodKind.Day, "2026-10-15");
+        db.GetCollection<BsonDocument>("quota_period_state").Insert(new BsonDocument
+        {
+            ["_id"] = id, ["Mac"] = (string)Mac, ["PeriodKind"] = "Day", ["PeriodKey"] = "2026-10-15",
+            ["PeriodDateUtc"] = new DateTime(2026, 10, 15), ["ActionKind"] = "Block", ["BlockToken"] = "existing-reversal"
+        });
+        var store = new LiteQuotaStateStore(db);
+        var legacy = (await store.FindAsync(id, Ct))!;
+        Assert.Empty(legacy.UsedActionTokenHashes);
+        Assert.False(legacy.ReleaseRequested);
+        Assert.False(legacy.ActionSuppressedForPeriod);
+        await store.UpdateAsync(id, current => current! with { ExtraAllowanceBytes = 1_000_000_000 }, Ct);
+        var updated = (await store.FindAsync(id, Ct))!;
+        Assert.Equal("existing-reversal", updated.BlockToken);
+        Assert.Equal(QuotaActionKind.Block, updated.ActionKind);
+        Assert.Equal(1_000_000_000, updated.ExtraAllowanceBytes);
     }
 
     public void Dispose() => Directory.Delete(_directory, recursive: true);

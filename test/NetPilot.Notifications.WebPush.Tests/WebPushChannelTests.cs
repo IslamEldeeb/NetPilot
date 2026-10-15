@@ -14,7 +14,7 @@ public class WebPushChannelTests : IDisposable
 {
     private readonly string _directory = Path.Combine(Path.GetTempPath(), $"netpilot-webpush-{Guid.NewGuid():N}");
     private static readonly CancellationToken Ct = CancellationToken.None;
-    private static readonly NotificationMessage Message = new("Hello", "Private body", "/", "quota:test", [new("extend-1gb", "+1 GB")]);
+    private static readonly NotificationMessage Message = new("Hello", "Private body", "/", "quota:test", [new("extend-1gb", "+1 GB", "opaque-action-token")]);
     public WebPushChannelTests() => Directory.CreateDirectory(_directory);
 
     [Theory]
@@ -95,6 +95,18 @@ public class WebPushChannelTests : IDisposable
             Assert.Equal("HTTP 500", Assert.Single(deliveries, r => !r.Success).Error);
         }
         Assert.Equal(4, handler.Requests.Count);
+    }
+
+    [Fact]
+    public void PushPayloadCarriesTokensPerAction_AndEmptyActionsStayEmpty()
+    {
+        using var payload = System.Text.Json.JsonDocument.Parse(WebPushChannel.SerializePayload(Message));
+        var action = Assert.Single(payload.RootElement.GetProperty("actions").EnumerateArray());
+        Assert.Equal("extend-1gb", action.GetProperty("action").GetString());
+        Assert.Equal("+1 GB", action.GetProperty("title").GetString());
+        Assert.Equal("opaque-action-token", action.GetProperty("token").GetString());
+        using var noActions = System.Text.Json.JsonDocument.Parse(WebPushChannel.SerializePayload(Message with { Actions = [] }));
+        Assert.Empty(noActions.RootElement.GetProperty("actions").EnumerateArray());
     }
 
     private readonly List<ServiceProvider> _providers = [];

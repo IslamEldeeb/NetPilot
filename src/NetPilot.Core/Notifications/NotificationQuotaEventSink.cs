@@ -3,13 +3,13 @@ using NetPilot.Core.Quota;
 
 namespace NetPilot.Core.Notifications;
 
-public class NotificationQuotaEventSink(NotificationDispatcher dispatcher) : IQuotaEventSink
+public class NotificationQuotaEventSink(NotificationDispatcher dispatcher, IQuotaActionTokenService tokens) : IQuotaEventSink
 {
     public Task PublishAsync(QuotaEvent quotaEvent, CancellationToken ct) => dispatcher.DispatchAsync(
-        ToMessage(quotaEvent), quotaEvent.Kind is QuotaEventKind.Warning or QuotaEventKind.DryRun
+        ToMessage(quotaEvent, tokens), quotaEvent.Kind is QuotaEventKind.Warning or QuotaEventKind.DryRun
             ? NotificationInterruption.QuietHoursEligible : NotificationInterruption.Immediate, ct);
 
-    public static NotificationMessage ToMessage(QuotaEvent e)
+    public static NotificationMessage ToMessage(QuotaEvent e, IQuotaActionTokenService tokens)
     {
         var period = e.PeriodKind == QuotaPeriodKind.Day ? "daily" : "monthly";
         var body = e.Kind switch
@@ -29,7 +29,15 @@ public class NotificationQuotaEventSink(NotificationDispatcher dispatcher) : IQu
         };
         var tag = $"quota:{e.Mac}:{e.PeriodKind}:{e.PeriodKey}:{e.Kind}";
         if (e.Kind == QuotaEventKind.Warning) tag += $":{e.WarnPercent}";
-        return new("NetPilot quota", body, "/", tag, []);
+        var actions = !e.DryRun && e.Kind is QuotaEventKind.Exceeded or QuotaEventKind.ActionApplied
+            ? new[]
+            {
+                new NotificationAction(NotificationActionIds.Extend1Gb, e.PeriodKind == QuotaPeriodKind.Day ? "+1 GB today" : "+1 GB this month",
+                    tokens.Create(new(e.Mac, e.PeriodKind, e.PeriodKey, NotificationActionIds.Extend1Gb))),
+                new NotificationAction(NotificationActionIds.RestoreNow, "Restore now",
+                    tokens.Create(new(e.Mac, e.PeriodKind, e.PeriodKey, NotificationActionIds.RestoreNow)))
+            } : [];
+        return new("NetPilot quota", body, "/", tag, actions);
     }
 
     private static string DryRunBody(QuotaEvent e) => e.Action switch

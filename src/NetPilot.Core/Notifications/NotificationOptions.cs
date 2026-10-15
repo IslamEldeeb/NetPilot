@@ -9,12 +9,16 @@ public class NotificationOptions
     public string VapidSubject { get; set; } = "mailto:netpilot@localhost";
     public double DedupeWindowHours { get; set; } = 24;
 
+    public double ActionTokenHours { get; set; } = 24;
+
     public void Validate()
     {
         if (!double.IsFinite(DedupeWindowHours) || DedupeWindowHours < 0 || DedupeWindowHours > 87600)
             throw new ArgumentException("NetPilot:Notifications:DedupeWindowHours must be between 0 and 87600.");
         if (!Uri.TryCreate(VapidSubject, UriKind.Absolute, out var subject) || subject.Scheme is not ("mailto" or "https"))
             throw new ArgumentException("NetPilot:Notifications:VapidSubject must be a mailto: or https: URL.");
+        if (!double.IsFinite(ActionTokenHours) || ActionTokenHours <= 0 || ActionTokenHours > 168)
+            throw new ArgumentException("NetPilot:Notifications:ActionTokenHours must be greater than 0 and at most 168.");
         QuietHours.Validate();
     }
 }

@@ -14,6 +14,7 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <StaticWebAssetEndpointExclusionPattern>$(StaticWebAssetEndpointExclusionPattern);sw*.js*</StaticWebAssetEndpointExclusionPattern>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>

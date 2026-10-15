@@ -17,6 +17,9 @@ public record QuotaPeriodState
     public QuotaActionKind ActionKind { get; init; }
     public DateTimeOffset? ActionAppliedAtUtc { get; init; }
     public long ExtraAllowanceBytes { get; init; }
+    public string[] UsedActionTokenHashes { get; init; } = [];
+    public bool ReleaseRequested { get; init; }
+    public bool ActionSuppressedForPeriod { get; init; }
     public SpeedLimit? PriorLimit { get; init; }
     public string? BlockToken { get; init; }
     public int? AppliedThrottleKbps { get; init; }

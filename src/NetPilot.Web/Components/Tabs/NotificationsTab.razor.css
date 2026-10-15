@@ -1,0 +1,19 @@
+.np-section-head { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem; margin-bottom: .9rem; }
+h3 { margin: 0; font-size: 1.3rem; font-weight: 700; }
+h4 { font-size: 1rem; font-weight: 700; margin-bottom: .9rem; }
+.np-card { background: #fff; border: 1px solid var(--np-border); border-radius: 12px; padding: 1rem 1.4rem; margin-bottom: 1rem; }
+.np-device-sub { font-size: .8rem; color: var(--np-text-muted); }
+.np-status { display: grid; grid-template-columns: minmax(8rem, 12rem) 1fr; gap: .4rem 1rem; font-size: .88rem; }
+.np-status dd { margin: 0; overflow-wrap: anywhere; }
+.np-actions { display: flex; flex-wrap: wrap; gap: .6rem; margin: .9rem 0; }
+label { font-size: .85rem; margin-bottom: .35rem; }
+input { max-width: 26rem; }
+.np-save-btn { background: var(--np-blue); color: white; border: none; border-radius: 8px; padding: .4rem .8rem; font-size: .82rem; font-weight: 600; }
+.np-save-btn:disabled { opacity: .6; }
+.np-save-btn:hover:enabled { background: #1d4ed8; }
+.np-table-scroll { overflow-x: auto; }
+table { font-size: .82rem; }
+th, td { vertical-align: middle; }
+.np-tag { overflow-wrap: anywhere; min-width: 12rem; }
+.np-results { font-size: .85rem; }
+@media (max-width: 500px) { .np-status { grid-template-columns: 1fr; gap: .2rem; } .np-status dd { margin-bottom: .6rem; } }

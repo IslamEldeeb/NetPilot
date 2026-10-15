@@ -1,0 +1,229 @@
+@using NetPilot.Core.Notifications
+@using NetPilot.Core.Usage
+@using NetPilot.Notifications.WebPush
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject IPushSubscriptionStore SubscriptionStore
+@inject IVapidKeyStore VapidKeys
+@inject INotificationLogStore NotificationLog
+@inject NotificationService Notifications
+@inject NotificationOptions Options
+@inject UsagePeriodClock Clock
+
+<div class="np-notifications">
+    <div class="np-section-head"><h3>Notifications</h3><button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="RefreshAsync">Refresh</button></div>
+    <p class="np-device-sub">Quota actions take effect on the Agent's next tick (default 180 seconds). Other exceeded quotas may still restrict a device.</p>
+    @if (_message is not null)
+    {
+        <div class="alert @(_failed ? "alert-danger" : "alert-info")" role="status">@_message</div>
+    }
+    <section class="np-card">
+        <h4>This browser</h4>
+        @if (_status is null)
+        {
+            <p class="np-device-sub">Checking browser support…</p>
+        }
+        else
+        {
+            <dl class="np-status">
+                <dt>Secure context</dt><dd>@YesNo(_status.Secure)</dd>
+                <dt>Push supported</dt><dd>@YesNo(_status.Supported)</dd>
+                <dt>Permission</dt><dd>@_status.Permission</dd>
+                <dt>Subscribed here</dt><dd>@YesNo(_current?.Subscribed == true && IsRegisteredHere)</dd>
+            </dl>
+            @if (!_status.Secure)
+            {
+                <p class="alert alert-warning">Push needs a secure connection. Open NetPilot over HTTPS on your phone; plain HTTP to a LAN address cannot receive push. Desktop Chrome allows <code>http://localhost:5036</code> for testing. Setup guidance: <code>docs/https-access.md</code> (T6).</p>
+            }
+            else if (!_status.Supported)
+            {
+                <p class="alert alert-warning">This browser does not support Web Push. Use Android Chrome or desktop Chrome.</p>
+            }
+            @if (_status.Permission == "denied")
+            {
+                <p class="alert alert-warning">Notifications are blocked. In Chrome, open the icon beside the address → Site settings → Notifications → Allow, then refresh this tab.</p>
+            }
+            @if (_current?.Subscribed == true && !IsRegisteredHere)
+            {
+                <p class="np-device-sub">Chrome has a push subscription, but it is not registered with NetPilot. Enable notifications to register it again.</p>
+            }
+        }
+        <label for="notification-label">Device label (optional)</label>
+        <input id="notification-label" class="form-control form-control-sm" maxlength="80" @bind="_label" />
+        <div class="np-actions">
+            <button type="button" class="np-save-btn" disabled="@(!CanEnable)" @onclick="EnableAsync">Enable notifications on this device</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" disabled="@(_busy || _current?.Subscribed != true)" @onclick="DisableAsync">Disable on this device</button>
+            <button type="button" class="btn btn-outline-primary btn-sm" disabled="@(_busy || _subscriptions.Count == 0)" @onclick="SendTestAsync">Send test notification</button>
+        </div>
+        <p class="np-device-sub">A test is sent to every registered device and bypasses quiet hours. No PWA installation is required.</p>
+        @if (_deliveries is not null)
+        {
+            <ul class="np-results" aria-live="polite">
+                @foreach (var delivery in _deliveries)
+                {
+                    <li>@(delivery.Label ?? "Unnamed device"): @(delivery.Success ? "Sent to push service" : $"Failed: {delivery.Error}")</li>
+                }
+            </ul>
+        }
+    </section>
+
+    <section class="np-card">
+        <h4>Registered subscriptions</h4>
+        @if (_subscriptions.Count == 0) { <p class="np-device-sub">No devices registered yet.</p> }
+        else
+        {
+            <div class="np-table-scroll"><table class="table table-sm">
+                <thead><tr><th>Label</th><th>Created</th><th>Last success</th><th>Failures</th><th></th></tr></thead>
+                <tbody>
+                @foreach (var subscription in _subscriptions)
+                {
+                    <tr @key="subscription.Id"><td>@(subscription.Label ?? "Unnamed device")</td><td>@LocalTime(subscription.CreatedAtUtc)</td><td>@(subscription.LastSuccessAtUtc is { } success ? LocalTime(success) : "Never")</td><td>@subscription.FailureCount</td>
+                        <td><button type="button" class="btn btn-outline-danger btn-sm" disabled="@_busy" @onclick="() => RemoveAsync(subscription.Id)">Remove<span class="visually-hidden"> @(subscription.Label ?? "subscription")</span></button></td></tr>
+                }
+                </tbody>
+            </table></div>
+        }
+    </section>
+    <section class="np-card">
+        <h4>Recent notifications</h4>
+        <p class="np-device-sub">Last 20 channel attempts · @Clock.TimeZone.Id</p>
+        @if (_log.Count == 0) { <p class="np-device-sub">No notification attempts logged yet.</p> }
+        else
+        {
+            <div class="np-table-scroll"><table class="table table-sm">
+                <thead><tr><th>Time</th><th>Tag</th><th>Channel</th><th>Outcome</th></tr></thead>
+                <tbody>@foreach (var entry in _log)
+                { <tr><td>@LocalTime(entry.AtUtc)</td><td class="np-tag">@entry.Tag</td><td>@entry.ChannelId</td><td>@entry.Outcome</td></tr> }</tbody>
+            </table></div>
+        }
+    </section>
+    <section class="np-card">
+        <h4>Effective settings</h4>
+        <dl class="np-status">
+            <dt>Quiet hours</dt><dd>@(Options.QuietHours.Enabled ? $"{Options.QuietHours.Start}–{Options.QuietHours.End} ({Clock.TimeZone.Id})" : "Off")</dd>
+            <dt>VAPID contact</dt><dd>@Options.VapidSubject</dd>
+            <dt>Dedupe window</dt><dd>@Options.DedupeWindowHours hours</dd>
+            <dt>Action token lifetime</dt><dd>@Options.ActionTokenHours hours</dd>
+        </dl>
+    </section>
+</div>
+
+@code {
+    private IJSObjectReference? _module;
+    private BrowserStatus? _status;
+    private BrowserSubscription? _current;
+    private string _publicKey = "";
+    private string _label = "";
+    private string? _message;
+    private bool _failed;
+    private bool _busy;
+    private IReadOnlyList<PushSubscriptionInfo> _subscriptions = [];
+    private IReadOnlyList<NotificationLogEntry> _log = [];
+    private IReadOnlyList<PushDeliveryResult>? _deliveries;
+    private bool IsRegisteredHere => _current?.Endpoint is { } endpoint && _subscriptions.Any(s => s.Id == PushSubscriptionInfo.IdForEndpoint(endpoint));
+    private bool CanEnable => !_busy && _module is not null && _publicKey.Length > 0 && _status is { Secure: true, Supported: true } && _status.Permission != "denied";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await RunAsync(async () =>
+        {
+            _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/notifications.js");
+            _status = await _module.InvokeAsync<BrowserStatus>("getStatus");
+            _label = _status.Label;
+            _publicKey = (await VapidKeys.GetOrCreateAsync(CancellationToken.None)).PublicKey;
+            await LoadAsync();
+        });
+        StateHasChanged();
+    }
+
+    private Task RefreshAsync() => RunAsync(LoadAsync);
+
+    private async Task LoadAsync()
+    {
+        _subscriptions = await SubscriptionStore.GetAllAsync(CancellationToken.None);
+        _log = await NotificationLog.GetRecentAsync(20, CancellationToken.None);
+        if (_module is null) return;
+        _status = await _module.InvokeAsync<BrowserStatus>("getStatus");
+        _current = await _module.InvokeAsync<BrowserSubscription>("getCurrentSubscription");
+        if (_current.Error is { } error && error is not ("insecure-context" or "unsupported")) ShowError(error);
+    }
+
+    private Task EnableAsync() => RunAsync(async () =>
+    {
+        var subscription = await _module!.InvokeAsync<BrowserSubscription>("registerAndSubscribe", _publicKey);
+        if (subscription.Error is { } error) { ShowError(error); await LoadAsync(); return; }
+        if (subscription.Endpoint is null || subscription.P256dh is null || subscription.Auth is null)
+        { ShowError("invalid-subscription"); return; }
+        await SubscriptionStore.UpsertAsync(new(PushSubscriptionInfo.IdForEndpoint(subscription.Endpoint),
+            subscription.Endpoint, subscription.P256dh, subscription.Auth,
+            string.IsNullOrWhiteSpace(_label) ? null : _label.Trim()[..Math.Min(_label.Trim().Length, 80)], Clock.GetUtcNow()), CancellationToken.None);
+        _message = "Notifications enabled on this device.";
+        await LoadAsync();
+    });
+
+    private Task DisableAsync() => RunAsync(async () =>
+    {
+        var priorEndpoint = _current?.Endpoint;
+        var removed = await _module!.InvokeAsync<BrowserSubscription>("unsubscribe");
+        if (removed.Error is { } error) { ShowError(error); return; }
+        if ((removed.Endpoint ?? priorEndpoint) is { } endpoint)
+            await SubscriptionStore.RemoveAsync(PushSubscriptionInfo.IdForEndpoint(endpoint), CancellationToken.None);
+        _message = "Notifications disabled on this device.";
+        await LoadAsync();
+    });
+
+    private Task RemoveAsync(string id) => RunAsync(async () =>
+    {
+        await SubscriptionStore.RemoveAsync(id, CancellationToken.None);
+        _message = "Subscription removed. This device will no longer receive new notifications.";
+        await LoadAsync();
+    });
+
+    private Task SendTestAsync() => RunAsync(async () =>
+    {
+        _deliveries = await Notifications.SendTestAsync();
+        _message = _deliveries.Count == 0 ? "No registered devices to test." : "Test delivery results are shown below.";
+        await LoadAsync();
+    });
+
+    private async Task RunAsync(Func<Task> operation)
+    {
+        if (_busy) return;
+        _busy = true; _failed = false; _message = null;
+        try { await operation(); }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Interop and transport errors can contain subscription credentials; expose no exception text.
+            _failed = true;
+            _message = "NetPilot could not complete this request. Refresh and try again.";
+        }
+        finally { _busy = false; }
+    }
+
+    private void ShowError(string code)
+    {
+        _failed = true;
+        _message = code switch
+        {
+            "insecure-context" => "Use HTTPS, or localhost in desktop Chrome, to enable push.",
+            "unsupported" => "This browser does not support Web Push.",
+            "denied" => "Notifications are blocked. Allow them in Chrome site settings, then refresh.",
+            "dismissed" => "Permission was not granted. Click Enable when you are ready.",
+            _ => "The browser could not complete the push request. Check your connection and Chrome site settings, then try again."
+        };
+    }
+
+    private string LocalTime(DateTimeOffset instant) => TimeZoneInfo.ConvertTime(instant, Clock.TimeZone).ToString("yyyy-MM-dd HH:mm");
+    private static string YesNo(bool enabled) => enabled ? "Yes" : "No";
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_module is null) return;
+        try { await _module.DisposeAsync(); }
+        catch (JSDisconnectedException) { }
+    }
+
+    public sealed record BrowserStatus(bool Secure, bool Supported, string Permission, string Label);
+    public sealed record BrowserSubscription(bool Subscribed, string? Endpoint, string? P256dh, string? Auth, string? Error);
+}

@@ -4,6 +4,7 @@ using NetPilot.Data;
 using NetPilot.Notifications.WebPush;
 using NetPilot.Providers.TpLink;
 using NetPilot.Web.Components;
+using NetPilot.Web;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,6 +19,7 @@ var keyRingPath = Path.Combine(dataDir, "keys");
 builder.Services.AddNetPilotData(dbPath, keyRingPath);
 builder.Services.AddTpLinkProvider();
 builder.Services.AddNetPilotWebPush(builder.Configuration);
+builder.Services.AddNotificationActionEndpoints();
 builder.Services.AddSingleton<PolicyReconciliationService>();
 builder.Services.AddSingleton<UsageTrackingService>();
 
@@ -35,10 +37,23 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
-app.UseHttpsRedirection();
+// HTTP localhost is a secure context in Chrome; deployment HTTPS is configured separately.
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path == "/sw.js" && HttpMethods.IsGet(context.Request.Method))
+    {
+        context.Response.ContentType = "text/javascript; charset=utf-8";
+        context.Response.Headers.CacheControl = "no-cache, no-store, max-age=0";
+        await context.Response.SendFileAsync(Path.Combine(app.Environment.WebRootPath, "sw.js"), context.RequestAborted);
+        return;
+    }
+    await next();
+});
+app.UseRateLimiter();
 
 app.UseAntiforgery();
 
+app.MapNotificationActionEndpoints();
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();

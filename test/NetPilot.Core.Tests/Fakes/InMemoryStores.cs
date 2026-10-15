@@ -159,6 +159,16 @@ public class InMemoryQuotaStateStore : IQuotaStateStore
 {
     private readonly Dictionary<string, QuotaPeriodState> _states = [];
 
+    public Task<QuotaPeriodState?> UpdateAsync(string id, Func<QuotaPeriodState?, QuotaPeriodState?> update, CancellationToken ct)
+    {
+        lock (_states)
+        {
+            var updated = update(_states.GetValueOrDefault(id));
+            if (updated is not null) _states[id] = updated;
+            return Task.FromResult(updated);
+        }
+    }
+
     public Task<QuotaPeriodState?> FindAsync(string id, CancellationToken ct) =>
         Task.FromResult(_states.GetValueOrDefault(id));
 

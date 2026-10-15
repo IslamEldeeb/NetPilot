@@ -30,6 +30,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IPushSubscriptionStore, LitePushSubscriptionStore>();
         services.AddSingleton<INotificationLogStore, LiteNotificationLogStore>();
         services.AddSingleton<IVapidKeyStore, VapidKeyStore>();
+        services.AddSingleton<IQuotaActionTokenService, QuotaActionTokenService>();
+        services.AddSingleton<QuotaActionHandler>();
         services.AddSingleton<IQuotaStore, LiteQuotaStore>();
         services.AddSingleton<IQuotaStateStore, LiteQuotaStateStore>();
         services.AddSingleton<IProtectedDeviceStore, LiteProtectedDeviceStore>();

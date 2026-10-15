@@ -16,6 +16,21 @@ public class LiteQuotaStateStore(NetPilotDatabase db) : IQuotaStateStore
         return Task.FromResult(doc is null ? null : ToDomain(doc));
     }
 
+    public Task<QuotaPeriodState?> UpdateAsync(string id, Func<QuotaPeriodState?, QuotaPeriodState?> update, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        QuotaPeriodState? updated = null;
+        db.InTransaction(() =>
+        {
+            var doc = _collection.FindById(id);
+            updated = update(doc is null ? null : ToDomain(doc));
+            if (updated is null) return;
+            if (updated.Id != id) throw new ArgumentException("Quota state identity cannot change.");
+            _collection.Upsert(ToDocument(updated));
+        });
+        return Task.FromResult(updated);
+    }
+
     public Task UpsertAsync(QuotaPeriodState state, CancellationToken ct)
     {
         _collection.Upsert(ToDocument(state));
@@ -37,7 +52,8 @@ public class LiteQuotaStateStore(NetPilotDatabase db) : IQuotaStateStore
         Mac = new(doc.Mac), PeriodKind = doc.PeriodKind, PeriodKey = doc.PeriodKey,
         WarnedPercents = doc.WarnedPercents, ExceededNotified = doc.ExceededNotified,
         ActionKind = doc.ActionKind, ActionAppliedAtUtc = doc.ActionAppliedAtUtc,
-        ExtraAllowanceBytes = doc.ExtraAllowanceBytes,
+        ExtraAllowanceBytes = doc.ExtraAllowanceBytes, UsedActionTokenHashes = doc.UsedActionTokenHashes ?? [],
+        ReleaseRequested = doc.ReleaseRequested, ActionSuppressedForPeriod = doc.ActionSuppressedForPeriod,
         PriorLimit = doc.PriorLimitEnabled is null ? null : new SpeedLimit(doc.PriorLimitEnabled.Value, doc.PriorDownloadKbps, doc.PriorUploadKbps),
         BlockToken = doc.BlockToken, AppliedThrottleKbps = doc.AppliedThrottleKbps, DryRunWouldHaveActed = doc.DryRunWouldHaveActed,
         ActionSkippedProtected = doc.ActionSkippedProtected, CapBytes = doc.CapBytes, UsedBytes = doc.UsedBytes
@@ -50,7 +66,8 @@ public class LiteQuotaStateStore(NetPilotDatabase db) : IQuotaStateStore
             CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal),
         WarnedPercents = state.WarnedPercents, ExceededNotified = state.ExceededNotified,
         ActionKind = state.ActionKind, ActionAppliedAtUtc = state.ActionAppliedAtUtc,
-        ExtraAllowanceBytes = state.ExtraAllowanceBytes, PriorLimitEnabled = state.PriorLimit?.Enabled,
+        ExtraAllowanceBytes = state.ExtraAllowanceBytes, UsedActionTokenHashes = state.UsedActionTokenHashes,
+        ReleaseRequested = state.ReleaseRequested, ActionSuppressedForPeriod = state.ActionSuppressedForPeriod, PriorLimitEnabled = state.PriorLimit?.Enabled,
         PriorDownloadKbps = state.PriorLimit?.DownloadKbps, PriorUploadKbps = state.PriorLimit?.UploadKbps,
         BlockToken = state.BlockToken, AppliedThrottleKbps = state.AppliedThrottleKbps, DryRunWouldHaveActed = state.DryRunWouldHaveActed,
         ActionSkippedProtected = state.ActionSkippedProtected, CapBytes = state.CapBytes, UsedBytes = state.UsedBytes

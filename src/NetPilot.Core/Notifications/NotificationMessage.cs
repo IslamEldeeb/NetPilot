@@ -1,6 +1,6 @@
 namespace NetPilot.Core.Notifications;
 
-public record NotificationAction(string Id, string Title);
+public record NotificationAction(string Id, string Title, string Token);
 
 public record NotificationMessage(string Title, string Body, string? Url, string Tag, NotificationAction[] Actions);
 

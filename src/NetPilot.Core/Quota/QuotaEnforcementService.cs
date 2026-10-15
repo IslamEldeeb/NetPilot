@@ -47,6 +47,17 @@ public class QuotaEnforcementService(
         await stateStore.PruneAsync(clock.GetUtcNow().AddDays(-62), ct);
     }
 
+    // Web owns allowances, consumed token hashes and release requests. Preserve its latest transaction
+    // even when the Agent's router operation or event fan-out started from an older snapshot.
+    private async Task<QuotaPeriodState> SaveAgentStateAsync(QuotaPeriodState proposed, CancellationToken ct) =>
+        (await stateStore.UpdateAsync(proposed.Id, current => current is null ? proposed : proposed with
+        {
+            ExtraAllowanceBytes = current.ExtraAllowanceBytes,
+            UsedActionTokenHashes = current.UsedActionTokenHashes,
+            ReleaseRequested = current.ReleaseRequested,
+            ActionSuppressedForPeriod = current.ActionSuppressedForPeriod
+        }, ct))!;
+
     private sealed record DeviceQuota(Device Device, QuotaPolicy Policy, DeviceUsageState Usage, SpeedLimitState? ReportedLimit);
 
     private async Task EvaluateDeviceAsync(IRouterProvider provider, DeviceQuota context, CancellationToken ct)
@@ -66,18 +77,20 @@ public class QuotaEnforcementService(
             var state = await stateStore.FindAsync(QuotaPeriodState.Key(context.Device.Mac, period.Kind, period.Key), ct)
                 ?? new QuotaPeriodState { Mac = context.Device.Mac, PeriodKind = period.Kind, PeriodKey = period.Key };
             state = state with { CapBytes = cap, UsedBytes = period.Used };
-            await stateStore.UpsertAsync(state, ct);
+            state = await SaveAgentStateAsync(state, ct);
             await EvaluatePeriodAsync(provider, context, state, ct);
         }
     }
 
     private async Task EvaluatePeriodAsync(IRouterProvider provider, DeviceQuota context, QuotaPeriodState state, CancellationToken ct)
     {
+        state = (await stateStore.UpdateAsync(state.Id, current => current is { ReleaseRequested: true, ActionKind: QuotaActionKind.None }
+            ? current with { ReleaseRequested = false, ActionSuppressedForPeriod = true } : current, ct)) ?? state;
         var crossed = context.Policy.WarnPercents.Where(p => state.Percent >= p && !state.WarnedPercents.Contains(p)).ToArray();
         if (crossed.Length > 0)
         {
             state = state with { WarnedPercents = state.WarnedPercents.Concat(crossed).Distinct().Order().ToArray() };
-            await stateStore.UpsertAsync(state, ct);
+            state = await SaveAgentStateAsync(state, ct);
             // One warning carries the current usage; every crossed threshold is acknowledged durably.
             await PublishAsync(CreateEvent(QuotaEventKind.Warning, context, state) with { WarnPercent = crossed.Max() }, ct);
         }
@@ -86,7 +99,7 @@ public class QuotaEnforcementService(
         if (!state.ExceededNotified)
         {
             state = state with { ExceededNotified = true };
-            await stateStore.UpsertAsync(state, ct);
+            state = await SaveAgentStateAsync(state, ct);
             await PublishAsync(CreateEvent(QuotaEventKind.Exceeded, context, state), ct);
         }
         await ApplyActionAsync(provider, context, state, ct);
@@ -94,14 +107,16 @@ public class QuotaEnforcementService(
 
     private async Task ApplyActionAsync(IRouterProvider provider, DeviceQuota context, QuotaPeriodState state, CancellationToken ct)
     {
-        if (context.Policy.Action == QuotaAction.NotifyOnly || state.ActionKind != QuotaActionKind.None)
+        state = await stateStore.FindAsync(state.Id, ct) ?? state;
+        if (state.ReleaseRequested || state.ActionSuppressedForPeriod || state.Percent < 100 ||
+            context.Policy.Action == QuotaAction.NotifyOnly || state.ActionKind != QuotaActionKind.None)
             return;
         if (await protectedDevices.IsProtectedAsync(context.Device.Mac, ct))
         {
             if (!state.ActionSkippedProtected)
             {
                 state = state with { ActionSkippedProtected = true };
-                await stateStore.UpsertAsync(state, ct);
+                state = await SaveAgentStateAsync(state, ct);
                 await PublishAsync(CreateEvent(QuotaEventKind.ActionSkippedProtected, context, state), ct);
             }
             return;
@@ -111,7 +126,7 @@ public class QuotaEnforcementService(
             if (!state.DryRunWouldHaveActed)
             {
                 state = state with { DryRunWouldHaveActed = true };
-                await stateStore.UpsertAsync(state, ct);
+                state = await SaveAgentStateAsync(state, ct);
                 await PublishAsync(CreateEvent(QuotaEventKind.DryRun, context, state), ct);
             }
             return;
@@ -140,7 +155,7 @@ public class QuotaEnforcementService(
         }
 
         // Save the reversal token before the device projection or any event sink can fail.
-        await stateStore.UpsertAsync(state, ct);
+        state = await SaveAgentStateAsync(state, ct);
         await deviceStore.UpsertAsync(context.Device, ct);
         await PublishAsync(CreateEvent(QuotaEventKind.ActionApplied, context, state), ct);
     }
@@ -149,7 +164,7 @@ public class QuotaEnforcementService(
     {
         var token = await provider.BlockDeviceAsync(state.Mac, ct);
         state = state with { ActionKind = QuotaActionKind.Block, BlockToken = token, ActionAppliedAtUtc = clock.GetUtcNow() };
-        await stateStore.UpsertAsync(state, ct);
+        state = await SaveAgentStateAsync(state, ct);
         context.Device.IsBlocked = true;
         context.Device.BlockListToken = token;
         await deviceStore.UpsertAsync(context.Device, ct);
@@ -163,7 +178,7 @@ public class QuotaEnforcementService(
         var prior = state.PriorLimit ?? await PriorLimitAsync(context, ct);
         // Preserve the original limit even if the process stops immediately after the router write.
         state = state with { PriorLimit = prior, AppliedThrottleKbps = context.Policy.ThrottleKbps };
-        await stateStore.UpsertAsync(state, ct);
+        state = await SaveAgentStateAsync(state, ct);
         var previousThrottle = context.Device.QuotaThrottle;
         context.Device.QuotaThrottle = new SpeedLimit(true, context.Policy.ThrottleKbps, context.Policy.ThrottleKbps);
         if (!await reconciliation.ApplyDevicePolicyAsync(provider, context.Device, ct))
@@ -205,8 +220,12 @@ public class QuotaEnforcementService(
                     continue;
                 foreach (var state in expired)
                 {
-                    await stateStore.UpsertAsync(state with { ActionKind = QuotaActionKind.None, PriorLimit = null,
-                        BlockToken = null, AppliedThrottleKbps = null }, ct);
+                    await stateStore.UpdateAsync(state.Id, current => current is null ? null : current with
+                    {
+                        ActionKind = QuotaActionKind.None, PriorLimit = null, BlockToken = null, AppliedThrottleKbps = null,
+                        ReleaseRequested = state.ReleaseRequested ? false : current.ReleaseRequested,
+                        ActionSuppressedForPeriod = current.ActionSuppressedForPeriod || state.ReleaseRequested
+                    }, ct);
                     await PublishAsync(RevertedEvent(device, state), ct);
                 }
             }
@@ -248,6 +267,7 @@ public class QuotaEnforcementService(
 
     private bool ShouldRevert(QuotaPeriodState state, DeviceUsageState? usage)
     {
+        if (state.ReleaseRequested) return true;
         var currentKey = state.PeriodKind == QuotaPeriodKind.Day ? clock.TodayKey() : clock.ThisMonthKey();
         if (state.PeriodKey != currentKey)
             return true;

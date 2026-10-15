@@ -16,6 +16,9 @@ public class QuotaPeriodStateDocument
     public QuotaActionKind ActionKind { get; set; }
     public DateTimeOffset? ActionAppliedAtUtc { get; set; }
     public long ExtraAllowanceBytes { get; set; }
+    public string[] UsedActionTokenHashes { get; set; } = [];
+    public bool ReleaseRequested { get; set; }
+    public bool ActionSuppressedForPeriod { get; set; }
     public bool? PriorLimitEnabled { get; set; }
     public int? PriorDownloadKbps { get; set; }
     public int? PriorUploadKbps { get; set; }

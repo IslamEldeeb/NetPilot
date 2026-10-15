@@ -18,5 +18,7 @@ public enum ActivityEventType
     QuotaActionApplied,
     QuotaReverted,
     QuotaDryRun,
-    QuotaActionSkippedProtected
+    QuotaActionSkippedProtected,
+    QuotaAllowanceGranted,
+    QuotaRestoreRequested
 }
