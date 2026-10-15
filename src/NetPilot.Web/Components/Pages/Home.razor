@@ -738,6 +738,11 @@
         ActivityEventType.QuotaReverted => "dot-discovered",
         ActivityEventType.QuotaDryRun => "dot-skipped",
         ActivityEventType.QuotaActionSkippedProtected => "dot-skipped",
+        ActivityEventType.RuleFired => "dot-applied",
+        ActivityEventType.RuleDryRun => "dot-skipped",
+        ActivityEventType.RuleReverted => "dot-discovered",
+        ActivityEventType.RuleActionSkippedProtected => "dot-skipped",
+        ActivityEventType.RuleFailed => "dot-failed",
         _ => "dot-other"
     };
 

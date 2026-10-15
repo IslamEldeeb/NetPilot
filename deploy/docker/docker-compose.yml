@@ -9,6 +9,7 @@ services:
     environment:
       - ROUTER_HOST=${ROUTER_HOST:-}
       - ROUTER_PASSWORD=${ROUTER_PASSWORD:-}
+      - NetPilot__Rules__ForceDryRun=${NETPILOT_RULES_FORCE_DRYRUN:-true}
       - NetPilot__Notifications__VapidSubject=${NETPILOT_VAPID_SUBJECT:-mailto:netpilot@localhost}
       - NetPilot__LocalTraffic__Url=${NETPILOT_LANTRAFFIC_URL:-}
       - NetPilot__LocalTraffic__Token=${NETPILOT_LANTRAFFIC_TOKEN:-}

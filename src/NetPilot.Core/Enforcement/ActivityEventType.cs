@@ -22,5 +22,10 @@ public enum ActivityEventType
     QuotaAllowanceGranted,
     QuotaRestoreRequested,
     LanCounterReset,
-    LanSourceUnavailable
+    LanSourceUnavailable,
+    RuleFired,
+    RuleDryRun,
+    RuleReverted,
+    RuleActionSkippedProtected,
+    RuleFailed
 }

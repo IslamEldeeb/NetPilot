@@ -8,6 +8,7 @@ using NetPilot.Core.Notifications;
 using NetPilot.Core.Policy;
 using NetPilot.Core.Quota;
 using NetPilot.Core.RouterConnection;
+using NetPilot.Core.Rules;
 using NetPilot.Core.Usage;
 
 namespace NetPilot.Data;
@@ -55,6 +56,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IQuotaActionTokenService, QuotaActionTokenService>();
         services.AddSingleton<QuotaActionHandler>();
         services.AddSingleton<IActionClaimStore, LiteActionClaimStore>();
+        services.AddSingleton<IRuleStore, LiteRuleStore>();
+        services.AddSingleton<IRuleFiringStore, LiteRuleFiringStore>();
         services.AddSingleton<IQuotaStore, LiteQuotaStore>();
         services.AddSingleton<IQuotaStateStore, LiteQuotaStateStore>();
         services.AddSingleton<IProtectedDeviceStore, LiteProtectedDeviceStore>();

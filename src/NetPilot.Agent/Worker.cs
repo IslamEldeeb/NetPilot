@@ -3,6 +3,7 @@ using NetPilot.Core.Enforcement;
 using NetPilot.Core.Policy;
 using NetPilot.Core.Quota;
 using NetPilot.Core.RouterConnection;
+using NetPilot.Core.Rules;
 using NetPilot.Core.Usage;
 using NetPilot.Data;
 
@@ -23,7 +24,8 @@ public class Worker(
     IRouterProvider routerProvider,
     PolicyReconciliationService reconciliationService,
     UsageTrackingService usageTrackingService,
-    QuotaEnforcementService quotaEnforcementService) : BackgroundService
+    QuotaEnforcementService quotaEnforcementService,
+    RuleEvaluationService ruleEvaluationService) : BackgroundService
 {
     private bool _connected;
 
@@ -46,9 +48,7 @@ public class Worker(
                 }
                 else
                 {
-                    var snapshots = await reconciliationService.ReconcileAsync(routerProvider, stoppingToken);
-                    await usageTrackingService.TrackAsync(snapshots, stoppingToken);
-                    await quotaEnforcementService.EvaluateAsync(routerProvider, snapshots, stoppingToken);
+                    await RunTickAsync(stoppingToken);
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -58,6 +58,21 @@ public class Worker(
             }
 
             await Task.Delay(pollInterval, stoppingToken);
+        }
+    }
+
+    internal async Task RunTickAsync(CancellationToken stoppingToken)
+    {
+        var snapshots = await reconciliationService.ReconcileAsync(routerProvider, stoppingToken);
+        await usageTrackingService.TrackAsync(snapshots, stoppingToken);
+        await quotaEnforcementService.EvaluateAsync(routerProvider, snapshots, stoppingToken);
+        try
+        {
+            await ruleEvaluationService.EvaluateAsync(routerProvider, snapshots, stoppingToken);
+        }
+        catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
+        {
+            logger.LogError(ex, "Rules evaluation failed — will retry next tick.");
         }
     }
 

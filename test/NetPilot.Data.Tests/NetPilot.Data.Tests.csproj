@@ -21,6 +21,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\NetPilot.Data\NetPilot.Data.csproj" />
+    <ProjectReference Include="..\..\src\NetPilot.Agent\NetPilot.Agent.csproj" />
+    <Compile Include="..\NetPilot.Core.Tests\Fakes\FakeRouterProvider.cs" Link="Fakes\FakeRouterProvider.cs" />
     <ProjectReference Include="..\..\src\NetPilot.Core\NetPilot.Core.csproj" />
     <ProjectReference Include="..\..\src\NetPilot.Abstractions\NetPilot.Abstractions.csproj" />
   </ItemGroup>
