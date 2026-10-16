@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NetPilot.Abstractions;
 using NetPilot.Agent;
 using NetPilot.Core.Devices;
+using NetPilot.Core.Health;
 using NetPilot.Core.Enforcement;
 using NetPilot.Core.Enforcement.Claims;
 using NetPilot.Core.Notifications;
@@ -39,7 +40,7 @@ public class RuleAgentIntegrationTests : IDisposable
             fixture.Provider, fixture.Reconciliation,
             new(fixture.Usage, fixture.Activity, fixture.Clock,
                 new(new NullLocalTrafficSource(), services.GetRequiredService<ILocalTrafficStore>(), fixture.Activity, fixture.Clock), fixture.Devices),
-            fixture.Quota, evaluator);
+            fixture.Quota, evaluator, services.GetRequiredService<NetPilot.Core.Health.IAgentHeartbeatStore>(), new(), new FixedTime());
 
         await worker.RunTickAsync(Ct);
         var stateId = QuotaPeriodState.Key(Mac, QuotaPeriodKind.Day, fixture.Clock.TodayKey());
@@ -50,6 +51,109 @@ public class RuleAgentIntegrationTests : IDisposable
         Assert.Equal(2000, (await fixture.Usage.FindStateAsync(Mac, Ct))!.CurrentDayBytes);
         Assert.Equal(2000, Assert.Single(await fixture.Firings.GetAllAsync(Ct)).UsedBytes);
         Assert.Single(fixture.Provider.AppliedLimits, w => w.Limit.DownloadKbps == 128);
+    }
+
+    [Fact]
+    public async Task HeartbeatRecordsStartFailureAndRecoveryIncludingCaughtRouterWriteFailure()
+    {
+        using var services = Services();
+        var fixture = new Fixture(services);
+        await fixture.SeedAsync();
+        await services.GetRequiredService<IRouterConnectionStore>().SaveAsync(
+            new("fake", "fake-host", false, "admin", services.GetRequiredService<RouterPasswordProtector>().Encrypt("secret")), Ct);
+        // Make reconciliation attempt a write, whose failure it catches internally.
+        fixture.Provider.Devices[0] = fixture.Provider.Devices[0] with { CurrentLimit = new(true, 1, 1, null) };
+        fixture.Provider.ThrowOnNextWrite = true;
+        var heartbeatStore = new RecordingHeartbeatStore(services.GetRequiredService<IAgentHeartbeatStore>());
+        var worker = fixture.Worker(heartbeatStore);
+        await worker.RunHeartbeatTickAsync(Ct);
+        Assert.Equal(2, heartbeatStore.Writes.Count);
+        Assert.Null(heartbeatStore.Writes[0].LastTickCompletedUtc);
+        var failed = (await heartbeatStore.GetAsync(Ct))!;
+        Assert.Equal(Now, failed.LastTickStartedUtc);
+        Assert.Equal(Now, failed.LastTickCompletedUtc);
+        Assert.Equal(Now, failed.LastSuccessfulRouterReadUtc);
+        Assert.Equal(1, failed.ConsecutiveFailedTicks);
+        Assert.Equal("Router operation failed", failed.LastErrorSummary);
+        Assert.Equal(new(true, true), failed.EffectiveModes);
+        Assert.Equal(180, failed.TickIntervalSeconds);
+        Assert.NotEmpty(failed.AppVersion);
+        Assert.True(failed.LastTickDurationMs >= 0);
+        await worker.RunHeartbeatTickAsync(Ct);
+        var recovered = (await heartbeatStore.GetAsync(Ct))!;
+        Assert.Equal(0, recovered.ConsecutiveFailedTicks);
+        Assert.Null(recovered.LastErrorSummary);
+        Assert.Equal(Now, recovered.LastSuccessfulRouterReadUtc);
+    }
+
+    [Fact]
+    public async Task MissingConnectionCountsAsFailedTickAndHeartbeatWriteOutageDoesNotStopWork()
+    {
+        using var services = Services();
+        var fixture = new Fixture(services);
+        await fixture.SeedAsync();
+        var heartbeatStore = new RecordingHeartbeatStore(services.GetRequiredService<IAgentHeartbeatStore>());
+        var worker = fixture.Worker(heartbeatStore);
+        await worker.RunHeartbeatTickAsync(Ct);
+        await worker.RunHeartbeatTickAsync(Ct);
+        var failed = (await heartbeatStore.GetAsync(Ct))!;
+        Assert.Equal(2, failed.ConsecutiveFailedTicks);
+        Assert.Equal("No router configured", failed.LastErrorSummary);
+        Assert.Null(failed.LastSuccessfulRouterReadUtc);
+        await services.GetRequiredService<IRouterConnectionStore>().SaveAsync(
+            new("fake", "fake-host", false, "admin", services.GetRequiredService<RouterPasswordProtector>().Encrypt("secret")), Ct);
+        heartbeatStore.FailWrites = true;
+        await worker.RunHeartbeatTickAsync(Ct);
+        Assert.NotEmpty(fixture.Provider.AppliedLimits);
+        heartbeatStore.FailWrites = false;
+        await worker.RunHeartbeatTickAsync(Ct);
+        Assert.Equal(0, (await heartbeatStore.GetAsync(Ct))!.ConsecutiveFailedTicks);
+    }
+
+    [Fact]
+    public async Task RouterReadFailurePreservesLastSuccessAndRedactsExceptionThenRecovers()
+    {
+        using var services = Services();
+        var provider = new FailedReadProvider { FailRead = true };
+        var fixture = new Fixture(services, provider);
+        await fixture.SeedAsync();
+        await services.GetRequiredService<IRouterConnectionStore>().SaveAsync(
+            new("fake", "fake-host", false, "admin", services.GetRequiredService<RouterPasswordProtector>().Encrypt("secret")), Ct);
+        var store = services.GetRequiredService<IAgentHeartbeatStore>();
+        var oldRead = Now.AddMinutes(-5);
+        await store.SaveAsync(new() { LastSuccessfulRouterReadUtc = oldRead }, Ct);
+        // Exercise startup loading as well as tick execution; no timer sleeps.
+        var worker = fixture.Worker(store);
+        await worker.LoadHeartbeatAsync(Ct);
+        await worker.RunHeartbeatTickAsync(Ct);
+        var failed = (await store.GetAsync(Ct))!;
+        Assert.Equal(oldRead, failed.LastSuccessfulRouterReadUtc);
+        Assert.Equal("Router operation failed", failed.LastErrorSummary);
+        Assert.Equal(1, failed.ConsecutiveFailedTicks);
+        Assert.Equal(2000, failed.LastTickDurationMs);
+        provider.FailRead = false;
+        await worker.RunHeartbeatTickAsync(Ct);
+        var recovered = (await store.GetAsync(Ct))!;
+        Assert.Equal(Now, recovered.LastSuccessfulRouterReadUtc);
+        Assert.Null(recovered.LastErrorSummary);
+        Assert.Equal(0, recovered.ConsecutiveFailedTicks);
+    }
+
+    [Fact]
+    public async Task RulesFailureStillCompletesHeartbeatWithSafeErrorAndThenRecovers()
+    {
+        using var services = Services();
+        var fixture = new Fixture(services);
+        await fixture.SeedAsync();
+        await services.GetRequiredService<IRouterConnectionStore>().SaveAsync(
+            new("fake", "fake-host", false, "admin", services.GetRequiredService<RouterPasswordProtector>().Encrypt("secret")), Ct);
+        var store = services.GetRequiredService<IAgentHeartbeatStore>();
+        var worker = fixture.Worker(store, new FailOnceRuleStore(services.GetRequiredService<IRuleStore>(), false));
+        await worker.RunHeartbeatTickAsync(Ct);
+        Assert.Equal("Rules evaluation failed", (await store.GetAsync(Ct))!.LastErrorSummary);
+        Assert.Equal(1, (await store.GetAsync(Ct))!.ConsecutiveFailedTicks);
+        await worker.RunHeartbeatTickAsync(Ct);
+        Assert.Equal(0, (await store.GetAsync(Ct))!.ConsecutiveFailedTicks);
     }
 
     [Fact]
@@ -121,11 +225,42 @@ public class RuleAgentIntegrationTests : IDisposable
                 new(true, 5000, 1000, null), new(1000))];
             return rule.Id;
         }
+        public Worker Worker(IAgentHeartbeatStore heartbeatStore, IRuleStore? rules = null) => new(
+            NullLogger<Worker>.Instance, new ConfigurationBuilder().Build(), Policies,
+            _services.GetRequiredService<IRouterConnectionStore>(), _services.GetRequiredService<RouterPasswordProtector>(),
+            Provider, Reconciliation,
+            new(Usage, Activity, Clock, new(new NullLocalTrafficSource(), _services.GetRequiredService<ILocalTrafficStore>(), Activity, Clock), Devices),
+            Quota, Evaluator(rules), heartbeatStore, new() { ForceDryRun = true }, new FixedTime());
+
         public RuleEvaluationService Evaluator(IRuleStore? rules = null) => new(rules ?? _services.GetRequiredService<IRuleStore>(),
             Firings, Devices, Usage, _services.GetRequiredService<IProtectedDeviceStore>(), _services.GetRequiredService<IActionClaimStore>(), Claims,
             new([], _services.GetRequiredService<INotificationLogStore>(), Clock, new()), Activity, Clock, new());
     }
-    private sealed class FixedTime : TimeProvider { public override DateTimeOffset GetUtcNow() => Now; }
+    private sealed class RecordingHeartbeatStore(IAgentHeartbeatStore inner) : IAgentHeartbeatStore
+    {
+        public List<AgentHeartbeat> Writes { get; } = [];
+        public bool FailWrites { get; set; }
+        public Task<AgentHeartbeat?> GetAsync(CancellationToken ct) => inner.GetAsync(ct);
+        public Task SaveAsync(AgentHeartbeat heartbeat, CancellationToken ct)
+        {
+            if (FailWrites) throw new IOException("Secret text must not be logged or persisted");
+            Writes.Add(heartbeat);
+            return inner.SaveAsync(heartbeat, ct);
+        }
+    }
+    private sealed class FixedTime : TimeProvider
+    {
+        private long _timestamp;
+        public override DateTimeOffset GetUtcNow() => Now;
+        public override long TimestampFrequency => 1000;
+        public override long GetTimestamp() => _timestamp += 2000;
+    }
+    private sealed class FailedReadProvider() : FakeRouterProvider(new() { SupportsSpeedLimit = true }), IRouterProvider
+    {
+        public bool FailRead { get; set; }
+        Task<IReadOnlyList<RouterDeviceSnapshot>> IRouterProvider.GetDevicesAsync(CancellationToken ct) =>
+            FailRead ? throw new IOException("password=TOPSECRET; token=NEVER") : GetDevicesAsync(ct);
+    }
     private sealed class Classifier : IDeviceClassifier { public string ClassifyKey(string hostname, MacAddress mac) => "mobile"; }
     private sealed class FailOnceRuleStore(IRuleStore inner, bool timeout) : IRuleStore
     {

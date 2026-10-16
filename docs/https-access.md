@@ -2,17 +2,60 @@
 
 Android Chrome requires a **secure context** for service workers and Web Push: use trusted HTTPS. Plain `http://192.168.1.24:8080` does not qualify. The local-development exception is localhost on the device running Chrome: desktop `http://localhost:5036` works; localhost on a phone means the phone, not CT 109. See [Chromium's secure-origin guidance](https://www.chromium.org/Home/chromium-security/deprecating-powerful-features-on-insecure-origins/).
 
-**NetPilot has no dashboard login. Anyone who can reach it can change settings. Keep it on your private LAN or your own tailnet. Never expose it to the public Internet, forward router ports to it, or enable Tailscale Funnel. HTTPS encrypts the connection; it does not add application authentication.** Scoped notification action tokens do not protect the rest of the dashboard.
+**For the existing Proxmox setup, use the Cloudflare + nginx subdomain route below. Set `NETPILOT_WEB_PASSWORD` whenever the subdomain is public.** HTTPS and scoped notification tokens alone do not protect dashboard settings.
 
 | Option | Use when | Trade-off |
 |---|---|---|
-| **A. Tailscale Serve (recommended)** | Your own phone needs trusted HTTPS at home and away | Tailscale account and connected app on phone; no CA installation |
-| **B. Caddy internal CA** | Access stays on the home LAN | Install your private CA on each client; keep Caddy's data volume |
-| **C. Chrome insecure-origin flag** | One-off testing only | Insecure HTTP; version-dependent flag; remove after testing |
+| **Cloudflare + nginx (primary)** | One public subdomain per Proxmox CT, existing nginx and Cloudflare certificates | Requires dashboard password and restricted upstream port |
+| **A. Tailscale Serve (alternative)** | You prefer private access through a tailnet | Requires Tailscale on the phone |
+| **B. Caddy internal CA (alternative)** | Access stays on the home LAN | Install a private CA on each client |
+| **C. Chrome insecure-origin flag** | One-off testing only | Insecure HTTP; remove after testing |
+
+## Dashboard login
+
+Set a long random `NETPILOT_WEB_PASSWORD` in `deploy/docker/.env`, then recreate Web with `docker compose --env-file .env up -d --build netpilot-web`. Compose passes it **only to Web** as `NetPilot__Web__Password` (`NetPilot:Web:Password`). Empty/unset disables login and preserves existing local behavior. Startup logs say `Dashboard login enabled` or `Dashboard login disabled`; the password/hash is never logged by login code. Keep `.env` private and out of Git.
+
+Login uses one shared identity and a sliding 30-day HttpOnly, SameSite=Lax cookie. `/login` accepts only local root-relative return URLs. Wrong passwords show **Wrong password**; POSTs require antiforgery tokens and login permits five attempts per minute per forwarded IP (429 after that). `/logout` offers an antiforgery-protected Sign out form. Changing the password does not revoke already issued cookies; this simple shared-password design has no session database. Closing a tab or signing out does not forcibly terminate an already open circuit in another tab; refresh/close other dashboard tabs after signing out.
+
+### Primary route — Cloudflare + nginx subdomain
+
+Point the Cloudflare-proxied subdomain (for example `netpilot.example.com`) at the existing nginx CT. Use Cloudflare **Full (strict)** TLS and configure nginx's HTTPS virtual host for that name with the existing Cloudflare origin certificate/key. The browser uses Cloudflare's trusted edge certificate; the origin certificate belongs on nginx. No Tailscale is needed. Keep Cloudflare WebSockets enabled and bypass caching for this subdomain, including HTML/login responses. Optionally add Cloudflare Access as another access layer; check service-worker notification actions if you do.
+
+Inside nginx's `http` block, define:
+
+```nginx
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+```
+
+Inside the subdomain's HTTPS `server` block (existing certificate directives omitted), proxy the entire app, including `/_blazor`:
+
+```nginx
+location / {
+    proxy_pass http://192.168.1.24:8080;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_read_timeout 3600s;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_buffering off;
+}
+```
+
+`$remote_addr` must represent the client: on a Cloudflare-proxied vhost configure nginx's real-IP module with `real_ip_header CF-Connecting-IP` and `set_real_ip_from` for **Cloudflare's current published IP ranges only**. Restrict origin ingress to Cloudflare, and never trust arbitrary client-supplied forwarding headers. Without that real-IP setup, the limiter groups users by Cloudflare edge address. nginx overwrites X-Forwarded-For with that resolved address, so the app only needs one trusted forwarding hop. See [Cloudflare visitor IP restoration](https://developers.cloudflare.com/support/troubleshooting/restoring-visitor-ips/restoring-original-visitor-ips/) and [nginx WebSocket proxying](https://nginx.org/en/docs/http/websocket.html).
+
+**Never expose the Web port directly to the internet.** When login is enabled, Web deliberately trusts one `X-Forwarded-For`/`X-Forwarded-Proto` hop (`ForwardLimit=1`, cleared known proxy/network lists). Restrict CT TCP 8080 with Proxmox/host firewall rules to the nginx CT and trusted management clients, or bind it only to a private proxy network. Keep router forwarding to 8080 disabled. Only nginx should supply these headers. Forwarded HTTPS makes the SameAsRequest auth cookie Secure even though nginx talks HTTP upstream. With login disabled this task does not enable forwarded-header handling.
+
+Check nginx config with `nginx -t`, reload nginx, open the HTTPS subdomain on the phone, sign in, and exercise a dashboard control to confirm Blazor is interactive. Repeat the notification steps in Option A step 7 using this subdomain. Verify an anonymous browser redirects to `/login`, anonymous API/Blazor requests get 401, `/sw.js` remains available, and signed notification actions still work after cookie expiry. The public allow-list is GET/HEAD `/login`, `/logout`, `/sw.js`, `/manifest.webmanifest`, `/icons/*`, `/favicon.png`, `/app.css`, `/lib/bootstrap/dist/css/bootstrap.min.css`; POST `/login`, `/logout`, `/api/notifications/action`. All other assets and `/_blazor` require login.
 
 These deployment recipes were checked against upstream documentation and Compose configuration. Certificate issuance, Android trust, subscription and delivery are **expected behaviour**, not live-verified here. Complete the [post-deploy checklist](deployment.md#post-deploy-verification) on CT 109 and the phone.
 
-## Option A — Tailscale Serve
+## Option A — Tailscale Serve (alternative)
 
 The current server is privileged Proxmox LXC **CT 109**, `192.168.1.24`, with the repo at `/opt/netpilot/repo`. The override runs the official Tailscale image in **userspace networking** (`TS_USERSPACE=true`), needing neither `/dev/net/tun` passthrough nor extra container capabilities. It joins the same Compose network as Web and proxies to `http://netpilot-web:8080`; `localhost:8080` would point at the Tailscale container itself.
 
@@ -63,7 +106,7 @@ The pin is **`tailscale/tailscale:v1.104.1`**, the container release listed on 2
 - **Permission denied:** Chrome's icon beside the address → **Site settings → Notifications → Allow**, then refresh and enable again. Permission and subscriptions belong to each origin; changing HTTPS names requires enabling again.
 - **Push service accepted but no notification:** Android **Settings → Apps → Chrome → Notifications** must allow notifications, including the site's notification channel. Check Do Not Disturb and battery optimisation/background restrictions for Chrome and Tailscale. Menu labels vary by Android/vendor. Check the Notifications tab's per-device results; acceptance alone does not prove display. Agent/Web need outbound Internet for push-service sends.
 
-## Option B — LAN-only Caddy internal CA
+## Option B — LAN-only Caddy internal CA (alternative)
 
 Use `docker-compose.caddy.yml` and `Caddyfile` instead of the Tailscale override. The shipped recipe targets the current CT IP **192.168.1.24**, binding host TCP 443 only on that LAN address. If the CT address changes, update **both** the port binding and Caddyfile site address before starting. Keep router port forwarding disabled. This option works only on the home network; it does not provide remote access.
 
@@ -78,7 +121,7 @@ The Caddyfile uses `tls internal` and proxies to `netpilot-web:8080`, including 
 
 Transfer **only `root.crt`**, using a trusted method such as USB or an authenticated file transfer, to the Android phone. Do not transfer Caddy's CA private key or its entire data directory. On Android, open **Settings → Security → Encryption & credentials → Install a certificate → CA certificate**, select the exported file, and confirm with the device PIN. Menu names vary; see [Android certificate settings](https://support.google.com/pixelphone/answer/2844832?hl=en).
 
-Android warns that a CA can inspect encrypted traffic; install only the root exported from your own Caddy. It may show a persistent network-monitoring warning. Restart Chrome, open **`https://192.168.1.24`** (no `:8080`), and verify it loads **without a certificate warning**, then follow Option A step 7. Clicking through a certificate warning is not a trusted-HTTPS setup. If this Android/Chrome build does not trust the user-installed CA, use Option A.
+Android warns that a CA can inspect encrypted traffic; install only the root exported from your own Caddy. It may show a persistent network-monitoring warning. Restart Chrome, open **`https://192.168.1.24`** (no `:8080`), and verify it loads **without a certificate warning**, then follow Option A step 7. Clicking through a certificate warning is not a trusted-HTTPS setup. If this Android/Chrome build does not trust the user-installed CA, use the primary subdomain route or Option A.
 
 After editing `Caddyfile`, recreate Caddy to load it:
 
@@ -97,4 +140,4 @@ Preserve **`caddy-data`**, which holds the CA and private keys, and `caddy-confi
 3. Open that URL, check **Secure context: Yes**, enable notifications and send a test.
 4. Afterwards remove the origin, return the flag to **Default** and relaunch. Move to Option A or B and enable notifications on that HTTPS origin.
 
-The flag may be absent or behave differently in some Chrome versions or managed devices. This is **expected behaviour**, not a verified phone test; if unavailable, use HTTPS. It does not change the rule against public exposure.
+The flag may be absent or behave differently in some Chrome versions or managed devices. This is **expected behaviour**, not a verified phone test; if unavailable, use HTTPS. Never expose the plain HTTP Web port publicly.

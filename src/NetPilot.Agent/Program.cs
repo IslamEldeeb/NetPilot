@@ -35,6 +35,7 @@ builder.Configuration.GetSection("NetPilot:Rules").Bind(rulesOptions);
 rulesOptions.Validate();
 builder.Services.AddSingleton(rulesOptions);
 builder.Services.AddSingleton<RuleEvaluationService>();
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddHostedService<Worker>();
 
 var host = builder.Build();

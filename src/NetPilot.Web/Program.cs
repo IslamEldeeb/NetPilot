@@ -26,6 +26,7 @@ builder.Services.AddNetPilotData(dbPath, keyRingPath);
 builder.Services.AddTpLinkProvider();
 builder.Services.AddNetPilotWebPush(builder.Configuration);
 builder.Services.AddNotificationActionEndpoints();
+builder.Services.AddDashboardLogin(builder.Configuration);
 builder.Services.AddSingleton<PolicyReconciliationService>();
 builder.Services.AddNetPilotLocalTraffic(builder.Configuration);
 builder.Services.AddSingleton<UsageTrackingService>();
@@ -36,6 +37,7 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 var app = builder.Build();
+app.UseDashboardLogin();
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
@@ -61,6 +63,7 @@ app.UseRateLimiter();
 
 app.UseAntiforgery();
 
+app.MapDashboardLogin();
 app.MapNotificationActionEndpoints();
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
