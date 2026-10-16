@@ -4,7 +4,8 @@ html[data-netpilot-ui=mud] body { background:var(--np-start-background,#f6faf7);
 html[data-theme=dark] .np-shell[data-theme-ready=false] { visibility:hidden; }
 :root { --np-dry-run:#514086; --np-dry-run-container:#eaddff; --np-enforcing:#00584b; --np-enforcing-container:#b7f0de; --np-selected:#cce8e1; --np-on-selected:#06201b; }
 :root[data-theme=dark] { --np-dry-run:#eaddff; --np-dry-run-container:#41306e; --np-enforcing:#b7f0de; --np-enforcing-container:#004337; --np-selected:#334b45; --np-on-selected:#cce8e1; }
-.np-shell .mud-main-content { padding-block-start:0; margin-inline:0; }
+.np-shell .mud-appbar { inline-size:100%!important; margin-inline:0!important; inset-inline:auto!important; }
+.np-shell .mud-main-content { padding-block-start:0; margin-inline:0!important; }
 .np-shell .mud-paper:not(.mud-appbar,.mud-drawer,.np-bottom-bar), .np-mud-dialog { border-radius:28px; }
 .np-shell :is(.mud-button-root,.mud-nav-link), .mud-dialog :is(.mud-button-root,.mud-nav-link), .mud-popover .mud-list-item, #mud-snackbar-container .mud-button-root { min-block-size:48px; }
 .np-shell .mud-icon-button, .mud-dialog .mud-icon-button { min-inline-size:48px; }
@@ -37,16 +38,19 @@ html[data-theme=dark] .np-shell[data-theme-ready=false] { visibility:hidden; }
 .page { color-scheme:light; }
 @media (min-width:601px) {
   .np-shell .np-rail { display:flex; }
-  .np-shell .mud-main-content { margin-inline-start:88px; }
+  .np-shell .mud-main-content { margin-inline-start:88px!important; }
   .np-bottom-bar { display:none; }
   .np-main-content { padding-block-end:24px; }
 }
 @media (min-width:1200px) {
   .np-shell .np-wide-drawer { display:flex; }
   .np-shell .np-rail { display:none; }
-  .np-shell .mud-main-content { margin-inline-start:248px; }
+  .np-shell .mud-main-content { margin-inline-start:248px!important; }
 }
 @media (max-width:600px) {
+  .np-app-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-inline-size:0; }
+  .np-app-bar .mud-button-root:not(.mud-icon-button) .mud-button-label { font-size:0; }
+  .np-app-bar .mud-button-root:not(.mud-icon-button) .mud-button-icon-start { margin:0; }
   .np-app-bar .mud-toolbar { padding-inline:8px; }
   #mud-snackbar-container { margin-block-end:calc(96px + env(safe-area-inset-bottom)); }
 }

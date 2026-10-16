@@ -19,8 +19,8 @@ else
         <a class="np-skip mud-button-root" href="#main-content">Skip to content</a>
         <AdaptiveNav />
         <MudMainContent Class="np-main-content">
-            <MudAppBar Fixed="false" Elevation="0" WrapContent="true" Class="np-app-bar">
-                <MudText Typo="Typo.body2">Home network / @ZoneName</MudText>
+            <MudAppBar Fixed="false" Elevation="0" Class="np-app-bar">
+                <MudText Typo="Typo.body2" Class="np-app-title">Home network / @ZoneName</MudText>
                 <MudSpacer />
                 <MudIconButton Icon="@Icons.Material.Outlined.Search" data-np-search="true" title="Search (Ctrl/⌘ K)" aria-label="Search devices and pages" OnClick="@(() => _searchOpen = true)" />
                 <ThemeToggle Preference="_preference" PreferenceChanged="ChangeThemeAsync" />
