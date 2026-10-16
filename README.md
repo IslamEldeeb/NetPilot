@@ -165,7 +165,7 @@ For the LAN-only Caddy option, use `docker-compose.caddy.yml` as the second file
 | [`docs/mvp-product-architecture.md`](docs/mvp-product-architecture.md) | Architecture spec: project structure, domain model, provider abstraction, deployment shape |
 | [`docs/phase1-live-findings.md`](docs/phase1-live-findings.md) | Confirmed-live TP-Link protocol details — login flow, endpoints, field names, units |
 | [`docs/deployment.md`](docs/deployment.md) | How to deploy with Docker Compose |
-| [`docs/https-access.md`](docs/https-access.md) | Android push over private Tailscale HTTPS, LAN Caddy alternative, troubleshooting |
+| [`docs/https-access.md`](docs/https-access.md) | Cloudflare + nginx HTTPS and dashboard login; Tailscale/Caddy alternatives |
 | [`docs/server-notifications.md`](docs/server-notifications.md) | Notification configuration, subscriptions, delivery and scoped actions |
 | [`docs/rules.md`](docs/rules.md) | Rules editor, templates, dry-run rollout, firing history and release requests |
 | [`docs/lan-traffic-exclusion.md`](docs/lan-traffic-exclusion.md) | Internet/LAN usage, Proxmox bridge counter verification and optional exporter setup |
@@ -175,4 +175,4 @@ For the LAN-only Caddy option, use `docker-compose.caddy.yml` as the second file
 
 ## Security note
 
-The dashboard has **no authentication**. Keep it on your private LAN or your own trusted tailnet; anyone who can reach it can change settings. Use [Tailscale HTTPS](docs/https-access.md) for Android push and private remote access. HTTPS does not add a dashboard login. **Never expose NetPilot to the public Internet**, forward its ports from the router, or enable Tailscale Funnel.
+The dashboard supports an optional shared-password login. **Set `NETPILOT_WEB_PASSWORD` for any public subdomain**; empty/unset leaves login disabled for existing private deployments. Use the [Cloudflare + nginx HTTPS route](docs/https-access.md) for the Proxmox subdomain setup and Android push; Tailscale and LAN Caddy remain alternatives. Restrict Web port 8080 to nginx/trusted management clients; never expose it directly to the Internet.

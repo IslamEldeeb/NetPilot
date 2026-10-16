@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
 using NetPilot.Core.Devices;
+using NetPilot.Core.Health;
 using NetPilot.Core.Enforcement;
 using NetPilot.Core.Enforcement.Claims;
 using NetPilot.Core.Notifications;
@@ -49,6 +50,7 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton(_ => new NetPilotDatabase(dbPath));
         services.AddSingleton<IDeviceStore, LiteDeviceStore>();
+        services.AddSingleton<IAgentHeartbeatStore, LiteAgentHeartbeatStore>();
         services.AddSingleton<IPolicyStore, LitePolicyStore>();
         services.AddSingleton<IPushSubscriptionStore, LitePushSubscriptionStore>();
         services.AddSingleton<INotificationLogStore, LiteNotificationLogStore>();

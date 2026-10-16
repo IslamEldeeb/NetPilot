@@ -31,6 +31,7 @@ services:
     volumes:
       - netpilot-data:/data
     environment:
+      - NetPilot__Web__Password=${NETPILOT_WEB_PASSWORD:-}
       - NetPilot__Rules__ForceDryRun=${NETPILOT_RULES_FORCE_DRYRUN:-true}
       - NetPilot__Rules__Enabled=${NETPILOT_RULES_ENABLED:-true}
       - NetPilot__PollIntervalSeconds=${NETPILOT_POLL_INTERVAL_SECONDS:-180}

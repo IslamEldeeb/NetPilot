@@ -21,7 +21,9 @@ public static class NotificationEndpoints
                 context.HttpContext.Response.Headers.RetryAfter = "60";
                 context.HttpContext.Response.Headers.CacheControl = "no-store";
                 await context.HttpContext.Response.WriteAsJsonAsync(new
-                { status = "RateLimited", message = "Too many notification actions. Try again in a minute." }, ct);
+                { status = "RateLimited", message = context.HttpContext.Request.Path == "/login"
+                    ? "Too many login attempts. Try again in a minute."
+                    : "Too many notification actions. Try again in a minute." }, ct);
             };
         });
         return services;
