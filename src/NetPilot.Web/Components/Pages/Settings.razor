@@ -1,0 +1,17 @@
+@page "/settings"
+@page "/settings/safety"
+@page "/settings/notifications"
+@layout AppShell
+@using NetPilot.Web.Components.Tabs
+<PageTitle>Settings · NetPilot</PageTitle>
+<div class="np-page-head"><h1>Settings</h1></div>
+<div class="np-stack">
+    <EmptyState Body="Router, wireless and management settings remain in Classic view. Existing notification controls are available below." Href="/legacy#notifications" ActionText="Open classic notifications" Icon="settings" />
+    <Card Toned="true" Label="Safety Center">
+        <h2>Safety Center</h2>
+        <p>The strip shows Web configuration and saved policies. It does not confirm the Agent’s runtime mode. Manual controls and category speed policies operate separately.</p>
+        <p>Keep automatic enforcement in dry-run until Internet usage and LAN counters are verified. Review protected devices, Cairo windows, Agent operation and phone notification delivery before changing deployment configuration.</p>
+        <a class="np-button np-button-outline" href="/legacy#quotas">Review quota safety</a>
+    </Card>
+    <Card Class="np-legacy-panel" Label="Existing notifications"><NotificationsTab /></Card>
+</div>

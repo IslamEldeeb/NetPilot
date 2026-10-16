@@ -1,0 +1,36 @@
+<div class="np-field @(Error is null ? "" : "np-field-invalid")">
+    @if (Kind is "checkbox" or "switch")
+    {
+        <label class="np-field-choice" for="@Id"><input id="@Id" type="checkbox" role="@(Kind == "switch" ? "switch" : null)" checked="@Checked" @onchange="CheckChanged" aria-invalid="@Invalid" aria-describedby="@DescriptionId" disabled="@Disabled" @attributes="Attributes" /><span>@Label</span></label>
+    }
+    else if (Kind == "select")
+    {
+        <label for="@Id">@Label</label>
+        <select id="@Id" value="@Value" @onchange="TextChanged" aria-invalid="@Invalid" aria-describedby="@DescriptionId" disabled="@Disabled" @attributes="Attributes">@ChildContent</select>
+    }
+    else
+    {
+        <label for="@Id">@Label</label>
+        <input id="@Id" type="@Kind" value="@Value" @oninput="TextChanged" aria-invalid="@Invalid" aria-describedby="@DescriptionId" disabled="@Disabled" @attributes="Attributes" />
+    }
+    @if (Hint is not null) { <small id="@(Id + "-hint")">@Hint</small> }
+    @if (Error is not null) { <span class="np-field-error" id="@(Id + "-error")">@Error</span> }
+</div>
+@code {
+    [Parameter] public string Id { get; set; } = "field-" + Guid.NewGuid().ToString("N");
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter] public string Kind { get; set; } = "text";
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+    [Parameter] public bool Checked { get; set; }
+    [Parameter] public EventCallback<bool> CheckedChanged { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string? Hint { get; set; }
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter(CaptureUnmatchedValues = true)] public IReadOnlyDictionary<string, object>? Attributes { get; set; }
+    private string Invalid => (Error is not null).ToString().ToLowerInvariant();
+    private string? DescriptionId => Hint is null && Error is null ? null : string.Join(" ", new[] { Hint is null ? null : Id + "-hint", Error is null ? null : Id + "-error" }.Where(id => id is not null));
+    private Task TextChanged(ChangeEventArgs args) => ValueChanged.InvokeAsync(args.Value?.ToString());
+    private Task CheckChanged(ChangeEventArgs args) => CheckedChanged.InvokeAsync(args.Value is true);
+}

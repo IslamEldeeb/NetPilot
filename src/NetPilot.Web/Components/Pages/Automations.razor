@@ -1,0 +1,38 @@
+@page "/automations"
+@page "/automations/quotas"
+@page "/automations/rules"
+@page "/automations/policies"
+@layout AppShell
+@using NetPilot.Core.Devices
+@using NetPilot.Core.Usage
+@using NetPilot.Web.Components.Tabs
+@inject IDeviceStore DeviceStore
+@inject IUsageStore UsageStore
+@inject ILogger<Automations> Logger
+<PageTitle>Automations · NetPilot</PageTitle>
+<div class="np-page-head"><h1>Automations</h1></div>
+<div class="np-stack">
+    <EmptyState Body="The redesigned editors are coming next. Existing quotas and rules are available below; category speed policies remain in Classic view." Href="/legacy#policies" ActionText="Open classic speed policies" Icon="automations" />
+    <Card Class="np-legacy-panel" Label="Existing quotas">
+        @if (_error is not null) { <p role="alert">@_error</p> }
+        else if (_loaded) { <QuotasTab Devices="_devices" UsageStates="_usage" /> }
+        else { <Skeleton Label="Loading quota devices and usage" /> }
+    </Card>
+    <Card Class="np-legacy-panel" Label="Existing rules"><RulesTab /></Card>
+</div>
+@code {
+    private IReadOnlyList<Device> _devices = [];
+    private IReadOnlyList<DeviceUsageState> _usage = [];
+    private bool _loaded;
+    private string? _error;
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _devices = await DeviceStore.GetAllAsync(CancellationToken.None);
+            _usage = await UsageStore.GetAllStatesAsync(CancellationToken.None);
+            _loaded = true;
+        }
+        catch (Exception ex) { Logger.LogWarning(ex, "Cannot load automation context"); _error = "Could not load devices and usage. Reopen this page to retry, or use Classic view."; }
+    }
+}

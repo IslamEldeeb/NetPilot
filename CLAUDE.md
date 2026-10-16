@@ -6,6 +6,10 @@ AI-first, open-source home network automation platform. First business feature: 
 
 Implementation is underway: all projects in `src/` exist and build (`NetPilot.Abstractions`, `NetPilot.Core`, `NetPilot.Data`, `TpLink.Sdk`, `NetPilot.Providers.TpLink`, `NetPilot.Agent`, `NetPilot.Web`), with tests under `test/`. Docker deploy assets (`deploy/docker/`) are in place and the app is **deployed and running** on the user's Proxmox home server (see Deployment section below). Confirm the plan still holds before writing code, but no need to re-litigate settled decisions unless something concrete conflicts with them.
 
+### UI redesign status
+
+Batch A1 foundation is implemented; the UI redesign is in progress. `NetPilot:Ui:RedesignEnabled` defaults to true (Compose: `NETPILOT_UI_REDESIGN`); false restores the classic dashboard at `/`. All existing tabs remain at `/legacy` during migration. See `docs/design/README.md`.
+
 ### Phase 5 status
 
 T1–T5 are implemented: timezone, quota model/UI, enforcement, notification server, and Web Push client. T6 supplies HTTPS access and deployment docs; live HTTPS/Android verification remains a deployment check. T8 LAN-traffic exclusion is implemented but not live-verified (see `docs/lan-traffic-exclusion.md`); T7 rules engine is planned. Keep enforcement in dry-run until usage is verified and T8 is in place; see `docs/phase5-quotas-notifications-rules-plan.md`, `docs/server-notifications.md`, and `docs/https-access.md`.

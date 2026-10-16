@@ -1,0 +1,8 @@
+<div class="np-theme-control">
+    <Icon Name="sun" />
+    <label class="visually-hidden" for="@_id">Color theme</label>
+    <select id="@_id" aria-label="Color theme" data-np-theme>
+        <option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option>
+    </select>
+</div>
+@code { private readonly string _id = "theme-" + Guid.NewGuid().ToString("N"); }

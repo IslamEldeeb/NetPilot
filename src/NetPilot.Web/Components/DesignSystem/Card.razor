@@ -1,0 +1,7 @@
+<section class="np-ds-card @(Toned ? "np-toned" : "") @Class" aria-label="@Label">@ChildContent</section>
+@code {
+    [Parameter] public bool Toned { get; set; }
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

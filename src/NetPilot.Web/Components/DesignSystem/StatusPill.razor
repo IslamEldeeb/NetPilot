@@ -1,0 +1,6 @@
+<Chip Icon="@Symbol" Class="@($"np-status-{Kind}")">@ChildContent</Chip>
+@code {
+    [Parameter] public string Kind { get; set; } = "info";
+    [Parameter, EditorRequired] public RenderFragment? ChildContent { get; set; }
+    private string Symbol => Kind switch { "ok" or "enforcing" => "check", "warning" or "danger" => "warning", "dry-run" => "shield", _ => "activity" };
+}

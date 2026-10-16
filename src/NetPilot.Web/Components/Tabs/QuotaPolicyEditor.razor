@@ -1,4 +1,5 @@
 @using System.Globalization
+@using NetPilot.Core.Usage
 @using NetPilot.Core.Quota
 @inject IQuotaStore QuotaStore
 @inject ILogger<QuotaPolicyEditor> Logger
@@ -47,7 +48,6 @@
     [Parameter] public bool Exists { get; set; }
     [Parameter] public EventCallback<QuotaPolicy?> Changed { get; set; }
 
-    private const decimal BytesPerGb = 1_000_000_000m;
     private string _dailyGb = "", _monthlyGb = "", _throttleKbps = "", _warnPercents = "";
     private QuotaAction _action;
     private bool _exempt, _dryRun, _exists, _busy;
@@ -61,8 +61,8 @@
 
     private void LoadFields(QuotaPolicy policy)
     {
-        _dailyGb = (policy.DailyBytes / BytesPerGb)?.ToString(CultureInfo.InvariantCulture) ?? "";
-        _monthlyGb = (policy.MonthlyBytes / BytesPerGb)?.ToString(CultureInfo.InvariantCulture) ?? "";
+        _dailyGb = policy.DailyBytes is { } daily ? DataSize.ToGb(daily).ToString(CultureInfo.InvariantCulture) : "";
+        _monthlyGb = policy.MonthlyBytes is { } monthly ? DataSize.ToGb(monthly).ToString(CultureInfo.InvariantCulture) : "";
         _throttleKbps = policy.ThrottleKbps?.ToString(CultureInfo.InvariantCulture) ?? "";
         _warnPercents = string.Join(",", policy.WarnPercents);
         _action = policy.Action;
@@ -74,12 +74,13 @@
     {
         if (string.IsNullOrWhiteSpace(text)) return null;
         if (!decimal.TryParse(text.Trim(), NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var gb)
-            || gb <= 0 || gb > long.MaxValue / BytesPerGb)
+            || gb <= 0 || gb > DataSize.ToGb(long.MaxValue))
             throw new ArgumentException("Caps must be positive decimal GB within the supported range (use a decimal point).");
-        var bytes = gb * BytesPerGb;
-        if (bytes != decimal.Truncate(bytes))
-            throw new ArgumentException("Caps must represent a whole number of bytes (at most 9 decimal places in GB).");
-        return (long)bytes;
+        try { return DataSize.FromGb(gb); }
+        catch (ArgumentException ex)
+        {
+            throw new ArgumentException("Caps must represent a whole number of bytes (at most 9 decimal places in GB).", ex);
+        }
     }
 
     private QuotaPolicy ReadPolicy()

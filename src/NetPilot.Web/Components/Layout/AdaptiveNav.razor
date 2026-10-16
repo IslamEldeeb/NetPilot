@@ -1,0 +1,22 @@
+@implements IDisposable
+@inject NavigationManager Navigation
+<aside class="np-navigation">
+    <a class="np-brand" href="/" aria-label="NetPilot Home"><span class="np-brand-mark">n<span>p</span></span><span>NetPilot<small>HOME NETWORK</small></span></a>
+    <nav aria-label="Primary">
+        @foreach (var destination in ShellNavigation.Primary)
+        {
+            <a class="np-nav-item" href="@destination.Path" aria-current="@(Selected == destination ? "page" : null)"><Icon Name="@destination.Icon" /><span>@destination.Label</span></a>
+        }
+    </nav>
+    <nav class="np-nav-utility" aria-label="Utilities">
+        <a href="/settings" aria-current="@(Selected == ShellNavigation.Settings ? "page" : null)"><Icon Name="settings" /><span>Settings</span></a>
+        <a href="/settings/safety"><Icon Name="shield" /><span>Safety Center</span></a>
+        <a href="/legacy"><Icon Name="router" /><span>Classic view</span></a>
+    </nav>
+</aside>
+@code {
+    private ShellDestination? Selected => ShellNavigation.Owner("/" + Navigation.ToBaseRelativePath(Navigation.Uri));
+    protected override void OnInitialized() => Navigation.LocationChanged += Changed;
+    private void Changed(object? sender, LocationChangedEventArgs args) => _ = InvokeAsync(StateHasChanged);
+    public void Dispose() => Navigation.LocationChanged -= Changed;
+}

@@ -1,6 +1,13 @@
 # NetPilot · A calmer home network
 
-UX/UI redesign package · 16 October 2026 · **design proposal for orchestrator review**. No production, test, deployment or solution files changed. No packages installed; no commit. Nothing here verifies the real router, exporter or Android delivery, or authorizes enforcement.
+UX/UI redesign package · 16 October 2026 · **design reference and staged implementation**. The original prototype is a local simulation; see implementation status below. Nothing here verifies the real router, exporter or Android delivery, or authorizes enforcement.
+
+## Implementation status
+
+- **Batch A1 implemented:** tokens and early System/Light/Dark theme, native Razor primitives, adaptive shell/navigation/search, configuration-based mode strip, default-on `NetPilot:Ui:RedesignEnabled`, and shared decimal SI byte formatting. Set `NetPilot__Ui__RedesignEnabled=false` directly or `NETPILOT_UI_REDESIGN=false` through Docker Compose to restore the classic root dashboard.
+- `/legacy` retains all nine existing tabs. Links such as `/legacy#usage`, `/legacy#policies` and `/legacy#activity` select the matching tab. Redesigned routes currently explain migration status; Automations embeds the existing quota/rule components, and Settings embeds Notifications. Devices, Usage and Activity link to their existing classic screens.
+- **A2 and B–E:** tracked separately; no completion claimed here. PendingChip is parameter-driven only in A1. The mode strip reports saved policies and Web configuration, not verified Agent runtime state; mixed/unknown states remain explicit.
+- Validation and remaining browser checks are recorded in the A1 delivery report. Prototype-only features below remain proposals unless explicitly listed above.
 
 ## Open and review
 

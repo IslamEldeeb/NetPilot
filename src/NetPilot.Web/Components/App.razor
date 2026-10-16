@@ -3,22 +3,26 @@
 
 <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <base href="/" />
     <ResourcePreloader />
     <link rel="stylesheet" href="@Assets["lib/bootstrap/dist/css/bootstrap.min.css"]" />
+    <link rel="stylesheet" href="@Assets["css/tokens.css"]" />
+    <link rel="stylesheet" href="@Assets["css/app-shell.css"]" />
     <link rel="stylesheet" href="@Assets["app.css"]" />
     <link rel="stylesheet" href="@Assets["NetPilot.Web.styles.css"]" />
     <ImportMap />
     <link rel="manifest" href="manifest.webmanifest" />
-    <meta name="theme-color" content="#2563eb" />
+    <meta name="theme-color" content="#f6faf7" />
+    <script src="@Assets["js/theme.js"]"></script>
     <link rel="icon" type="image/png" href="favicon.png" />
-    <HeadOutlet />
+    <HeadOutlet @rendermode="InteractiveServer" />
 </head>
 
 <body>
-    <Routes />
+    <Routes @rendermode="InteractiveServer" />
     <ReconnectModal />
+    <script src="@Assets["js/app-shell.js"]"></script>
     <script src="@Assets["_framework/blazor.web.js"]"></script>
 </body>
 

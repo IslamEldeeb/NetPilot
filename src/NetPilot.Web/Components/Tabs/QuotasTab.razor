@@ -220,5 +220,5 @@
 
     private static string DeviceName(Device device) => device.FriendlyName ?? (string.IsNullOrEmpty(device.Hostname) ? device.Mac.ToString() : device.Hostname);
     private string DeviceLabel(string mac) => Devices.FirstOrDefault(d => (string)d.Mac == mac) is { } device ? $"{DeviceName(device)} ({mac})" : mac;
-    private static string Gb(long bytes) => (bytes / 1_000_000_000m).ToString("0.###");
+    private static string Gb(long bytes) => DataSize.ToGb(bytes).ToString("0.###");
 }

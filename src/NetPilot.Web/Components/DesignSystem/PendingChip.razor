@@ -1,0 +1,5 @@
+<span role="status"><StatusPill Kind="@(State == PendingState.Applied ? "ok" : "info")">@State</StatusPill></span>
+@code {
+    [Parameter] public PendingState State { get; set; } = PendingState.Saved;
+    public enum PendingState { Saved, Pending, Applied }
+}

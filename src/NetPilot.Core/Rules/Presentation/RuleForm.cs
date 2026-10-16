@@ -1,6 +1,7 @@
 using System.Globalization;
 using NetPilot.Abstractions;
 using NetPilot.Core.Devices;
+using NetPilot.Core.Usage;
 
 namespace NetPilot.Core.Rules.Presentation;
 
@@ -34,17 +35,15 @@ public sealed class RuleForm
         (from kind in new[] { WirelessNetworkKind.Guest, WirelessNetworkKind.Iot }
          from band in Enum.GetValues<WirelessBand>() select new WirelessNetworkId(kind, band).ToString()).ToArray());
 
-    public static string FormatGb(long bytes) => (bytes / 1_000_000_000m).ToString("0.#########", CultureInfo.InvariantCulture);
+    public static string FormatGb(long bytes) => DataSize.ToGb(bytes).ToString("0.#########", CultureInfo.InvariantCulture);
 
     public static bool TryBytes(string text, out long bytes)
     {
         bytes = 0;
         if (!decimal.TryParse(text, NumberStyles.AllowDecimalPoint | NumberStyles.AllowLeadingWhite | NumberStyles.AllowTrailingWhite,
-            CultureInfo.InvariantCulture, out var gb) || gb <= 0 || gb > long.MaxValue / 1_000_000_000m) return false;
-        var value = gb * 1_000_000_000m;
-        if (value != decimal.Truncate(value)) return false;
-        bytes = (long)value;
-        return true;
+            CultureInfo.InvariantCulture, out var gb) || gb <= 0) return false;
+        try { bytes = DataSize.FromGb(gb); return true; }
+        catch (ArgumentException) { return false; }
     }
 
     public Rule? Build(out IReadOnlyList<string> errors)

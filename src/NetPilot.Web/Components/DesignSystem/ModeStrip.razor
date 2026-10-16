@@ -1,0 +1,52 @@
+@implements IDisposable
+@using NetPilot.Core.Quota
+@using NetPilot.Core.Rules
+@inject IQuotaStore Quotas
+@inject IRuleStore RuleStore
+@inject RulesOptions Rules
+@inject ILogger<ModeStrip> Logger
+<a class="np-mode-strip" href="/settings/safety" aria-label="@($"Safety Center. Quotas: {_quotaMode}. Rules: {RulesMode}. Web configuration, not confirmed Agent state.")">
+    <span class="np-mode-main"><Icon Name="shield" /><span>Quotas: @_quotaMode</span><span aria-hidden="true">·</span><span>Rules: @RulesMode</span></span>
+    <span>Safety Center <Icon Name="arrow" /></span>
+</a>
+@code {
+    private string _quotaMode = "Unknown";
+    private string RulesMode => !Rules.Enabled ? "Off" : Rules.ForceDryRun ? "Forced dry-run" : _ruleMode;
+    private string _ruleMode = "Unknown";
+    private readonly CancellationTokenSource _lifetime = new();
+    protected override async Task OnInitializedAsync() { await RefreshAsync(); await RefreshRulesAsync(); _ = WatchAsync(); }
+    private async Task RefreshAsync()
+    {
+        try
+        {
+            var policies = (await Quotas.GetAllAsync(_lifetime.Token)).Where(policy => !policy.Exempt).ToArray();
+            _quotaMode = policies.Length == 0 ? "Unknown" : policies.All(policy => policy.DryRun) ? "Dry-run"
+                : policies.All(policy => !policy.DryRun) ? "Enforcing" : "Mixed";
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        catch (Exception ex) { Logger.LogWarning(ex, "Cannot read quota modes"); _quotaMode = "Unknown"; }
+    }
+    private async Task RefreshRulesAsync()
+    {
+        if (!Rules.Enabled || Rules.ForceDryRun) return;
+        try
+        {
+            var enabled = (await RuleStore.GetAllAsync(_lifetime.Token)).Where(rule => rule.Enabled).ToArray();
+            _ruleMode = enabled.Length == 0 ? "Off" : enabled.All(rule => rule.DryRun) ? "Dry-run"
+                : enabled.All(rule => !rule.DryRun) ? "Enforcing" : "Mixed";
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        catch (Exception ex) { Logger.LogWarning(ex, "Cannot read rule modes"); _ruleMode = "Unknown"; }
+    }
+    private async Task WatchAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(_lifetime.Token))
+                await InvokeAsync(async () => { await RefreshAsync(); await RefreshRulesAsync(); StateHasChanged(); });
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+    }
+    public void Dispose() { _lifetime.Cancel(); _lifetime.Dispose(); }
+}

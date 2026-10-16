@@ -37,7 +37,7 @@ public static class RuleSummary
 
     public static string Actions(IEnumerable<RuleAction> actions) => string.Join("; ", actions.Select(Action));
     public static string FiringReason(RuleFiring firing) => firing.CapBytes > 0
-        ? $"Internet usage at firing: {(firing.UsedBytes / 1_000_000_000m).ToString("0.#########", CultureInfo.InvariantCulture)} GB; threshold {RuleForm.FormatGb(firing.CapBytes)} GB"
+        ? $"Internet usage at firing: {NetPilot.Core.Usage.DataSize.ToGb(firing.UsedBytes).ToString("0.#########", CultureInfo.InvariantCulture)} GB; threshold {RuleForm.FormatGb(firing.CapBytes)} GB"
         : firing.Window is { } window ? $"Matched time window {window.Start}–{window.End}"
         : firing.TriggerEpisodeKey == "joined" ? "Device first discovered after rule creation"
         : firing.TriggerEpisodeKey.StartsWith("idle:", StringComparison.Ordinal) ? "Device had not been seen for the configured idle duration"

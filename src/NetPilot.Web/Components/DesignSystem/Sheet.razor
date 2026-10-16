@@ -1,0 +1,53 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+<dialog @ref="_dialog" class="np-dialog np-@Presentation" aria-labelledby="@_titleId">
+    <div class="np-sheet-head"><h2 id="@_titleId">@Title</h2><button type="button" class="np-icon-button" aria-label="Close dialog" @onclick="RequestClose"><Icon Name="close" /></button></div>
+    <div class="np-sheet-body">@ChildContent</div>
+    @if (Footer is not null) { <div class="np-sheet-footer">@Footer</div> }
+</dialog>
+@if (_confirmDiscard)
+{
+    <ConfirmDialog Open="true" OpenChanged="DiscardVisibilityChanged" Title="Discard changes?" Body="Your unsaved changes will be lost." ConfirmText="Discard changes" Danger="true" Confirmed="DiscardAsync" />
+}
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public EventCallback<bool> OpenChanged { get; set; }
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public bool Dirty { get; set; }
+    [Parameter] public Func<Task<bool>>? ConfirmDiscard { get; set; }
+    [Parameter] public string Presentation { get; set; } = "sheet";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? Footer { get; set; }
+    private ElementReference _dialog;
+    private readonly string _titleId = "dialog-" + Guid.NewGuid().ToString("N");
+    private DotNetObjectReference<Sheet>? _reference;
+    private bool _confirmDiscard;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        _reference ??= DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("netpilotShell.dialog", _dialog, Open, _reference);
+    }
+
+    [JSInvokable]
+    public async Task RequestClose()
+    {
+        if (Dirty)
+        {
+            if (ConfirmDiscard is null) { _confirmDiscard = true; await InvokeAsync(StateHasChanged); return; }
+            if (!await ConfirmDiscard()) return;
+        }
+        await OpenChanged.InvokeAsync(false);
+    }
+
+    private Task DiscardVisibilityChanged(bool open) { _confirmDiscard = open; return Task.CompletedTask; }
+    private async Task DiscardAsync() { _confirmDiscard = false; await OpenChanged.InvokeAsync(false); }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_reference is null) return;
+        try { await JS.InvokeVoidAsync("netpilotShell.disposeDialog", _dialog); }
+        catch (JSDisconnectedException) { /* A disconnected circuit has no active focus to restore. */ }
+        finally { _reference.Dispose(); }
+    }
+}

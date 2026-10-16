@@ -29,6 +29,7 @@ builder.Services.AddNotificationActionEndpoints();
 builder.Services.AddSingleton<PolicyReconciliationService>();
 builder.Services.AddNetPilotLocalTraffic(builder.Configuration);
 builder.Services.AddSingleton<UsageTrackingService>();
+builder.Services.AddScoped<NetPilot.Web.Components.DesignSystem.SnackbarService>();
 
 // Add services to the container.
 builder.Services.AddRazorComponents()

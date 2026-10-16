@@ -1,0 +1,12 @@
+<Card Class="np-empty-state">
+    <span class="np-symbol-tile"><Icon Name="@Icon" /></span>
+    <h2>@Title</h2><p>@Body</p>
+    @if (Href is not null) { <a class="np-button np-button-filled" href="@Href">@ActionText<Icon Name="arrow" /></a> }
+</Card>
+@code {
+    [Parameter] public string Title { get; set; } = "Coming in the next step";
+    [Parameter] public string Body { get; set; } = "";
+    [Parameter] public string Icon { get; set; } = "router";
+    [Parameter] public string? Href { get; set; }
+    [Parameter] public string ActionText { get; set; } = "Open classic view";
+}

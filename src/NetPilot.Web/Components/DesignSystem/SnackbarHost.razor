@@ -1,0 +1,42 @@
+@implements IDisposable
+@inject SnackbarService Snackbar
+<div class="np-snackbar-region" aria-live="polite" aria-atomic="true">
+    @if (Snackbar.Current is { } message)
+    {
+        <div class="np-snackbar" @onmouseenter="() => Pause(true)" @onmouseleave="() => Pause(false)" @onfocusin="() => Focus(true)" @onfocusout="() => Focus(false)">
+            <span>@message.Text</span>
+            @if (message.Undo is not null) { <button type="button" @onclick="() => UndoAsync(message)">Undo</button> }
+            <button type="button" aria-label="Dismiss notification" @onclick="Snackbar.Dismiss"><Icon Name="close" /></button>
+        </div>
+    }
+</div>
+@code {
+    private CancellationTokenSource? _dismiss;
+    private bool _hovered, _focused;
+    protected override void OnInitialized() { Snackbar.Changed += Changed; RestartTimer(); }
+    private void Changed() => _ = InvokeAsync(() => { RestartTimer(); StateHasChanged(); });
+    private void Pause(bool hovered) { _hovered = hovered; RestartTimer(); }
+    private void Focus(bool focused) { _focused = focused; RestartTimer(); }
+    private void RestartTimer()
+    {
+        _dismiss?.Cancel(); _dismiss?.Dispose(); _dismiss = null;
+        if (_hovered || _focused || Snackbar.Current?.Duration is not { } duration) return;
+        _dismiss = new();
+        _ = DismissLaterAsync(Snackbar.Current, duration, _dismiss.Token);
+    }
+    private async Task DismissLaterAsync(SnackbarMessage message, TimeSpan duration, CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(duration, ct);
+            await InvokeAsync(() => { if (ReferenceEquals(Snackbar.Current, message)) Snackbar.Dismiss(); });
+        }
+        catch (OperationCanceledException) { /* Timer was paused, replaced or disposed. */ }
+    }
+    private async Task UndoAsync(SnackbarMessage message)
+    {
+        Snackbar.Dismiss();
+        if (message.Undo is not null) await message.Undo();
+    }
+    public void Dispose() { Snackbar.Changed -= Changed; _dismiss?.Cancel(); _dismiss?.Dispose(); }
+}

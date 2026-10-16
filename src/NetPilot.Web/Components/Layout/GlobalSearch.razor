@@ -1,0 +1,41 @@
+@using NetPilot.Core.Devices
+@inject IDeviceStore Devices
+@inject ILogger<GlobalSearch> Logger
+<Sheet Open="Open" OpenChanged="OpenChanged" Title="Search devices and pages" Presentation="search-dialog">
+    <Field Kind="search" Label="Search" Value="@_query" ValueChanged="QueryChanged" Hint="Pages, device names, MAC and IP addresses. Press Escape to close." />
+    <div class="np-search-results">
+        @foreach (var destination in ShellNavigation.Primary.Append(ShellNavigation.Settings).Where(page => Matches(page.Label)))
+        {
+            <a href="@destination.Path" @onclick="CloseAsync"><Icon Name="@destination.Icon" />@destination.Label</a>
+        }
+        @foreach (var device in _devices.Where(device => Matches($"{Name(device)} {device.Mac} {device.IpAddress}")))
+        {
+            <a href="@($"/legacy?device={Uri.EscapeDataString(device.Mac.ToString())}#devices")" @onclick="CloseAsync"><Icon Name="device" /><span>@Name(device)<small><bdi dir="ltr">@device.Mac</bdi> · Classic devices</small></span></a>
+        }
+        @if (_error is not null) { <p role="status">@_error</p> }
+        @if (_query.Length > 0 && !_devices.Any(device => Matches($"{Name(device)} {device.Mac} {device.IpAddress}")) && !ShellNavigation.Primary.Append(ShellNavigation.Settings).Any(page => Matches(page.Label)))
+        { <p>No matching devices or pages.</p> }
+    </div>
+</Sheet>
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public EventCallback<bool> OpenChanged { get; set; }
+    private string _query = "";
+    private string? _error;
+    private IReadOnlyList<Device> _devices = [];
+    private bool _wasOpen;
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Open && !_wasOpen)
+        {
+            _query = "";
+            try { _devices = await Devices.GetAllAsync(CancellationToken.None); _error = null; }
+            catch (Exception ex) { Logger.LogWarning(ex, "Search cannot read devices"); _error = "Device search is unavailable. Page links still work."; }
+        }
+        _wasOpen = Open;
+    }
+    private bool Matches(string text) => text.Contains(_query, StringComparison.OrdinalIgnoreCase);
+    private Task QueryChanged(string? query) { _query = query ?? ""; return Task.CompletedTask; }
+    private Task CloseAsync() => OpenChanged.InvokeAsync(false);
+    private static string Name(Device device) => device.FriendlyName ?? (string.IsNullOrEmpty(device.Hostname) ? device.Mac.ToString() : device.Hostname);
+}
