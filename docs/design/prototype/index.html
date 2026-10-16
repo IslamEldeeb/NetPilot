@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f6faf7">
+  <title>NetPilot · Design prototype</title>
+  <link rel="stylesheet" href="../tokens.css">
+  <link rel="stylesheet" href="prototype.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <div class="demo-bar"><span>DESIGN PREVIEW · fictional data, no router connection</span><a href="../README.md">Review guide ↗</a></div>
+  <aside class="navigation" aria-label="Primary navigation"><a class="brand" href="#/"> <span class="brand-mark">n<span>p</span></span><span>NetPilot<small>HOME NETWORK</small></span></a><nav id="nav"></nav><div class="nav-utility"><a href="#/settings">Settings</a><a href="#/settings/safety">Safety Center</a><div class="network-label"><span class="status-dot"></span> Archer AX53<small>Single household · Cairo</small></div></div></aside>
+  <div class="workspace">
+    <header class="app-bar"><span class="app-context">Home network <span class="muted">/ Cairo</span></span><div class="app-tools"><button data-action="search" class="icon-button" aria-label="Search devices and pages" title="Search (Ctrl/⌘ K)"></button><button data-action="theme" class="icon-button" aria-label="Change color theme" title="Theme"></button><a href="#/settings" class="settings-link" aria-label="Settings"></a></div></header>
+    <a href="#/settings/safety" class="mode-strip" id="mode-strip"></a>
+    <main id="main" tabindex="-1"></main>
+    <footer class="demo-controls" aria-label="Prototype controls"><label>Scenario <select id="scenario"><option value="dry">Dry-run (default)</option><option value="enforcing">Enforcing example</option><option value="offline">Router offline</option><option value="loading">Loading</option><option value="empty">Empty</option><option value="error">Read error</option></select></label><label>Theme <select id="theme-select"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label><label>Seed <select id="seed"><option value="teal">Teal</option><option value="violet">Violet</option></select></label><button data-action="rtl" class="text-button">Try RTL layout</button><button data-action="tick" class="text-button">Simulate Agent tick</button><a href="#/setup/1">Try onboarding</a><span>Demo clock: 16 Oct 2026, 21:42 · Africa/Cairo</span></footer>
+  </div>
+  <dialog id="editor" class="sheet" aria-labelledby="editor-title"><div id="editor-content"></div></dialog>
+  <dialog id="confirm" class="confirm-dialog" aria-labelledby="confirm-title"><div id="confirm-content"></div></dialog>
+  <dialog id="search-dialog" class="search-dialog" aria-labelledby="search-title"><h2 id="search-title">Find something</h2><label class="field">Device, rule or page<input id="global-search" type="search" placeholder="Try Samsung TV or Safety" autocomplete="off"></label><div id="search-results"></div><button data-action="close-search" class="text-button">Close · Esc</button></dialog>
+  <div id="snackbar" class="snackbar" role="status" aria-live="polite" hidden></div>
+  <noscript><p>This local prototype needs JavaScript for navigation. The complete design specification is in <a href="../03-screens.md">03-screens.md</a>.</p></noscript>
+</body>
+</html>
