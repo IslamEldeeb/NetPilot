@@ -165,6 +165,7 @@ For the LAN-only Caddy option, use `docker-compose.caddy.yml` as the second file
 | [`docs/mvp-product-architecture.md`](docs/mvp-product-architecture.md) | Architecture spec: project structure, domain model, provider abstraction, deployment shape |
 | [`docs/phase1-live-findings.md`](docs/phase1-live-findings.md) | Confirmed-live TP-Link protocol details — login flow, endpoints, field names, units |
 | [`docs/deployment.md`](docs/deployment.md) | How to deploy with Docker Compose |
+| [`docs/backup-restore.md`](docs/backup-restore.md) | What the backup contains, download via `POST /api/backup/download`, manual restore, key-ring warnings |
 | [`docs/https-access.md`](docs/https-access.md) | Cloudflare + nginx HTTPS and dashboard login; Tailscale/Caddy alternatives |
 | [`docs/server-notifications.md`](docs/server-notifications.md) | Notification configuration, subscriptions, delivery and scoped actions |
 | [`docs/rules.md`](docs/rules.md) | Rules editor, templates, dry-run rollout, firing history and release requests |

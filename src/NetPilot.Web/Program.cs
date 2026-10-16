@@ -27,6 +27,7 @@ builder.Services.AddTpLinkProvider();
 builder.Services.AddNetPilotWebPush(builder.Configuration);
 builder.Services.AddNotificationActionEndpoints();
 builder.Services.AddDashboardLogin(builder.Configuration);
+builder.Services.AddBackupEndpoints(builder.Configuration);
 builder.Services.AddSingleton<PolicyReconciliationService>();
 builder.Services.AddNetPilotLocalTraffic(builder.Configuration);
 builder.Services.AddSingleton<UsageTrackingService>();
@@ -65,6 +66,7 @@ app.UseAntiforgery();
 
 app.MapDashboardLogin();
 app.MapNotificationActionEndpoints();
+app.MapBackupEndpoints();
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
