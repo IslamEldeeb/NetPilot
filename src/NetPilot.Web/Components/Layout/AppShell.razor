@@ -1,36 +1,81 @@
 @inherits LayoutComponentBase
+@using NetPilot.Core.Security
 @using NetPilot.Core.Usage
 @inject UsagePeriodClock Clock
 @inject IConfiguration Configuration
-@inject NavigationManager Navigation
+@inject DashboardLoginOptions Login
+@inject IJSRuntime JS
 @if (!Configuration.GetValue("NetPilot:Ui:RedesignEnabled", true))
 {
     <LayoutView Layout="typeof(MainLayout)">@Body</LayoutView>
 }
 else
 {
-    <div class="np-shell">
-        <a class="np-skip" href="#main-content">Skip to content</a>
+    <MudThemeProvider @ref="_themeProvider" Theme="NetPilotTheme.Theme" IsDarkMode="_dark" ObserveSystemDarkModeChange="@(_preference == "system")" DefaultScrollbar="true" />
+    <MudPopoverProvider />
+    <MudDialogProvider FullWidth="true" MaxWidth="MaxWidth.Small" CloseButton="true" CloseOnEscapeKey="true" />
+    <MudSnackbarProvider />
+    <MudLayout Class="np-shell" data-theme-ready="@_themeReady.ToString().ToLowerInvariant()">
+        <a class="np-skip mud-button-root" href="#main-content">Skip to content</a>
         <AdaptiveNav />
-        <div class="np-workspace">
-            <header class="np-app-bar">
-                <span class="np-app-context">Home network <span>/ @ZoneName</span></span>
-                <div class="np-app-tools">
-                    <button type="button" class="np-icon-button" data-np-search title="Search (Ctrl/⌘ K)" aria-label="Search devices and pages" @onclick="() => _searchOpen = true"><Icon Name="search" /></button>
-                    <ThemeToggle />
-                    <a href="/settings" class="np-settings-link" aria-label="Settings" aria-current="@(ShellNavigation.Owner("/" + Navigation.ToBaseRelativePath(Navigation.Uri)) == ShellNavigation.Settings ? "page" : null)"><Icon Name="settings" /><span>Settings</span></a>
-                </div>
-            </header>
+        <MudMainContent Class="np-main-content">
+            <MudAppBar Fixed="false" Elevation="0" WrapContent="true" Class="np-app-bar">
+                <MudText Typo="Typo.body2">Home network / @ZoneName</MudText>
+                <MudSpacer />
+                <MudIconButton Icon="@Icons.Material.Outlined.Search" data-np-search="true" title="Search (Ctrl/⌘ K)" aria-label="Search devices and pages" OnClick="@(() => _searchOpen = true)" />
+                <ThemeToggle Preference="_preference" PreferenceChanged="ChangeThemeAsync" />
+                <MudButton Href="/settings" StartIcon="@Icons.Material.Outlined.Settings" Color="Color.Inherit">Settings</MudButton>
+                @if (Login.Enabled)
+                {
+                    <form method="post" action="/logout" data-enhance="false">
+                        <AntiforgeryToken />
+                        <MudButton ButtonType="ButtonType.Submit" Color="Color.Inherit">Sign out</MudButton>
+                    </form>
+                }
+            </MudAppBar>
             <ModeStrip />
-            <main id="main-content" class="np-main" tabindex="-1">@Body</main>
-            <footer class="np-shell-footer"><a href="/legacy">Classic view</a><span>@Clock.TimeZone.Id · Web configuration shown in Safety Center</span></footer>
-        </div>
+            <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-6">
+                <main id="main-content" tabindex="-1">@Body</main>
+                <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2" Class="mt-6">
+                    <MudLink Href="/legacy" Target="_top">Classic view</MudLink>
+                    <MudText Typo="Typo.caption">@Clock.TimeZone.Id · Web configuration shown in Safety Center</MudText>
+                </MudStack>
+            </MudContainer>
+        </MudMainContent>
         <GlobalSearch @bind-Open="_searchOpen" />
-        <SnackbarHost />
-    </div>
+    </MudLayout>
     <div id="blazor-error-ui" data-nosnippet>An unhandled error has occurred. <a href="." class="reload">Reload</a><button type="button" class="dismiss" aria-label="Dismiss error">×</button></div>
 }
 @code {
-    private bool _searchOpen;
+    private MudThemeProvider _themeProvider = default!;
+    private bool _searchOpen, _dark, _systemDark, _themeReady;
+    private string _preference = "system";
     private string ZoneName => Clock.TimeZone.Id.Split('/')[^1].Replace('_', ' ');
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || !Configuration.GetValue("NetPilot:Ui:RedesignEnabled", true)) return;
+        _systemDark = await _themeProvider.GetSystemDarkModeAsync();
+        _preference = await JS.InvokeAsync<string>("netpilotTheme.get");
+        await _themeProvider.WatchSystemDarkModeAsync(SystemDarkModeChanged);
+        ApplyTheme();
+        _themeReady = true;
+        StateHasChanged();
+    }
+
+    private async Task ChangeThemeAsync(string preference)
+    {
+        _preference = await JS.InvokeAsync<string>("netpilotTheme.set", preference);
+        if (_preference == "system") _systemDark = await _themeProvider.GetSystemDarkModeAsync();
+        ApplyTheme();
+    }
+
+    private Task SystemDarkModeChanged(bool dark) => InvokeAsync(() =>
+    {
+        _systemDark = dark;
+        ApplyTheme();
+        StateHasChanged();
+    });
+
+    private void ApplyTheme() => _dark = _preference == "dark" || (_preference == "system" && _systemDark);
 }

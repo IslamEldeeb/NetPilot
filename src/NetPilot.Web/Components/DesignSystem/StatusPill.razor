@@ -1,6 +1,18 @@
-<Chip Icon="@Symbol" Class="@($"np-status-{Kind}")">@ChildContent</Chip>
+<MudChip T="string" Icon="@Symbol" Color="@StatusColor" Variant="Variant.Filled" Size="Size.Small" Style="@SemanticStyle">@ChildContent</MudChip>
 @code {
     [Parameter] public string Kind { get; set; } = "info";
     [Parameter, EditorRequired] public RenderFragment? ChildContent { get; set; }
-    private string Symbol => Kind switch { "ok" or "enforcing" => "check", "warning" or "danger" => "warning", "dry-run" => "shield", _ => "activity" };
+    private Color StatusColor => Kind switch
+    {
+        "ok" => Color.Success, "warning" => Color.Warning, "danger" => Color.Error, _ => Color.Info
+    };
+    private string? SemanticStyle => Kind is "dry-run" or "enforcing"
+        ? $"color:var(--np-{Kind});background:var(--np-{Kind}-container)" : null;
+    private string Symbol => Kind switch
+    {
+        "ok" or "enforcing" => Icons.Material.Outlined.CheckCircle,
+        "warning" or "danger" => Icons.Material.Outlined.Warning,
+        "dry-run" => Icons.Material.Outlined.Shield,
+        _ => Icons.Material.Outlined.Info
+    };
 }

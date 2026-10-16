@@ -6,7 +6,7 @@ Decided 16 Oct 2026. These override anything in 01–05 that conflicts.
 
 | # | Decision |
 |---|---|
-| D1 | Native Razor + CSS only. Tokens from `tokens.css` live in `wwwroot/css/tokens.css`. Icons are an inline-SVG `Icon` component (no icon font, no CDN, works offline). No new NuGet packages. |
+| D1 | **Amended by M1:** MudBlazor **9.11.0** (MIT) supplies the Web shell and component primitives to reduce implementation effort and maintenance. The hand-rolled primitive components and production token stylesheet are removed; `NetPilotTheme` maps the design colors. Mud Material icons replace the custom inline-SVG component; no Material Symbols font, Google Fonts or CDN. MudBlazor is the only new package. Classic view retains its Bootstrap/`np-*` styling. |
 | D2 | Adaptive navigation exactly as `02-information-architecture.md`: bottom bar ≤600, rail 601–1199, drawer ≥1200; five destinations + Settings in the app bar; persistent mode strip. |
 | D3 | Feature flag `NetPilot:Ui:RedesignEnabled` (env `NETPILOT_UI_REDESIGN`, default **true** once the shell lands). Today's Home stays reachable at `/legacy` until every screen has parity, then it is deleted. |
 | D4 | **Login is one shared password.** `NetPilot:Web:Password` (env `NETPILOT_WEB_PASSWORD`), empty = login off, cookie session, no users, no database. This replaces T11a/T11b (admin credential store, sessions, recovery). |

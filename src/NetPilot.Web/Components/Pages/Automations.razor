@@ -10,16 +10,16 @@
 @inject IUsageStore UsageStore
 @inject ILogger<Automations> Logger
 <PageTitle>Automations · NetPilot</PageTitle>
-<div class="np-page-head"><h1>Automations</h1></div>
-<div class="np-stack">
+<MudStack Spacing="2" Class="mb-6"><MudText Typo="Typo.h1" HtmlTag="h1">Automations</MudText></MudStack>
+<MudStack Spacing="5">
     <EmptyState Body="The redesigned editors are coming next. Existing quotas and rules are available below; category speed policies remain in Classic view." Href="/legacy#policies" ActionText="Open classic speed policies" Icon="automations" />
-    <Card Class="np-legacy-panel" Label="Existing quotas">
+    <MudPaper Elevation="0" Class="np-legacy-panel pa-5" aria-label="Existing quotas">
         @if (_error is not null) { <p role="alert">@_error</p> }
         else if (_loaded) { <QuotasTab Devices="_devices" UsageStates="_usage" /> }
-        else { <Skeleton Label="Loading quota devices and usage" /> }
-    </Card>
-    <Card Class="np-legacy-panel" Label="Existing rules"><RulesTab /></Card>
-</div>
+        else { <MudSkeleton Height="80px" aria-label="Loading quota devices and usage" /> }
+    </MudPaper>
+    <MudPaper Elevation="0" Class="np-legacy-panel pa-5" aria-label="Existing rules"><RulesTab /></MudPaper>
+</MudStack>
 @code {
     private IReadOnlyList<Device> _devices = [];
     private IReadOnlyList<DeviceUsageState> _usage = [];

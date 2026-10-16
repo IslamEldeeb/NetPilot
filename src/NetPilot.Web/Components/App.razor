@@ -1,5 +1,5 @@
 ﻿<!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-netpilot-ui="@(UseMud ? "mud" : "legacy")">
 
 <head>
     <meta charset="utf-8" />
@@ -7,7 +7,11 @@
     <base href="/" />
     <ResourcePreloader />
     <link rel="stylesheet" href="@Assets["lib/bootstrap/dist/css/bootstrap.min.css"]" />
-    <link rel="stylesheet" href="@Assets["css/tokens.css"]" />
+    @* Classic links reload the document so the Mud reset/utilities never enter its CSS cascade. *@
+    @if (UseMud)
+    {
+        <link rel="stylesheet" href="@Assets["_content/MudBlazor/MudBlazor.min.css"]" />
+    }
     <link rel="stylesheet" href="@Assets["css/app-shell.css"]" />
     <link rel="stylesheet" href="@Assets["app.css"]" />
     <link rel="stylesheet" href="@Assets["NetPilot.Web.styles.css"]" />
@@ -22,8 +26,16 @@
 <body>
     <Routes @rendermode="InteractiveServer" />
     <ReconnectModal />
+    <script src="@Assets["_content/MudBlazor/MudBlazor.min.js"]"></script>
     <script src="@Assets["js/app-shell.js"]"></script>
     <script src="@Assets["_framework/blazor.web.js"]"></script>
 </body>
 
 </html>
+
+@inject IConfiguration Configuration
+@code {
+    [CascadingParameter] public HttpContext HttpContext { get; set; } = default!;
+    private bool UseMud => Configuration.GetValue("NetPilot:Ui:RedesignEnabled", true)
+        && !HttpContext.Request.Path.StartsWithSegments("/legacy");
+}

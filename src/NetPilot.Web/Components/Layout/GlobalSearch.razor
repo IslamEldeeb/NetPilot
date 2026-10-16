@@ -1,22 +1,24 @@
+@implements IDisposable
 @using NetPilot.Core.Devices
+@inject NavigationManager Navigation
 @inject IDeviceStore Devices
 @inject ILogger<GlobalSearch> Logger
-<Sheet Open="Open" OpenChanged="OpenChanged" Title="Search devices and pages" Presentation="search-dialog">
-    <Field Kind="search" Label="Search" Value="@_query" ValueChanged="QueryChanged" Hint="Pages, device names, MAC and IP addresses. Press Escape to close." />
-    <div class="np-search-results">
+<AppSheet Open="Open" OpenChanged="OpenChanged" Title="Search devices and pages">
+    <MudTextField T="string" InputType="InputType.Search" Label="Search" Value="@_query" ValueChanged="QueryChanged" Immediate="true" Variant="Variant.Outlined" HelperText="Pages, device names, MAC and IP addresses. Press Escape to close." AutoFocus="true" />
+    <MudNavMenu aria-label="Search results">
         @foreach (var destination in ShellNavigation.Primary.Append(ShellNavigation.Settings).Where(page => Matches(page.Label)))
         {
-            <a href="@destination.Path" @onclick="CloseAsync"><Icon Name="@destination.Icon" />@destination.Label</a>
+            <MudNavLink Href="@destination.Path" Icon="@MaterialIcon.For(destination.Icon)">@destination.Label</MudNavLink>
         }
         @foreach (var device in _devices.Where(device => Matches($"{Name(device)} {device.Mac} {device.IpAddress}")))
         {
-            <a href="@($"/legacy?device={Uri.EscapeDataString(device.Mac.ToString())}#devices")" @onclick="CloseAsync"><Icon Name="device" /><span>@Name(device)<small><bdi dir="ltr">@device.Mac</bdi> · Classic devices</small></span></a>
+            <MudNavLink Href="@($"/legacy?device={Uri.EscapeDataString(device.Mac.ToString())}#devices")" Target="_top" Icon="@MaterialIcon.For(device.CategoryKey)">@Name(device) · <bdi dir="ltr">@device.Mac</bdi> · Classic devices</MudNavLink>
         }
         @if (_error is not null) { <p role="status">@_error</p> }
         @if (_query.Length > 0 && !_devices.Any(device => Matches($"{Name(device)} {device.Mac} {device.IpAddress}")) && !ShellNavigation.Primary.Append(ShellNavigation.Settings).Any(page => Matches(page.Label)))
         { <p>No matching devices or pages.</p> }
-    </div>
-</Sheet>
+    </MudNavMenu>
+</AppSheet>
 @code {
     [Parameter] public bool Open { get; set; }
     [Parameter] public EventCallback<bool> OpenChanged { get; set; }
@@ -36,6 +38,8 @@
     }
     private bool Matches(string text) => text.Contains(_query, StringComparison.OrdinalIgnoreCase);
     private Task QueryChanged(string? query) { _query = query ?? ""; return Task.CompletedTask; }
-    private Task CloseAsync() => OpenChanged.InvokeAsync(false);
+    protected override void OnInitialized() => Navigation.LocationChanged += Navigated;
+    private void Navigated(object? sender, LocationChangedEventArgs args) => _ = InvokeAsync(() => OpenChanged.InvokeAsync(false));
+    public void Dispose() => Navigation.LocationChanged -= Navigated;
     private static string Name(Device device) => device.FriendlyName ?? (string.IsNullOrEmpty(device.Hostname) ? device.Mac.ToString() : device.Hostname);
 }

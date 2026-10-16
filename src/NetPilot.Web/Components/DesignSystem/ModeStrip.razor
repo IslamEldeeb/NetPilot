@@ -5,10 +5,11 @@
 @inject IRuleStore RuleStore
 @inject RulesOptions Rules
 @inject ILogger<ModeStrip> Logger
-<a class="np-mode-strip" href="/settings/safety" aria-label="@($"Safety Center. Quotas: {_quotaMode}. Rules: {RulesMode}. Web configuration, not confirmed Agent state.")">
-    <span class="np-mode-main"><Icon Name="shield" /><span>Quotas: @_quotaMode</span><span aria-hidden="true">·</span><span>Rules: @RulesMode</span></span>
-    <span>Safety Center <Icon Name="arrow" /></span>
-</a>
+<MudAlert Severity="Severity.Normal" Icon="@Icons.Material.Outlined.Shield" Elevation="0" Square="true" Class="np-mode-strip">
+    <MudLink Href="/settings/safety" Color="Color.Inherit" aria-label="@($"Safety Center. Quotas: {_quotaMode}. Rules: {RulesMode}. Web configuration, not confirmed Agent state.")">
+        Quotas: @_quotaMode · Rules: @RulesMode · Safety Center
+    </MudLink>
+</MudAlert>
 @code {
     private string _quotaMode = "Unknown";
     private string RulesMode => !Rules.Enabled ? "Off" : Rules.ForceDryRun ? "Forced dry-run" : _ruleMode;

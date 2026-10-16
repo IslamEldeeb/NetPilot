@@ -1,21 +1,54 @@
 @implements IDisposable
 @inject NavigationManager Navigation
-<aside class="np-navigation">
-    <a class="np-brand" href="/" aria-label="NetPilot Home"><span class="np-brand-mark">n<span>p</span></span><span>NetPilot<small>HOME NETWORK</small></span></a>
+<div class="np-wide-drawer">
+    <MudDrawer Open="true" Variant="DrawerVariant.Persistent" Width="248px" Elevation="0">
+        <MudDrawerHeader><MudLink Href="/" Typo="Typo.h6">NetPilot</MudLink></MudDrawerHeader>
+        <MudNavMenu aria-label="Primary">
+            @foreach (var destination in ShellNavigation.Primary)
+            {
+                <MudNavLink Href="@destination.Path" Icon="@MaterialIcon.For(destination.Icon)" Match="@Match(destination)" aria-current="@Current(destination)">@destination.Label</MudNavLink>
+            }
+        </MudNavMenu>
+        <MudDivider Class="my-4" />
+        <MudNavMenu aria-label="Utilities">
+            <MudNavLink Href="/settings" Icon="@Icons.Material.Outlined.Settings" aria-current="@Current(ShellNavigation.Settings)">Settings</MudNavLink>
+            <MudNavLink Href="/settings/safety" Icon="@Icons.Material.Outlined.Shield">Safety Center</MudNavLink>
+            <MudNavLink Href="/legacy" Target="_top" Icon="@Icons.Material.Outlined.Router">Classic view</MudNavLink>
+        </MudNavMenu>
+    </MudDrawer>
+</div>
+<div class="np-rail">
+    <MudDrawer Open="false" Variant="DrawerVariant.Mini" Breakpoint="Breakpoint.None" MiniWidth="88px" Elevation="0">
+        <nav aria-label="Primary">
+            <MudStack AlignItems="AlignItems.Center" Spacing="1">
+                @foreach (var destination in ShellNavigation.Primary.Append(ShellNavigation.Settings))
+                {
+                    <MudStack AlignItems="AlignItems.Center" Spacing="0">
+                        <MudIconButton Href="@destination.Path" Icon="@MaterialIcon.For(destination.Icon)" Color="@(Selected == destination ? Color.Primary : Color.Default)" Class="@(Selected == destination ? "np-selected" : null)" aria-label="@destination.Label" aria-current="@Current(destination)" />
+                        <MudText Typo="Typo.caption">@destination.Label</MudText>
+                    </MudStack>
+                }
+                <MudIconButton Href="/settings/safety" Icon="@Icons.Material.Outlined.Shield" aria-label="Safety Center" />
+                <MudIconButton Href="/legacy" Target="_top" Icon="@Icons.Material.Outlined.Router" aria-label="Classic view" />
+            </MudStack>
+        </nav>
+    </MudDrawer>
+</div>
+<MudPaper Elevation="2" Square="true" Class="np-bottom-bar">
     <nav aria-label="Primary">
         @foreach (var destination in ShellNavigation.Primary)
         {
-            <a class="np-nav-item" href="@destination.Path" aria-current="@(Selected == destination ? "page" : null)"><Icon Name="@destination.Icon" /><span>@destination.Label</span></a>
+            <div>
+                <MudIconButton Href="@destination.Path" Icon="@MaterialIcon.For(destination.Icon)" Class="@(Selected == destination ? "np-selected" : null)" aria-label="@destination.Label" aria-current="@Current(destination)" />
+                <MudText Typo="Typo.caption">@destination.Label</MudText>
+            </div>
         }
     </nav>
-    <nav class="np-nav-utility" aria-label="Utilities">
-        <a href="/settings" aria-current="@(Selected == ShellNavigation.Settings ? "page" : null)"><Icon Name="settings" /><span>Settings</span></a>
-        <a href="/settings/safety"><Icon Name="shield" /><span>Safety Center</span></a>
-        <a href="/legacy"><Icon Name="router" /><span>Classic view</span></a>
-    </nav>
-</aside>
+</MudPaper>
 @code {
     private ShellDestination? Selected => ShellNavigation.Owner("/" + Navigation.ToBaseRelativePath(Navigation.Uri));
+    private string? Current(ShellDestination destination) => Selected == destination ? "page" : null;
+    private static NavLinkMatch Match(ShellDestination destination) => destination.Path == "/" ? NavLinkMatch.All : NavLinkMatch.Prefix;
     protected override void OnInitialized() => Navigation.LocationChanged += Changed;
     private void Changed(object? sender, LocationChangedEventArgs args) => _ = InvokeAsync(StateHasChanged);
     public void Dispose() => Navigation.LocationChanged -= Changed;

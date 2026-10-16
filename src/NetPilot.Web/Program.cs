@@ -1,3 +1,5 @@
+using MudBlazor.Services;
+using NetPilot.Web.Components.DesignSystem;
 using NetPilot.Core.Enforcement;
 using NetPilot.Core.Rules;
 using NetPilot.Core.Usage;
@@ -30,7 +32,8 @@ builder.Services.AddDashboardLogin(builder.Configuration);
 builder.Services.AddSingleton<PolicyReconciliationService>();
 builder.Services.AddNetPilotLocalTraffic(builder.Configuration);
 builder.Services.AddSingleton<UsageTrackingService>();
-builder.Services.AddScoped<NetPilot.Web.Components.DesignSystem.SnackbarService>();
+builder.Services.AddMudServices(options => options.ResizeOptions.BreakpointDefinitions = NetPilotTheme.ViewportBreakpoints);
+builder.Services.AddScoped<Confirm>();
 
 // Add services to the container.
 builder.Services.AddRazorComponents()

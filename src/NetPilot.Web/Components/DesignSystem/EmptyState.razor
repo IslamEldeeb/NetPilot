@@ -1,8 +1,14 @@
-<Card Class="np-empty-state">
-    <span class="np-symbol-tile"><Icon Name="@Icon" /></span>
-    <h2>@Title</h2><p>@Body</p>
-    @if (Href is not null) { <a class="np-button np-button-filled" href="@Href">@ActionText<Icon Name="arrow" /></a> }
-</Card>
+<MudPaper Elevation="0" Class="pa-6">
+    <MudStack Spacing="3" AlignItems="AlignItems.Start">
+        <MudIcon Icon="@MaterialIcon.For(Icon)" Color="Color.Primary" Size="Size.Large" />
+        <MudText Typo="Typo.h2">@Title</MudText>
+        <MudText>@Body</MudText>
+        @if (Href is not null)
+        {
+            <MudButton Href="@Href" Target="@(Href.StartsWith("/legacy", StringComparison.Ordinal) ? "_top" : null)" Variant="Variant.Filled" Color="Color.Primary" EndIcon="@Icons.Material.Outlined.ArrowForward">@ActionText</MudButton>
+        }
+    </MudStack>
+</MudPaper>
 @code {
     [Parameter] public string Title { get; set; } = "Coming in the next step";
     [Parameter] public string Body { get; set; } = "";

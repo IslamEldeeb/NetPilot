@@ -1,0 +1,33 @@
+<MudBreakpointProvider OnBreakpointChanged="BreakpointChanged">
+    <MudDialog Visible="Open" VisibleChanged="OpenChanged" Options="@Options" Class="np-mud-dialog" AriaLabel="@Title">
+        <TitleContent><MudText Typo="Typo.h2">@Title</MudText></TitleContent>
+        <DialogContent>@ViewportOptions@ChildContent</DialogContent>
+        <DialogActions>@Footer</DialogActions>
+    </MudDialog>
+</MudBreakpointProvider>
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public EventCallback<bool> OpenChanged { get; set; }
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? Footer { get; set; }
+    private Breakpoint _breakpoint = Breakpoint.Xs;
+    private DialogOptions Options => new() { FullScreen = _breakpoint == Breakpoint.Xs, FullWidth = true,
+        MaxWidth = MaxWidth.Small, CloseButton = true, CloseOnEscapeKey = true };
+    private void BreakpointChanged(Breakpoint breakpoint) => _breakpoint = breakpoint;
+    private RenderFragment ViewportOptions => builder =>
+    {
+        builder.OpenComponent<SheetViewport>(0);
+        builder.AddAttribute(1, nameof(SheetViewport.FullScreen), _breakpoint == Breakpoint.Xs);
+        builder.CloseComponent();
+    };
+
+    // Inline MudDialog snapshots Options when opening; update the live instance without recreating an editor.
+    private sealed class SheetViewport : ComponentBase
+    {
+        [CascadingParameter] public IMudDialogInstance Dialog { get; set; } = default!;
+        [Parameter] public bool FullScreen { get; set; }
+        protected override Task OnParametersSetAsync() => Dialog.Options.FullScreen == FullScreen
+            ? Task.CompletedTask : Dialog.SetOptionsAsync(Dialog.Options with { FullScreen = FullScreen });
+    }
+}

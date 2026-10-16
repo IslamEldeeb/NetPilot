@@ -1,8 +1,13 @@
-<div class="np-theme-control">
-    <Icon Name="sun" />
-    <label class="visually-hidden" for="@_id">Color theme</label>
-    <select id="@_id" aria-label="Color theme" data-np-theme>
-        <option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option>
-    </select>
-</div>
-@code { private readonly string _id = "theme-" + Guid.NewGuid().ToString("N"); }
+<MudMenu Icon="@Icons.Material.Outlined.Brightness6" aria-label="Color theme" title="Color theme">
+    @foreach (var preference in new[] { "system", "light", "dark" })
+    {
+        <MudMenuItem OnClick="@(() => PreferenceChanged.InvokeAsync(preference))"
+                     Icon="@(Preference == preference ? Icons.Material.Filled.Check : null)">
+            @(char.ToUpperInvariant(preference[0]) + preference[1..])
+        </MudMenuItem>
+    }
+</MudMenu>
+@code {
+    [Parameter] public string Preference { get; set; } = "system";
+    [Parameter] public EventCallback<string> PreferenceChanged { get; set; }
+}

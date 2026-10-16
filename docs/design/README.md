@@ -4,7 +4,7 @@ UX/UI redesign package · 16 October 2026 · **design reference and staged imple
 
 ## Implementation status
 
-- **Batch A1 implemented:** tokens and early System/Light/Dark theme, native Razor primitives, adaptive shell/navigation/search, configuration-based mode strip, default-on `NetPilot:Ui:RedesignEnabled`, and shared decimal SI byte formatting. Set `NetPilot__Ui__RedesignEnabled=false` directly or `NETPILOT_UI_REDESIGN=false` through Docker Compose to restore the classic root dashboard.
+- **Batch A1 + M1 implemented:** MudBlazor 9.11.0 shell/primitives and early System/Light/Dark theme, adaptive navigation/search, configuration-based mode strip, default-on `NetPilot:Ui:RedesignEnabled`, and shared decimal SI byte formatting. Set `NetPilot__Ui__RedesignEnabled=false` directly or `NETPILOT_UI_REDESIGN=false` through Docker Compose to restore the classic root dashboard.
 - `/legacy` retains all nine existing tabs. Links such as `/legacy#usage`, `/legacy#policies` and `/legacy#activity` select the matching tab. Redesigned routes currently explain migration status; Automations embeds the existing quota/rule components, and Settings embeds Notifications. Devices, Usage and Activity link to their existing classic screens.
 - **A2 and B–E:** tracked separately; no completion claimed here. PendingChip is parameter-driven only in A1. The mode strip reports saved policies and Web configuration, not verified Agent runtime state; mixed/unknown states remain explicit.
 - Validation and remaining browser checks are recorded in the A1 delivery report. Prototype-only features below remain proposals unless explicitly listed above.
@@ -43,7 +43,7 @@ Suggested review path (10 minutes):
 
 | Decision | Proposed choice / review boundary |
 |---|---|
-| Components | Native Razor + a small CSS/JS component set. No MudBlazor/Radzen package; Material Symbols SVG subset in production. Prototype uses inline SVG equivalents and system font |
+| Components | MudBlazor 9.11.0 (MIT), system-font NetPilotTheme and a few domain wrappers. Replaces the native primitive set under amended D1. Classic view keeps Bootstrap; prototype remains historical reference |
 | Navigation | Five daily destinations Home/Devices/Usage/Automations/Activity; labelled Settings in app bar, plus rail/drawer utility; Safety/Mode persistent. Bottom ≤600, rail 601–1199, drawer ≥1200 |
 | Authentication | One administrator password + server cookie session, rate limits/recovery; optional read-only family view later. PIN alone and tailnet access do not protect dashboard sessions |
 | Product concepts | Household ISP budget separate from per-device default quota; schedules initially TimeWindow rules; temporary pause implemented as an expiring claim |
@@ -97,3 +97,11 @@ Validation evidence is static unless explicitly stated:
 - No production `dotnet run`, router call, solution build/test, deployment or phone action. A docs-only package does not need a production test run. `git status --short` must show only `docs/design/`; no commit created.
 
 Remaining review gate: visually inspect the local file at all three widths and themes; check contrast overlays, sheet keyboard/focus restoration and fictional-data consistency; then approve the design direction and plan implementation separately.
+
+## M1 verification handoff
+
+The solution builds against the cached MudBlazor 9.11.0 package. `NetPilot.Data.Tests/Web/ShellRenderingTests.cs` uses the framework's HtmlRenderer and a temporary LiteDB database to render AppShell with each of the six placeholder pages, including existing quota/rules/notification controls. It adds a Web project reference and an ASP.NET Core framework reference; no test packages are added. Static rendering does not execute JS, focus behavior or responsive CSS.
+
+Before accepting the UI, check 390, 600, 601, 1199 and 1200 CSS-pixel widths (including 200% zoom): the five phone destinations, rail/drawer boundaries, parent selection on nested routes, visible keyboard focus, safe-area padding, persistent mode strip and usable embedded editors. Check Search and Ctrl/Cmd+K, page/device filtering, navigation closing the dialog, Escape/backdrop/close and focus return; verify fullscreen search on phones. Try System/Light/Dark on reload and after OS theme changes, blocked localStorage, and slow circuit startup on a dark system. Check that `/legacy` loads without Mud CSS and looks unchanged, including returning via Classic-view links and the redesign-disabled root. With shared-password login enabled, verify Sign out submits POST `/logout` with an antiforgery token.
+
+Docker Web image build and real-browser visual/interaction checks remain with the orchestrator. The Web csproj carries the explicit package version; there is no Directory.Packages.props. Dockerfile.web already copies that csproj before `dotnet restore`, so the image restore includes MudBlazor without another Docker asset change. Keep rules and quota enforcement in dry-run.
