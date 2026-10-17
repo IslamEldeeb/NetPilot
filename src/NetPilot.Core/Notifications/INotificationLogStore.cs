@@ -1,6 +1,6 @@
 namespace NetPilot.Core.Notifications;
 
-public enum NotificationOutcome { Sent, SuppressedQuietHours, SuppressedDuplicate, Failed }
+public enum NotificationOutcome { Sent, SuppressedQuietHours, SuppressedDuplicate, Failed, SuppressedPreference }
 
 public record NotificationLogEntry(DateTimeOffset AtUtc, string Tag, string Title, string ChannelId,
     NotificationOutcome Outcome, string? Error = null);

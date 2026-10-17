@@ -36,6 +36,8 @@ builder.Services.AddSingleton<UsageTrackingService>();
 builder.Services.AddMudServices(options => options.ResizeOptions.BreakpointDefinitions = NetPilotTheme.ViewportBreakpoints);
 builder.Services.AddScoped<Confirm>();
 builder.Services.AddScoped<DeviceRouterActions>();
+builder.Services.AddScoped<SettingsRouterActions>();
+builder.Services.AddScoped<NetPilot.Core.Safety.SafetyGraduationService>();
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
