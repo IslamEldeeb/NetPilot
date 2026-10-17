@@ -1,0 +1,143 @@
+@page "/setup"
+@layout AppShell
+@using NetPilot.Core.Settings
+@using NetPilot.Core.Devices
+@using NetPilot.Core.Quota
+@using NetPilot.Core.RouterConnection
+@using NetPilot.Core.Usage
+@using NetPilot.Web.Components.Settings
+@inject ISetupProgressStore Progress
+@inject IDeviceStore Devices
+@inject IProtectedDeviceStore Protection
+@inject IRouterConnectionStore Connections
+@inject IQuotaStore Quotas
+@inject DeviceRouterActions RouterActions
+@inject NavigationManager Navigation
+<PageTitle>Setup · NetPilot</PageTitle>
+<MudContainer MaxWidth="MaxWidth.Medium">
+    <MudStack Spacing="4">
+        <MudText Typo="Typo.h1" HtmlTag="h1">Set up NetPilot</MudText>
+        <MudLink Href="/settings">All settings</MudLink>
+        <MudText>Step @(_step + 1) of 6 · @Titles[_step]. Progress is saved on this server. Secrets are never saved as drafts. Skip leaves existing settings unchanged.</MudText>
+        <MudProgressLinear Value="@((_step + 1) * 100d / 6)" aria-label="Setup progress" Color="Color.Primary" />
+        @if (_message is not null) { <MudAlert Severity="@(_failed ? Severity.Error : Severity.Info)" role="status">@_message</MudAlert> }
+        @if (_completed) { <MudAlert Severity="Severity.Info">Setup was previously completed or skipped. You can revisit these safe steps.</MudAlert> }
+        <MudPaper Outlined="true" Class="pa-4">
+            @switch (_step)
+            {
+                case 0:
+                    <RouterSettings Saved="ReloadAsync" />
+                    break;
+                case 1:
+                    <MudText Typo="Typo.h2">Discover devices</MudText>
+                    <MudText>@_devices.Count saved device observations. Discovery may apply existing configured category speed policies. It does not enable quota/rule enforcement.</MudText>
+                    <MudButton OnClick="DiscoverAsync" Disabled="@(_busy || !_configured)" Variant="Variant.Filled" Color="Color.Primary">Discover / Retry from router</MudButton>
+                    @if (!_configured) { <MudText>Return to Connect router, or Skip to use saved observations.</MudText> }
+                    break;
+                case 2:
+                    <MudText Typo="Typo.h2">Categories and protection</MudText>
+                    <MudText>Accept router categories or edit a local category. Protect your management phone and server from automatic throttle/block. Manual blocks and wireless changes are separate.</MudText>
+                    @if (_devices.Count == 0) { <MudText>No saved devices. Back to Discover or Skip.</MudText> }
+                    @foreach (var device in _devices)
+                    {
+                        <MudPaper Outlined="true" Class="pa-3 my-3" @key="device.Mac">
+                            <MudLink Href="@($"/devices/{device.Mac}")">@DeviceList.DisplayName(device) · @device.Mac</MudLink>
+                            <MudText>Router category: @device.RouterCategoryKey · Current: @device.CategoryKey</MudText>
+                            <MudTextField T="string" Label="Local category (blank accepts router)" Value="@_categories[device.Mac]" ValueChanged="@(category => _categories[device.Mac] = category)" MaxLength="80" />
+                            <MudCheckBox T="bool" Label="Protect from automatic device actions" Value="@_protected.Contains(device.Mac)" ValueChanged="@(enabled => SetProtected(device.Mac, enabled))" />
+                            <MudButton OnClick="@(() => SaveDeviceAsync(device.Mac))" Disabled="_busy">Save category and protection</MudButton>
+                        </MudPaper>
+                    }
+                    break;
+                case 3:
+                    <MudText Typo="Typo.h2">Optional safe quota</MudText>
+                    <MudText>A daily default per-device quota, separate from the household ISP budget. Notify only, always Dry-run. Decimal GB (1 GB = 1,000,000,000 bytes). Explicit Skip creates no quota.</MudText>
+                    <MudNumericField T="decimal" Label="Daily GB per device" @bind-Value="_dailyGb" Min="0.001m" />
+                    <MudText>@_devices.Count current devices; category/device overrides still take precedence. @_protected.Count protected devices; protection does not suppress notifications.</MudText>
+                    <MudButton OnClick="SaveQuotaAsync" Disabled="@(_busy || _hasDefaultQuota)" Color="Color.Primary">Save optional dry-run quota</MudButton>
+                    @if (_hasDefaultQuota) { <MudText>A default quota already exists. Setup will not replace it. Review in Automations.</MudText><MudLink Href="/automations/quotas">Review quotas</MudLink> }
+                    break;
+                case 4:
+                    <MudText Typo="Typo.h2">Optional notifications</MudText>
+                    <MudText>Enable only when ready; denied/insecure browsers can Skip and return later. Permission is requested only after you tap Enable.</MudText>
+                    <NotificationSettings />
+                    break;
+                case 5:
+                    <MudText Typo="Typo.h2">Ready to observe</MudText>
+                    <MudText>Setup has not enabled any automatic throttle or block. Optional setup quotas are Notify only and dry-run. Existing policies retain their saved modes. Compare Internet usage and finish T8 before reviewing enforcement.</MudText>
+                    <MudLink Href="/usage">Compare usage</MudLink><MudLink Href="/settings/safety">Safety Center</MudLink>
+                    <MudButton OnClick="FinishAsync" Disabled="_busy" Color="Color.Primary" Variant="Variant.Filled">Finish setup and open Home</MudButton>
+                    break;
+            }
+        </MudPaper>
+        <MudStack Row="true" Wrap="Wrap.Wrap">
+            <MudButton OnClick="@(() => MoveAsync(_step - 1))" Disabled="@(_busy || _step == 0)">Back</MudButton>
+            @if (_step < 5)
+            {
+                <MudButton OnClick="@(() => MoveAsync(_step + 1))" Disabled="_busy" Variant="Variant.Outlined">Skip this step</MudButton>
+                <MudButton OnClick="@(() => MoveAsync(_step + 1))" Disabled="_busy" Color="Color.Primary">Continue</MudButton>
+            }
+            <MudButton OnClick="@(() => RunAsync(ReloadAsync))" Disabled="_busy">Reload saved data / Retry</MudButton>
+            <MudButton OnClick="FinishAsync" Disabled="_busy">Skip setup for now</MudButton>
+        </MudStack>
+    </MudStack>
+</MudContainer>
+@code {
+    private static readonly string[] Titles = ["Connect router", "Discover", "Categories", "Safe quota", "Notifications", "Done"];
+    private int _step;
+    private bool _completed, _busy, _failed, _configured, _hasDefaultQuota;
+    private string? _message;
+    private decimal _dailyGb = 5;
+    private IReadOnlyList<Device> _devices = [];
+    private HashSet<MacAddress> _protected = [];
+    private Dictionary<MacAddress, string> _categories = [];
+    protected override Task OnInitializedAsync() => RunAsync(async () =>
+    {
+        var progress = await Progress.GetAsync(CancellationToken.None); _step = progress.Step; _completed = progress.Completed;
+        await ReloadAsync();
+    });
+    private async Task ReloadAsync()
+    {
+        _configured = await Connections.GetAsync(CancellationToken.None) is not null;
+        _devices = await Devices.GetAllAsync(CancellationToken.None); _protected = (await Protection.GetAllAsync(CancellationToken.None)).ToHashSet();
+        _categories = _devices.ToDictionary(d => d.Mac, d => d.LocalCategoryKey ?? "");
+        _hasDefaultQuota = await Quotas.FindAsync("default", CancellationToken.None) is not null;
+    }
+    private Task MoveAsync(int step) => RunAsync(async () =>
+    {
+        await Progress.SaveAsync(new(step, false), CancellationToken.None); _step = step; _completed = false; _message = null;
+    });
+    private Task FinishAsync() => RunAsync(async () =>
+    {
+        await Progress.SaveAsync(new(5, true), CancellationToken.None); Navigation.NavigateTo("/");
+    });
+    private Task DiscoverAsync() => RunAsync(async () =>
+    {
+        await RouterActions.RefreshAsync(); await ReloadAsync(); _message = $"Discovery completed; {_devices.Count} saved observations. Traffic accuracy remains unverified.";
+    });
+    private void SetProtected(MacAddress mac, bool enabled) { if (enabled) _protected.Add(mac); else _protected.Remove(mac); }
+    private Task SaveDeviceAsync(MacAddress mac) => RunAsync(async () =>
+    {
+        var current = await Devices.FindByMacAsync(mac, CancellationToken.None) ?? throw new InvalidOperationException();
+        var category = _categories[mac].Trim();
+        await Devices.UpdateIdentityAsync(mac, new(current.FriendlyName, category.Length == 0 ? null : category, current.LocalIconKey), CancellationToken.None);
+        if (_protected.Contains(mac)) await Protection.AddAsync(mac, CancellationToken.None); else await Protection.RemoveAsync(mac, CancellationToken.None);
+        _message = "Category and protection saved locally.";
+    });
+    private Task SaveQuotaAsync() => RunAsync(async () =>
+    {
+        var bytes = DataSize.FromGb(_dailyGb);
+        var created = await Progress.TryCreateDefaultQuotaAsync(bytes, CancellationToken.None);
+        _hasDefaultQuota = true;
+        _message = created ? "Optional default saved: Notify only, Dry-run. No automatic restriction enabled." : "A default already exists; it was preserved. Review Automations.";
+    });
+    private async Task RunAsync(Func<Task> operation)
+    {
+        if (_busy) return;
+        _busy = true; _failed = false;
+        try { await operation(); }
+        catch (ArgumentException ex) { _failed = true; _message = ex.Message; }
+        catch (Exception) { _failed = true; _message = "Setup step failed. Retry this step or Skip; no success is assumed."; }
+        finally { _busy = false; }
+    }
+}

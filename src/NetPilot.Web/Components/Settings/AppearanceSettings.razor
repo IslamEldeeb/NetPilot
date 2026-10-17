@@ -1,0 +1,12 @@
+<MudStack Spacing="3">
+    <MudText Typo="Typo.h2">Appearance</MudText>
+    <MudText>Theme is stored only in this browser.</MudText>
+    <MudStack Row="true" Wrap="Wrap.Wrap">
+        @foreach (var preference in new[] { "system", "light", "dark" })
+        { <MudButton OnClick="@(() => SelectAsync(preference))" Variant="Variant.Outlined" Color="@(Shell?.ThemePreference == preference ? Color.Primary : Color.Default)" aria-pressed="@(Shell?.ThemePreference == preference)">@(char.ToUpperInvariant(preference[0]) + preference[1..])</MudButton> }
+    </MudStack>
+</MudStack>
+@code {
+    [CascadingParameter] public AppShell? Shell { get; set; }
+    private Task SelectAsync(string preference) => Shell?.SetAppearanceAsync(preference) ?? Task.CompletedTask;
+}

@@ -154,7 +154,7 @@ public partial class RuleEvaluationService
             if (protectedMacs.Count > 0) body += " Protected devices: throttle/block skipped for " + string.Join(", ", protectedMacs) + ".";
         }
         await notifications.DispatchAsync(new(title, body, "/",
-            $"rule:{firing.RuleId}:{firing.Subject}:{firing.EpisodeKey}", []),
+            $"rule:{firing.RuleId}:{firing.Subject}:{firing.EpisodeKey}", []) { Event = Settings.NotificationEvent.Rule },
             firing.DryRun ? NotificationInterruption.QuietHoursEligible : NotificationInterruption.Immediate, ct);
     }
 

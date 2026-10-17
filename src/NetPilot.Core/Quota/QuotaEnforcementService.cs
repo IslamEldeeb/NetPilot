@@ -18,7 +18,8 @@ public class QuotaEnforcementService(
     ClaimEnforcementService claimEnforcement,
     IActivityLogStore activityLog,
     IEnumerable<IQuotaEventSink> eventSinks,
-    UsagePeriodClock clock)
+    UsagePeriodClock clock,
+    Settings.IPreferencesStore? preferences = null)
 {
     public async Task EvaluateAsync(IRouterProvider provider, IReadOnlyList<RouterDeviceSnapshot> snapshots, CancellationToken ct)
     {
@@ -46,7 +47,8 @@ public class QuotaEnforcementService(
             }
         }
 
-        await stateStore.PruneAsync(clock.GetUtcNow().AddDays(-62), ct);
+        var retention = preferences is null ? new Settings.RetentionPreferences() : await preferences.GetRetentionAsync(ct);
+        await stateStore.PruneAsync(clock.GetUtcNow().AddDays(-retention.InactiveQuotaDays), ct);
     }
 
     // Web owns allowances, consumed token hashes and release requests. Preserve its latest transaction

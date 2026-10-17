@@ -1,0 +1,92 @@
+@using NetPilot.Abstractions
+@using NetPilot.Core.Health
+@using NetPilot.Core.RouterConnection
+@using NetPilot.Core.Usage
+@using NetPilot.Core.Rules
+@inject IAgentHeartbeatStore Heartbeats
+@inject IRouterConnectionStore Connections
+@inject ILocalTrafficStore LocalTraffic
+@inject IRouterProvider Provider
+@inject UsagePeriodClock Clock
+@inject RulesOptions Rules
+@inject IConfiguration Configuration
+@inject SettingsRouterActions Actions
+@inject Confirm Confirm
+@inject IJSRuntime JS
+<MudStack Spacing="3">
+    <MudText Typo="Typo.h2">Health, traffic and app</MudText>
+    <MudButton OnClick="LoadAsync" Disabled="_busy" Variant="Variant.Outlined">Refresh saved status / Retry</MudButton>
+    @if (_message is not null) { <MudAlert Severity="@(_failed ? Severity.Error : Severity.Info)" role="status">@_message</MudAlert> }
+    <MudGrid>
+        <MudItem xs="12" sm="6"><MudPaper Outlined="true" Class="pa-4">
+            <MudText Typo="Typo.h3">Agent</MudText>
+            <MudText>Heartbeat: @AgentHealth.Evaluate(_heartbeat, Clock.GetUtcNow())</MudText>
+            <MudText>Started: @Local(_heartbeat?.LastTickStartedUtc) · Completed: @Local(_heartbeat?.LastTickCompletedUtc)</MudText>
+            <MudText>Duration: @(_heartbeat?.LastTickDurationMs?.ToString("0") ?? "Unknown") ms · Failed ticks: @(_heartbeat?.ConsecutiveFailedTicks.ToString() ?? "Unknown")</MudText>
+            <MudText>Router last successful read: @Local(_heartbeat?.LastSuccessfulRouterReadUtc)</MudText>
+            <MudText Typo="Typo.caption">Heartbeat freshness and router health are separate. A completed tick does not verify a specific router action or traffic accuracy.</MudText>
+        </MudPaper></MudItem>
+        <MudItem xs="12" sm="6"><MudPaper Outlined="true" Class="pa-4">
+            <MudText Typo="Typo.h3">Router and effective modes</MudText>
+            <MudText>Connection configured: @(_configured ? "Yes" : "No") · Provider: @Provider.DisplayName</MudText>
+            <MudText>Web rules: @(Rules.Enabled ? "Enabled" : "Disabled") · @(Rules.ForceDryRun ? "Forced dry-run" : "Per-rule mode")</MudText>
+            <MudText>Agent reported rules: @(_heartbeat is null ? "Unknown" : $"{(_heartbeat.EffectiveModes.RulesEnabled ? "Enabled" : "Disabled")} / {(_heartbeat.EffectiveModes.RulesForceDryRun ? "Forced dry-run" : "Per-rule mode")}")</MudText>
+            <MudText>Wireless reads: @(Provider.Capabilities.SupportsWirelessRead ? "Supported" : "Unsupported") · Reboot capability: @(Provider.Capabilities.SupportsReboot ? "Advertised, live endpoint unverified" : "Unsupported")</MudText>
+            <MudText>Firmware and hardware health: Unknown until a real connection test reports firmware. CPU and uptime are unavailable.</MudText>
+            <MudLink Href="/settings/router">Connection test</MudLink>
+        </MudPaper></MudItem>
+        <MudItem xs="12" sm="6"><MudPaper Outlined="true" Class="pa-4">
+            <MudText Typo="Typo.h3">LAN exclusion / T8</MudText>
+            <MudText>Web source configured: @(!string.IsNullOrWhiteSpace(Configuration["NetPilot:LocalTraffic:Url"]) ? "Yes" : "No") · Last worker status configured: @(_traffic.IsConfigured ? "Yes" : "No")</MudText>
+            <MudText>Source health: @TrafficHealth · Last read: @Local(_traffic.LastReadAtUtc) · Generated: @Local(_traffic.GeneratedAtUtc) · Unavailable since: @Local(_traffic.UnavailableSinceUtc)</MudText>
+            <MudText>Accuracy: Not automatically verified. HTTP success is not counter evidence. IPv4 pair coverage only; failures count router bytes and do not correct history retroactively.</MudText>
+            <MudLink Href="https://github.com/IslamEldeeb/NetPilot/blob/main/docs/lan-traffic-exclusion.md">T8 counter experiment and coverage guide</MudLink>
+            <MudLink Href="/settings/safety">Review administrator attestations</MudLink>
+            <MudLink Href="/devices">Manage LAN-only flags in device detail</MudLink>
+        </MudPaper></MudItem>
+        <MudItem xs="12" sm="6"><MudPaper Outlined="true" Class="pa-4">
+            <MudText Typo="Typo.h3">HTTPS and installation</MudText>
+            <MudText>Browser secure context: @(_secure is null ? "Unknown until interactive browser connects" : _secure.Value ? "Yes (HTTPS or trusted localhost)" : "No")</MudText>
+            <MudText>Certificate trust and Android delivery: Not verified by this page. HTTPS is deployment-controlled. On Android Chrome use menu → Add to home screen / Install app. Push does not require installation. Changing origin requires enrollment again.</MudText>
+            <MudLink Href="https://github.com/IslamEldeeb/NetPilot/blob/main/docs/https-access.md">HTTPS setup and phone checks</MudLink>
+        </MudPaper></MudItem>
+    </MudGrid>
+    <MudText Typo="Typo.h2">About</MudText>
+    <MudText>Web: @typeof(HealthSettings).Assembly.GetName().Version · Core: @typeof(UsagePeriodClock).Assembly.GetName().Version · Agent: @(_heartbeat?.AppVersion is { Length: > 0 } version ? version : "Unknown")</MudText>
+    <MudText>Timezone: @Clock.TimeZone.Id · Storage: shared LiteDB. Database size is not measured here.</MudText>
+    <MudLink Href="https://github.com/IslamEldeeb/NetPilot">Source and releases</MudLink>
+    <MudText Typo="Typo.h2">Danger zone</MudText>
+    <MudText>Reboot disconnects the household. The endpoint is not live-verified. Command acceptance does not prove recovery; there is no undo.</MudText>
+    <MudButton OnClick="RebootAsync" Disabled="@(_busy || !_configured || !Provider.Capabilities.SupportsReboot)" Color="Color.Error" Variant="Variant.Outlined">Reboot router</MudButton>
+</MudStack>
+@code {
+    private AgentHeartbeat? _heartbeat;
+    private LocalTrafficStatus _traffic = new();
+    private bool _configured, _busy, _failed;
+    private bool? _secure;
+    private string? _message;
+    private string TrafficHealth => !_traffic.IsConfigured ? "Not configured" : _traffic.UnavailableSinceUtc is not null ? "Unavailable; router-byte fallback" : _traffic.LastReadAtUtc is not { } read ? "Awaiting first read" : read > Clock.GetUtcNow() || Clock.GetUtcNow() - read > TimeSpan.FromSeconds(2 * (_heartbeat?.TickIntervalSeconds ?? 180) + 60) ? "Stale / unknown" : "Recent read; accuracy unverified";
+    protected override Task OnInitializedAsync() => LoadAsync();
+    private async Task LoadAsync()
+    {
+        _failed = false; _message = null;
+        try { _heartbeat = await Heartbeats.GetAsync(CancellationToken.None); _configured = await Connections.GetAsync(CancellationToken.None) is not null; _traffic = await LocalTraffic.GetStatusAsync(CancellationToken.None); }
+        catch (Exception) { _failed = true; _message = "Could not load health records. Retry."; }
+    }
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try { var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/notifications.js"); _secure = (await module.InvokeAsync<BrowserHealth>("getStatus")).Secure; await module.DisposeAsync(); StateHasChanged(); }
+        catch (JSException) { } catch (JSDisconnectedException) { }
+    }
+    private async Task RebootAsync()
+    {
+        if (_busy || !await Confirm.DangerAsync("Reboot router?", "All household connections will drop. Have physical router access and wait for recovery before retrying.", "Reboot now")) return;
+        _busy = true; _failed = false;
+        try { await Actions.RebootAsync(); _message = "Reboot command sent. Recovery is unverified; wait and use Connection test to check again."; }
+        catch (Exception) { _failed = true; _message = "Reboot request failed. Check connectivity before retrying."; }
+        finally { _busy = false; }
+    }
+    private string Local(DateTimeOffset? at) => at is null ? "Unknown" : TimeZoneInfo.ConvertTime(at.Value, Clock.TimeZone).ToString("g");
+    public sealed record BrowserHealth(bool Secure);
+}

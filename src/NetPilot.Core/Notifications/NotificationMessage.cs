@@ -2,7 +2,10 @@ namespace NetPilot.Core.Notifications;
 
 public record NotificationAction(string Id, string Title, string Token);
 
-public record NotificationMessage(string Title, string Body, string? Url, string Tag, NotificationAction[] Actions);
+public record NotificationMessage(string Title, string Body, string? Url, string Tag, NotificationAction[] Actions)
+{
+    public NetPilot.Core.Settings.NotificationEvent Event { get; init; }
+}
 
 public static class NotificationActionIds
 {

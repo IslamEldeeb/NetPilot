@@ -1,4 +1,5 @@
 using NetPilot.Core.Usage;
+using NetPilot.Core.Settings;
 
 namespace NetPilot.Core.Notifications;
 
@@ -8,15 +9,17 @@ public sealed class NotificationDispatcher
     private readonly INotificationLogStore _log;
     private readonly UsagePeriodClock _clock;
     private readonly NotificationOptions _options;
+    private readonly IPreferencesStore? _preferences;
 
     public NotificationDispatcher(IEnumerable<INotificationChannel> channels, INotificationLogStore log,
-        UsagePeriodClock clock, NotificationOptions options)
+        UsagePeriodClock clock, NotificationOptions options, IPreferencesStore? preferences = null)
     {
         options.Validate();
         _channels = channels.Select(c => new ChannelState(c)).ToArray();
         _log = log;
         _clock = clock;
         _options = options;
+        _preferences = preferences;
     }
 
     public Task DispatchAsync(NotificationMessage message, CancellationToken ct = default) =>
@@ -24,28 +27,33 @@ public sealed class NotificationDispatcher
 
     public async Task DispatchAsync(NotificationMessage message, NotificationInterruption interruption, CancellationToken ct)
     {
-        await Task.WhenAll(_channels.Select(channel => SendToChannelAsync(channel, message, interruption, ct)));
-        await _log.PruneAsync(500, ct);
+        var preferences = await (_preferences?.GetNotificationsAsync(ct) ?? Task.FromResult<NotificationPreferences?>(null))
+            ?? NotificationPreferences.From(_options);
+        await Task.WhenAll(_channels.Select(channel => SendToChannelAsync(channel, message, interruption, preferences, ct)));
+        var retention = _preferences is null ? new RetentionPreferences() : await _preferences.GetRetentionAsync(ct);
+        await _log.PruneAsync(retention.NotificationAttempts, ct);
     }
 
     private async Task SendToChannelAsync(ChannelState state, NotificationMessage message,
-        NotificationInterruption interruption, CancellationToken ct)
+        NotificationInterruption interruption, NotificationPreferences preferences, CancellationToken ct)
     {
         await state.Gate.WaitAsync(ct);
         try
         {
             var now = _clock.GetUtcNow();
             state.ExpireBefore(now - TimeSpan.FromHours(_options.DedupeWindowHours));
-            var (outcome, error) = await AttemptAsync(state, message, interruption, ct);
+            var (outcome, error) = await AttemptAsync(state, message, interruption, preferences, ct);
             await _log.AppendAsync(new(now, message.Tag, message.Title, state.Channel.Id, outcome, error), ct);
         }
         finally { state.Gate.Release(); }
     }
 
     private Task<(NotificationOutcome Outcome, string? Error)> AttemptAsync(ChannelState state,
-        NotificationMessage message, NotificationInterruption interruption, CancellationToken ct)
+        NotificationMessage message, NotificationInterruption interruption, NotificationPreferences preferences, CancellationToken ct)
     {
-        if (interruption == NotificationInterruption.QuietHoursEligible && IsQuiet(_clock.GetUtcNow()))
+        if (!preferences.Allows(message.Event))
+            return Task.FromResult<(NotificationOutcome, string?)>((NotificationOutcome.SuppressedPreference, null));
+        if (interruption == NotificationInterruption.QuietHoursEligible && IsQuiet(_clock.GetUtcNow(), preferences.QuietHours))
             return Task.FromResult<(NotificationOutcome, string?)>((NotificationOutcome.SuppressedQuietHours, null));
         if (state.Sent.ContainsKey(message.Tag))
             return Task.FromResult<(NotificationOutcome, string?)>((NotificationOutcome.SuppressedDuplicate, null));
@@ -69,9 +77,8 @@ public sealed class NotificationDispatcher
         }
     }
 
-    private bool IsQuiet(DateTimeOffset now)
+    private bool IsQuiet(DateTimeOffset now, QuietHoursOptions hours)
     {
-        var hours = _options.QuietHours;
         if (!hours.Enabled) return false;
         var local = TimeOnly.FromDateTime(TimeZoneInfo.ConvertTime(now, _clock.TimeZone).DateTime);
         // Start is inclusive, end exclusive; equal endpoints disable the window.

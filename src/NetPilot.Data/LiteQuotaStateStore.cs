@@ -43,7 +43,18 @@ public class LiteQuotaStateStore(NetPilotDatabase db) : IQuotaStateStore
     public Task PruneAsync(DateTimeOffset olderThanUtc, CancellationToken ct)
     {
         var cutoff = olderThanUtc.UtcDateTime.Date;
-        _collection.DeleteMany(d => d.ActionKind == QuotaActionKind.None && d.PeriodDateUtc < cutoff);
+        ct.ThrowIfCancellationRequested();
+        db.InTransaction(() =>
+        {
+            // An interrupted apply can own a durable claim before ActionKind has been saved.
+            var claims = db.GetCollection<ActionClaimDocument>("action_claims").FindAll().ToArray();
+            var expired = _collection.Find(d => d.ActionKind == QuotaActionKind.None && d.PeriodDateUtc < cutoff).ToArray();
+            foreach (var state in expired)
+            {
+                var source = $"quota:{(state.PeriodKind == QuotaPeriodKind.Day ? "day" : "month")}:{state.PeriodKey}";
+                if (!claims.Any(c => c.Mac == state.Mac && c.Source == source)) _collection.Delete(state.Id);
+            }
+        });
         return Task.CompletedTask;
     }
 

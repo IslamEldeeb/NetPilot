@@ -1,4 +1,5 @@
 using System.Globalization;
+using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.Extensions.Options;
 using NetPilot.Core.Backup;
 using NetPilot.Core.Usage;
@@ -32,6 +33,9 @@ public static class BackupEndpoints
             if (!context.Request.HasFormContentType)
                 return Results.Json(new { status = "Invalid", message = "Send the download request as a form post." },
                     statusCode: 400);
+
+            try { await context.RequestServices.GetRequiredService<IAntiforgery>().ValidateRequestAsync(context); }
+            catch (AntiforgeryValidationException) { return Results.BadRequest(); }
 
             if (!await DownloadGate.WaitAsync(0, context.RequestAborted))
             {

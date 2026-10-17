@@ -20,7 +20,8 @@ public partial class RuleEvaluationService(
     NotificationDispatcher notifications,
     IActivityLogStore activityLog,
     UsagePeriodClock clock,
-    RulesOptions options)
+    RulesOptions options,
+    Settings.IPreferencesStore? preferences = null)
 {
     public async Task EvaluateAsync(IRouterProvider provider, IReadOnlyList<RouterDeviceSnapshot> snapshots, CancellationToken ct)
     {
@@ -52,7 +53,8 @@ public partial class RuleEvaluationService(
                 await LogAsync(ActivityEventType.RuleFailed, rule.Name, null, $"evaluation failed: {ex.Message}", ct);
             }
         }
-        await firingStore.PruneAsync(1000, ct);
+        var retention = preferences is null ? new Settings.RetentionPreferences() : await preferences.GetRetentionAsync(ct);
+        await firingStore.PruneAsync(retention.RuleFirings, ct);
     }
 
     private async Task EvaluateSubjectSafelyAsync(IRouterProvider provider, (Rule Rule, Device? Device) subject,

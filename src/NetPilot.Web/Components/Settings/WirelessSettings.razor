@@ -1,0 +1,82 @@
+@using NetPilot.Abstractions
+@using NetPilot.Core.RouterConnection
+@using NetPilot.Core.Settings
+@inject IRouterProvider Provider
+@inject IRouterConnectionStore Connections
+@inject SettingsRouterActions Actions
+@inject Confirm Confirm
+<MudStack Spacing="3">
+    <MudText Typo="Typo.h2">Wireless</MudText>
+    <MudText>Guest and IoT changes contact the router directly. Changes can disconnect devices; protection only covers automatic device throttle/block.</MudText>
+    <MudButton OnClick="RefreshAsync" Disabled="@(_busy || !_configured || !Provider.Capabilities.SupportsWirelessRead)" Variant="Variant.Outlined">@(_busy ? "Working…" : "Refresh wireless / Retry")</MudButton>
+    @if (!_configured) { <MudLink Href="/settings/router">Configure a router first</MudLink> }
+    @if (!Provider.Capabilities.SupportsWirelessRead) { <MudAlert Severity="Severity.Info">Wireless reads are unsupported by this provider.</MudAlert> }
+    @if (_message is not null) { <MudAlert Severity="@(_failed ? Severity.Error : Severity.Info)" role="status">@_message</MudAlert> }
+    @if (_networks.Count == 0) { <MudText>No wireless snapshot. Refresh explicitly to contact the router.</MudText> }
+    @foreach (var network in _networks.Where(n => n.Id.Kind != WirelessNetworkKind.Main).OrderBy(n => n.Id.Kind == WirelessNetworkKind.Guest ? 0 : 1).ThenBy(n => n.Id.Band))
+    { @NetworkCard(network) }
+    <MudExpansionPanels Elevation="0">
+        <MudExpansionPanel Text="Main WiFi · read-only">
+            <MudAlert Severity="Severity.Warning">Changing the main radio can disconnect your management device and IoT devices. Main-network writes, channel, width, power and IoT password changes are unavailable. Toggle coupling has not been live-verified.</MudAlert>
+            @foreach (var network in _networks.Where(n => n.Id.Kind == WirelessNetworkKind.Main)) { @NetworkCard(network) }
+        </MudExpansionPanel>
+    </MudExpansionPanels>
+</MudStack>
+@code {
+    [Parameter] public string? NetworkId { get; set; }
+    private List<WirelessNetworkState> _networks = [];
+    private WirelessNetworkState? _editing;
+    private bool _configured, _busy, _enabled, _failed, _available;
+    private string _ssid = "", _password = "";
+    private string? _message;
+    protected override async Task OnInitializedAsync() => _configured = await Connections.GetAsync(CancellationToken.None) is not null;
+    private RenderFragment NetworkCard(WirelessNetworkState network) => @<MudPaper Outlined="true" Class="pa-4" @key="network.Id">
+        <MudStack Spacing="2">
+            <MudText Typo="Typo.h3">@network.DisplayName · @network.Id.Kind · @WirelessNetworkId.BandToken(network.Id.Band)</MudText>
+            <MudText>@(network.Enabled ? "On" : "Off") · SSID: @(network.Ssid ?? "Unknown") · Broadcast: @(network.SsidBroadcast?.ToString() ?? "Unknown")</MudText>
+            <MudText>Security: @(network.SecurityMode ?? "Unknown") · Channel: @(network.Channel?.ToString() ?? "Follows main radio") · Width: @(network.ChannelWidth ?? "Unknown") · TX: @(network.TxPower ?? "Unknown")</MudText>
+            <MudText Typo="Typo.caption">Coupling: @(network.CoupledWith.Count == 0 ? "Not verified" : string.Join(", ", network.CoupledWith))</MudText>
+            @if (_editing?.Id == network.Id)
+            {
+                <MudSwitch T="bool" Label="Network enabled" @bind-Value="_enabled" Disabled="@(_busy || !network.Features.CanToggle || !Provider.Capabilities.SupportsWirelessToggle)" />
+                <MudTextField T="string" Label="SSID" @bind-Value="_ssid" Disabled="@(_busy || !network.Features.CanEditSsid || !Provider.Capabilities.SupportsWirelessEdit)" MaxLength="32" />
+                @if (network.Id.Kind == WirelessNetworkKind.Guest && network.Features.CanEditPassword && Provider.Capabilities.SupportsWirelessEdit)
+                { <MudTextField T="string" Label="New guest password (blank keeps current)" InputType="InputType.Password" @bind-Value="_password" Disabled="_busy" autocomplete="new-password" /> }
+                <MudStack Row="true" Wrap="Wrap.Wrap">
+                    <MudButton OnClick="SaveAsync" Disabled="@(_busy || !_available)" Color="Color.Primary">Save wireless</MudButton>
+                    <MudButton OnClick="CancelEdit" Disabled="_busy">Cancel</MudButton>
+                </MudStack>
+            }
+            else if (RouterForms.CanEdit(network) && (Provider.Capabilities.SupportsWirelessEdit || Provider.Capabilities.SupportsWirelessToggle))
+            { <MudButton OnClick="@(() => Edit(network))" Disabled="@(_busy || !_available)" Variant="Variant.Outlined">Edit @network.DisplayName</MudButton> }
+        </MudStack>
+    </MudPaper>;
+    private void Edit(WirelessNetworkState network) { _editing = network; _enabled = network.Enabled; _ssid = network.Ssid ?? ""; _password = ""; }
+    private void CancelEdit() { _editing = null; _password = ""; }
+    private Task RefreshAsync() => RunAsync(async () =>
+    {
+        _networks = (await Actions.WirelessAsync()).ToList(); _available = true; CancelEdit();
+        _message = "Read from router. Counter accuracy and radio coupling remain unverified.";
+        if (NetworkId is not null && _networks.FirstOrDefault(n => n.Id.ToString() == NetworkId && RouterForms.CanEdit(n)) is { } network) Edit(network);
+    });
+    private async Task SaveAsync()
+    {
+        if (_editing is not { } network || _busy) return;
+        if (!await Confirm.DangerAsync("Change wireless network?", $"Update {network.DisplayName}. Connected devices may disconnect. Coupling is not verified.", "Apply change")) { _password = ""; return; }
+        await RunAsync(async () =>
+        {
+            var updated = await Actions.ApplyWirelessAsync(network, _enabled, _ssid, _password);
+            _networks[_networks.FindIndex(n => n.Id == updated.Id)] = updated;
+            CancelEdit(); _message = "Router returned this readback after the command. Check affected devices.";
+        });
+    }
+    private async Task RunAsync(Func<Task> operation)
+    {
+        if (_busy) return;
+        _busy = true; _failed = false; _message = null;
+        try { await operation(); }
+        catch (SettingsValidationException ex) { _failed = true; _message = ex.Message; }
+        catch (Exception) { _failed = true; _available = false; _message = "Wireless request failed. Refresh successfully before trying another write."; }
+        finally { _busy = false; _password = ""; }
+    }
+}

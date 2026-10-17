@@ -52,6 +52,10 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton(_ => new NetPilotDatabase(dbPath));
         services.AddSingleton<IDeviceStore, LiteDeviceStore>();
+        services.AddSingleton<LitePreferencesStore>();
+        services.AddSingleton<NetPilot.Core.Settings.IPreferencesStore>(sp => sp.GetRequiredService<LitePreferencesStore>());
+        services.AddSingleton<NetPilot.Core.Settings.ISetupProgressStore>(sp => sp.GetRequiredService<LitePreferencesStore>());
+        services.AddSingleton<NetPilot.Core.Safety.ISafetyStore, LiteSafetyStore>();
         services.AddSingleton<IAgentHeartbeatStore, LiteAgentHeartbeatStore>();
         services.AddSingleton<IPolicyStore, LitePolicyStore>();
         services.AddSingleton<IPushSubscriptionStore, LitePushSubscriptionStore>();

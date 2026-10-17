@@ -1,0 +1,41 @@
+@using NetPilot.Core.Settings
+@inject IPreferencesStore Preferences
+<MudStack Spacing="3">
+    <MudText Typo="Typo.h2">Backup and restore</MudText>
+    <MudAlert Severity="Severity.Warning">The archive includes the database and Data Protection key ring. Treat it like a password. Preserve a safety copy before a manual restore; stop both Agent and Web.</MudAlert>
+    <form method="post" action="/api/backup/download" data-enhance="false">
+        <AntiforgeryToken />
+        <MudButton ButtonType="ButtonType.Submit" Color="Color.Primary" Variant="Variant.Filled">Download backup</MudButton>
+    </form>
+    <MudText>One download at a time. If it fails or reports Busy, retry after 30 seconds. A download is not a verified restore rehearsal.</MudText>
+    <MudLink Href="https://github.com/IslamEldeeb/NetPilot/blob/main/docs/backup-restore.md">Restore instructions · docs/backup-restore.md</MudLink>
+    <MudText>Restore remains manual under design decision D8. In-app upload, maintenance handshake and restore progress are deferred until a safe two-process restore protocol is available.</MudText>
+    <MudText Typo="Typo.h2">Shared retention</MudText>
+    <MudText>Applied by Agent/notification maintenance. Active claims, active quota actions, active rule firings and restoration metadata are preserved regardless of these limits. Device usage and activity history are not pruned by these settings.</MudText>
+    @if (_message is not null) { <MudAlert Severity="@(_failed ? Severity.Error : Severity.Info)" role="status">@_message</MudAlert> }
+    <MudNumericField T="int" Label="Notification attempts to keep" Min="20" Max="10000" @bind-Value="_attempts" />
+    <MudNumericField T="int" Label="Inactive quota state days" Min="62" Max="3650" @bind-Value="_days" />
+    <MudNumericField T="int" Label="Rule firings to keep (active always retained)" Min="100" Max="10000" @bind-Value="_firings" />
+    <MudStack Row="true" Wrap="Wrap.Wrap"><MudButton OnClick="SaveAsync" Disabled="_busy" Color="Color.Primary">Save retention</MudButton><MudButton OnClick="LoadAsync" Disabled="_busy">Reload / Retry</MudButton></MudStack>
+</MudStack>
+@code {
+    private int _attempts = 500, _days = 62, _firings = 1000;
+    private bool _busy, _failed;
+    private string? _message;
+    protected override Task OnInitializedAsync() => LoadAsync();
+    private async Task LoadAsync()
+    {
+        _failed = false; _message = null;
+        try { var saved = await Preferences.GetRetentionAsync(CancellationToken.None); _attempts = saved.NotificationAttempts; _days = saved.InactiveQuotaDays; _firings = saved.RuleFirings; }
+        catch (Exception) { _failed = true; _message = "Could not load retention. Retry."; }
+    }
+    private async Task SaveAsync()
+    {
+        if (_busy) return;
+        _busy = true; _failed = false;
+        try { await Preferences.SaveRetentionAsync(new() { NotificationAttempts = _attempts, InactiveQuotaDays = _days, RuleFirings = _firings }, CancellationToken.None); _message = "Retention saved. Active claims and restoration state remain protected."; }
+        catch (ArgumentException ex) { _failed = true; _message = ex.Message; }
+        catch (Exception) { _failed = true; _message = "Retention was not saved. Retry."; }
+        finally { _busy = false; }
+    }
+}
