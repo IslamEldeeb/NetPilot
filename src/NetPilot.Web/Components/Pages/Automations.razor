@@ -19,7 +19,7 @@
             <MudButton Href="@($"/automations/{destination.Key}")" Variant="@(Active == destination.Key ? Variant.Filled : Variant.Outlined)" Color="Color.Primary" aria-current="@(Active == destination.Key ? "page" : null)">@destination.Label</MudButton>
         }
     </MudStack>
-    @if (Active == "quotas") { <QuotaPanel @key="Navigation.Uri" ScopeKey="QuotaScopeKey" Target="Target" /> }
+    @if (Active == "quotas") { <QuotaPanel @key="Navigation.Uri" ScopeKey="@QuotaScopeKey" Target="@Target" /> }
     else if (Active is "rules" or "schedules") { <RulesPanel @key="Navigation.Uri" Schedules="@(Active == "schedules")" RuleId="RuleId" /> }
     else if (Active == "policies") { <SpeedPolicies /> }
     else { <MudAlert Severity="Severity.Warning">Unknown automation section. Choose a section above.</MudAlert> }
