@@ -239,4 +239,72 @@ public class PolicyReconciliationServiceTests
         Assert.Equal(device.Override, provider.AppliedLimits[1].Limit);
         Assert.NotEqual(throttleFingerprint, device.LastAppliedFingerprint);
     }
+
+    [Fact]
+    public async Task LocalIdentityOverrides_SurviveRouterSnapshot()
+    {
+        var (service, provider, devices, policies, _) = Build();
+        provider.Devices.Add(MakeSnapshot(rawCategory: "Mobile"));
+        await service.ReconcileAsync(provider, CancellationToken.None);
+
+        var device = (await devices.FindByMacAsync(new("AA-BB-CC-DD-EE-01"), CancellationToken.None))!;
+        device.FriendlyName = "Living room TV";
+        device.FriendlyNameLocked = true;
+        device.LocalCategoryKey = "laptop";
+        device.LocalIconKey = "tv";
+        await devices.UpsertAsync(device, CancellationToken.None);
+
+        // The router reports a different hostname and category on the next poll.
+        provider.Devices.Clear();
+        provider.Devices.Add(MakeSnapshot(hostname: "new-name", rawCategory: "Game Console"));
+        await service.ReconcileAsync(provider, CancellationToken.None);
+
+        var reloaded = (await devices.FindByMacAsync(new("AA-BB-CC-DD-EE-01"), CancellationToken.None))!;
+        Assert.Equal("Living room TV", reloaded.FriendlyName);
+        Assert.True(reloaded.FriendlyNameLocked);
+        Assert.Equal("laptop", reloaded.LocalCategoryKey);
+        Assert.Equal("laptop", reloaded.CategoryKey);
+        Assert.Equal("game_console", reloaded.RouterCategoryKey);
+        Assert.Equal("tv", reloaded.LocalIconKey);
+        Assert.Equal("new-name", reloaded.Hostname);
+        // The effective category must have a policy so GetPolicyAsync never throws on the override.
+        Assert.NotNull(await policies.FindByCategoryAsync("laptop", CancellationToken.None));
+        Assert.NotNull(await policies.FindByCategoryAsync("game_console", CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ClearingLocalOverrides_RestoresRouterReportedValues()
+    {
+        var (service, provider, devices, _, _) = Build();
+        provider.Devices.Add(MakeSnapshot(rawCategory: "Mobile"));
+        await service.ReconcileAsync(provider, CancellationToken.None);
+
+        var device = (await devices.FindByMacAsync(new("AA-BB-CC-DD-EE-01"), CancellationToken.None))!;
+        device.FriendlyName = "Living room TV";
+        device.FriendlyNameLocked = true;
+        device.LocalCategoryKey = "laptop";
+        await devices.UpsertAsync(device, CancellationToken.None);
+        await service.ReconcileAsync(provider, CancellationToken.None);
+        Assert.Equal("laptop", device.CategoryKey);
+
+        await ((IDeviceStore)devices).UpdateIdentityAsync(device.Mac, new(null, null, null), CancellationToken.None);
+        await service.ReconcileAsync(provider, CancellationToken.None);
+
+        Assert.Equal("mobile", device.CategoryKey);
+        Assert.Equal("mobile", device.RouterCategoryKey);
+        Assert.Null(device.FriendlyName);
+    }
+    [Fact]
+    public async Task LegacyFriendlyName_WithoutLock_SurvivesRouterSnapshot()
+    {
+        var (service, provider, devices, _, _) = Build();
+        provider.Devices.Add(MakeSnapshot());
+        await service.ReconcileAsync(provider, CancellationToken.None);
+        var device = (await devices.FindByMacAsync(new("AA-BB-CC-DD-EE-01"), CancellationToken.None))!;
+        device.FriendlyName = "Existing name";
+        await devices.UpsertAsync(device, CancellationToken.None);
+        await service.ReconcileAsync(provider, CancellationToken.None);
+        Assert.Equal("Existing name", (await devices.FindByMacAsync(device.Mac, CancellationToken.None))!.FriendlyName);
+    }
+
 }

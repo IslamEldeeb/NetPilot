@@ -1,0 +1,40 @@
+@using NetPilot.Core.Devices
+@inject DeviceRouterActions Actions
+@inject ILogger<DeviceBlockActions> Logger
+<MudStack Spacing="1">
+    @if (Device.IsBlocked)
+    {
+        <MudButton Color="Color.Primary" Disabled="@(Disabled || _busy || Device.BlockListToken is null)" OnClick="UnblockAsync">@(_busy ? "Unblocking…" : "Unblock")</MudButton>
+        @if (Device.BlockListToken is null) { <MudText Typo="Typo.caption">No saved unblock token. Review the router.</MudText> }
+    }
+    else if (_confirm)
+    {
+        <MudText Typo="Typo.body2">Block this device? Manual blocks include protected devices.</MudText>
+        <MudStack Row="true" Wrap="Wrap.Wrap">
+            <MudButton Color="Color.Error" Variant="Variant.Filled" Disabled="@(Disabled || _busy)" OnClick="BlockAsync">@(_busy ? "Blocking…" : "Confirm block")</MudButton>
+            <MudButton Disabled="@_busy" OnClick="@(() => _confirm = false)">Cancel</MudButton>
+        </MudStack>
+    }
+    else
+    {
+        <MudButton Color="Color.Error" Variant="Variant.Outlined" Disabled="@Disabled" OnClick="@(() => _confirm = true)">Block</MudButton>
+    }
+    @if (_error is not null) { <MudAlert Severity="Severity.Error">@_error</MudAlert> }
+</MudStack>
+@code {
+    [Parameter, EditorRequired] public Device Device { get; set; } = default!;
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public EventCallback Changed { get; set; }
+    private bool _confirm, _busy;
+    private string? _error;
+    private Task BlockAsync() => ExecuteAsync(() => Actions.BlockAsync(Device.Mac));
+    private Task UnblockAsync() => ExecuteAsync(() => Actions.UnblockAsync(Device.Mac));
+    private async Task ExecuteAsync(Func<Task> action)
+    {
+        _busy = true;
+        _error = null;
+        try { await action(); _confirm = false; await Changed.InvokeAsync(); }
+        catch (Exception ex) { Logger.LogWarning(ex, "Manual device action failed for {Mac}", Device.Mac); _error = "Router action failed. Refresh and try again; the router may already have accepted it."; }
+        finally { _busy = false; }
+    }
+}

@@ -1,0 +1,8 @@
+.devices-cards { display: none; }
+.devices-table { min-width: 0; }
+.devices-table ::deep td { overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+    .devices-table { display: none; }
+    .devices-cards { display: block; }
+    .devices-cards ::deep .mud-link { overflow-wrap: anywhere; }
+}

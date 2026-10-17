@@ -24,4 +24,14 @@ public class MacAddressTests
     {
         Assert.Equal(new MacAddress("aa:bb:cc:dd:ee:ff"), new MacAddress("AA-BB-CC-DD-EE-FF"));
     }
+
+    [Fact]
+    public void TryParse_AcceptsAnyRecognizableForm_AndRejectsGarbage()
+    {
+        Assert.True(MacAddress.TryParse("aa:bb:cc:dd:ee:ff", out var mac));
+        Assert.Equal("AA-BB-CC-DD-EE-FF", mac.ToString());
+        Assert.False(MacAddress.TryParse("not-a-mac", out _));
+        Assert.False(MacAddress.TryParse(null, out _));
+        Assert.False(MacAddress.TryParse("  ", out _));
+    }
 }

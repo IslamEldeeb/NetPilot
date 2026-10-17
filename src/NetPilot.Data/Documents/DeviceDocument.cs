@@ -10,6 +10,10 @@ public class DeviceDocument
     public string? FriendlyName { get; set; }
     public string IpAddress { get; set; } = "";
     public string CategoryKey { get; set; } = "";
+    public string RouterCategoryKey { get; set; } = "";
+    public string? LocalCategoryKey { get; set; }
+    public bool FriendlyNameLocked { get; set; }
+    public string? LocalIconKey { get; set; }
     public string ConnectionMedium { get; set; } = "Unknown";
     public bool IsOnline { get; set; }
     public bool? OverrideEnabled { get; set; }

@@ -27,6 +27,15 @@ public readonly partial record struct MacAddress
 
     public static implicit operator string(MacAddress mac) => mac._value;
 
+    /// <summary>Accepts any casing/separator form; returns false instead of throwing for route validation.</summary>
+    public static bool TryParse(string? raw, out MacAddress mac)
+    {
+        mac = default;
+        if (string.IsNullOrWhiteSpace(raw)) return false;
+        try { mac = new MacAddress(raw); return true; }
+        catch (ArgumentException) { return false; }
+    }
+
     [GeneratedRegex("[:._]")]
     private static partial Regex NonHexSeparator();
 

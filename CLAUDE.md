@@ -8,11 +8,11 @@ Implementation is underway: all projects in `src/` exist and build (`NetPilot.Ab
 
 ### UI redesign status
 
-Batch A1 foundation and M1 MudBlazor adoption are implemented; the UI redesign is in progress. The shell uses MudBlazor 9.11.0 with a system-font light/dark `NetPilotTheme`; Classic view retains Bootstrap and its existing components. `NetPilot:Ui:RedesignEnabled` defaults to true (Compose: `NETPILOT_UI_REDESIGN`); false restores the classic dashboard at `/`. All existing tabs remain at `/legacy` during migration. See `docs/design/README.md`.
+Batch A1 foundation, M1 MudBlazor adoption and Batch B Devices list/detail (including persisted identity overrides) are implemented; the UI redesign is in progress. Batch B uses existing manual router paths, heartbeat-based status and safe claim release requests; live mobile/router verification remains pending. The shell uses MudBlazor 9.11.0 with a system-font light/dark `NetPilotTheme`; Classic view retains Bootstrap and its existing components. `NetPilot:Ui:RedesignEnabled` defaults to true (Compose: `NETPILOT_UI_REDESIGN`); false restores the classic dashboard at `/`. All existing tabs remain at `/legacy` during migration. See `docs/design/README.md`.
 
 ### Phase 5 status
 
-T1–T5 are implemented: timezone, quota model/UI, enforcement, notification server, and Web Push client. T6 supplies HTTPS access and deployment docs; live HTTPS/Android verification remains a deployment check. T8 LAN-traffic exclusion is implemented but not live-verified (see `docs/lan-traffic-exclusion.md`); T7 rules engine is planned. Keep enforcement in dry-run until usage is verified and T8 is in place; see `docs/phase5-quotas-notifications-rules-plan.md`, `docs/server-notifications.md`, and `docs/https-access.md`.
+T1–T5 are implemented: timezone, quota model/UI, enforcement, notification server, and Web Push client. T6 supplies HTTPS access and deployment docs; live HTTPS/Android verification remains a deployment check. T8 LAN-traffic exclusion is implemented but not live-verified (see `docs/lan-traffic-exclusion.md`); T7 rules engine and its Web UI are implemented; live verification remains. Batch B Devices list/detail and identity overrides are implemented. Keep enforcement in dry-run until usage is verified and T8 is in place; see `docs/phase5-quotas-notifications-rules-plan.md`, `docs/server-notifications.md`, and `docs/https-access.md`.
 
 ## Required reading before touching code
 

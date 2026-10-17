@@ -1,0 +1,36 @@
+@using System.Globalization
+@using NetPilot.Core.Devices
+<MudText Typo="Typo.h3">Last 30 days</MudText>
+<MudText Typo="Typo.caption">Daily totals only. Gaps mean no saved observation. LAN totals count both endpoints across the network.</MudText>
+<svg viewBox="0 0 660 190" role="img" aria-labelledby="usage-chart-title" class="usage-chart">
+    <title id="usage-chart-title">Internet and excluded LAN bytes over the last 30 days. Exact values in the table below.</title>
+    @for (var index = 0; index < Days.Count; index++)
+    {
+        var day = Days[index];
+        var internet = Height(day.InternetBytes);
+        var lan = Height(day.LanBytes);
+        <g>
+            <title>@day.DayKey: Internet @Exact(day.InternetBytes); LAN @Exact(day.LanBytes)</title>
+            @if (day.InternetBytes is null) { <path d="@($"M {index * 22 + 4} 158 h 12")" stroke="currentColor" stroke-dasharray="2 2" /> }
+            else
+            {
+                <rect x="@(index * 22 + 3)" y="@Number(160 - internet)" width="7" height="@Number(internet)" fill="var(--mud-palette-primary)" />
+                <rect x="@(index * 22 + 11)" y="@Number(160 - lan)" width="7" height="@Number(lan)" fill="var(--mud-palette-secondary)" />
+            }
+        </g>
+    }
+</svg>
+<MudStack Row="true" Justify="Justify.SpaceBetween"><MudText Typo="Typo.caption">@Days.FirstOrDefault()?.DayKey</MudText><MudText Typo="Typo.caption">@Days.LastOrDefault()?.DayKey</MudText></MudStack>
+<MudText Typo="Typo.caption">Primary bars: Internet · Secondary bars: excluded LAN</MudText>
+<MudExpansionPanels Elevation="0"><MudExpansionPanel Text="View exact chart values">
+    <MudSimpleTable Elevation="0"><thead><tr><th>Day</th><th>Internet bytes</th><th>LAN bytes</th></tr></thead><tbody>
+        @foreach (var day in Days) { <tr><td>@day.DayKey</td><td>@Exact(day.InternetBytes)</td><td>@Exact(day.LanBytes)</td></tr> }
+    </tbody></MudSimpleTable>
+</MudExpansionPanel></MudExpansionPanels>
+@code {
+    [Parameter] public IReadOnlyList<DeviceUsageDay> Days { get; set; } = [];
+    private long Maximum => Math.Max(1, Days.SelectMany(d => new[] { d.InternetBytes ?? 0, d.LanBytes ?? 0 }).DefaultIfEmpty(1).Max());
+    private double Height(long? bytes) => (double)(bytes ?? 0) / Maximum * 140;
+    private static string Number(double number) => number.ToString("0.###", CultureInfo.InvariantCulture);
+    private static string Exact(long? bytes) => bytes?.ToString("N0", CultureInfo.InvariantCulture) ?? "No observation";
+}

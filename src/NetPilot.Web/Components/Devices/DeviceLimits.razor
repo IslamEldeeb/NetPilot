@@ -1,0 +1,15 @@
+@using NetPilot.Core.Devices
+@using NetPilot.Core.Policy
+@using NetPilot.Abstractions
+<MudText Typo="Typo.body2">@(Managed ? "Effective limit" : "Unmanaged"): @DeviceList.DescribeLimit(Desired)</MudText>
+@if (Device.Override is { } manual) { <MudText Typo="Typo.caption">Manual override: @DeviceList.DescribeLimit(manual)</MudText> }
+<MudText Typo="Typo.caption" Color="@(Drift ? Color.Warning : Color.Default)">Router: @Reported @(Drift ? "· differs from saved limit" : "")</MudText>
+@code {
+    [Parameter, EditorRequired] public Device Device { get; set; } = default!;
+    [Parameter] public IReadOnlyList<DevicePolicy> Policies { get; set; } = [];
+    private DevicePolicy? Policy => Policies.FirstOrDefault(p => p.CategoryKey == Device.CategoryKey);
+    private bool Managed => Device.Override is not null || Device.QuotaThrottle is not null || Policy?.IsUserConfigured == true;
+    private SpeedLimit Desired => Device.QuotaThrottle ?? Device.Override ?? Policy?.Limit ?? SpeedLimit.Unlimited;
+    private string Reported => Device.RouterReportedLimit is { } reported ? DeviceList.DescribeLimit(new(reported.Enabled, reported.DownloadKbps, reported.UploadKbps)) : "Not observed";
+    private bool Drift => Managed && Device.RouterReportedLimit is { } reported && !RouterLimitDrift.Matches(new(reported.Enabled, reported.DownloadKbps, reported.UploadKbps), Desired);
+}

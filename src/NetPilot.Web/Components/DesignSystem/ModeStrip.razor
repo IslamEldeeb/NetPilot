@@ -1,6 +1,10 @@
 @implements IDisposable
 @using NetPilot.Core.Quota
 @using NetPilot.Core.Rules
+@using NetPilot.Core.Health
+@using NetPilot.Core.Usage
+@inject IAgentHeartbeatStore Heartbeats
+@inject UsagePeriodClock Clock
 @inject IQuotaStore Quotas
 @inject IRuleStore RuleStore
 @inject RulesOptions Rules
@@ -9,19 +13,27 @@
     <MudLink Href="/settings/safety" Color="Color.Inherit" aria-label="@($"Safety Center. Quotas: {_quotaMode}. Rules: {RulesMode}. Web configuration, not confirmed Agent state.")">
         Quotas: @_quotaMode · Rules: @RulesMode · Safety Center
     </MudLink>
+    <MudTooltip Text="@HeartbeatText"><StatusPill Kind="@(Health == AgentHealthStatus.Healthy ? "ok" : Health == AgentHealthStatus.Unknown ? "info" : "warning")">Agent: @Health</StatusPill></MudTooltip>
 </MudAlert>
 @code {
+    private AgentHeartbeat? _heartbeat;
+    private AgentHealthStatus Health => AgentHealth.Evaluate(_heartbeat, Clock.GetUtcNow());
+    private string HeartbeatText => _heartbeat?.LastTickCompletedUtc is { } tick
+        ? $"Last completed tick: {TimeZoneInfo.ConvertTime(tick, Clock.TimeZone):g} · {Clock.TimeZone.Id}"
+        : _heartbeat is { } heartbeat ? $"Last tick started: {TimeZoneInfo.ConvertTime(heartbeat.LastTickStartedUtc, Clock.TimeZone):g} · no completed tick recorded"
+        : "No Agent tick recorded.";
     private string _quotaMode = "Unknown";
     private string RulesMode => !Rules.Enabled ? "Off" : Rules.ForceDryRun ? "Forced dry-run" : _ruleMode;
     private string _ruleMode = "Unknown";
     private readonly CancellationTokenSource _lifetime = new();
-    protected override async Task OnInitializedAsync() { await RefreshAsync(); await RefreshRulesAsync(); _ = WatchAsync(); }
+    protected override async Task OnInitializedAsync() { await RefreshAsync(); await RefreshRulesAsync(); await RefreshHealthAsync(); _ = WatchAsync(); }
     private async Task RefreshAsync()
     {
         try
         {
-            var policies = (await Quotas.GetAllAsync(_lifetime.Token)).Where(policy => !policy.Exempt).ToArray();
-            _quotaMode = policies.Length == 0 ? "Unknown" : policies.All(policy => policy.DryRun) ? "Dry-run"
+            var allPolicies = await Quotas.GetAllAsync(_lifetime.Token);
+            var policies = allPolicies.Where(policy => !policy.Exempt).ToArray();
+            _quotaMode = allPolicies.Count == 0 ? "Not set" : policies.Length == 0 ? "Exempt" : policies.All(policy => policy.DryRun) ? "Dry-run"
                 : policies.All(policy => !policy.DryRun) ? "Enforcing" : "Mixed";
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
@@ -39,13 +51,19 @@
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
         catch (Exception ex) { Logger.LogWarning(ex, "Cannot read rule modes"); _ruleMode = "Unknown"; }
     }
+    private async Task RefreshHealthAsync()
+    {
+        try { _heartbeat = await Heartbeats.GetAsync(_lifetime.Token); }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        catch (Exception ex) { Logger.LogWarning(ex, "Cannot read Agent heartbeat"); _heartbeat = null; }
+    }
     private async Task WatchAsync()
     {
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
         try
         {
             while (await timer.WaitForNextTickAsync(_lifetime.Token))
-                await InvokeAsync(async () => { await RefreshAsync(); await RefreshRulesAsync(); StateHasChanged(); });
+                await InvokeAsync(async () => { await RefreshAsync(); await RefreshRulesAsync(); await RefreshHealthAsync(); StateHasChanged(); });
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
     }

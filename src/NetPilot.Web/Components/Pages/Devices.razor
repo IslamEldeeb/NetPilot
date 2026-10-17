@@ -1,5 +1,106 @@
 @page "/devices"
 @layout AppShell
+@using NetPilot.Core.Devices
+@using NetPilot.Core.Quota
+@using NetPilot.Core.Usage
+@using NetPilot.Web.Components.Devices
 <PageTitle>Devices · NetPilot</PageTitle>
-<MudStack Spacing="2" Class="mb-6"><MudText Typo="Typo.h1" HtmlTag="h1">Devices</MudText></MudStack>
-<EmptyState Body="Your existing device list, filters, limits and block controls are available in Classic view." Href="/legacy#devices" Icon="devices" />
+<MudStack Spacing="4">
+    <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center">
+        <div><MudText Typo="Typo.h1" HtmlTag="h1">Devices</MudText><MudText>@CountText</MudText></div>
+        <MudSpacer />
+        <MudButton OnClick="RefreshFromRouterAsync" Disabled="@(_connection is null || _refreshing || _bulkBusy)" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Refresh">@(_refreshing ? "Refreshing…" : "Refresh from router")</MudButton>
+    </MudStack>
+    <MudText Typo="Typo.caption">Router refresh may also apply configured speed policies. Saved data updates every 30 seconds without contacting the router.</MudText>
+    @if (_lastRefresh is { } refreshed) { <MudText Typo="Typo.caption">Last manual refresh: @TimeZoneInfo.ConvertTime(refreshed, Clock.TimeZone).ToString("g") · @Clock.TimeZone.Id</MudText> }
+    <MudLink Href="/legacy#devices" Target="_top">Classic device controls</MudLink>
+    @if (_error is not null)
+    {
+        <MudAlert Severity="Severity.Error">@_error <MudButton OnClick="LoadAsync">Retry saved data</MudButton></MudAlert>
+    }
+    @if (!_loaded)
+    {
+        <MudSkeleton Height="100px" /><MudSkeleton Height="100px" /><MudSkeleton Height="100px" />
+    }
+    else
+    {
+        @if (_connection is null)
+        {
+            <EmptyState Title="Router not configured" Body="Connect a router in Classic view to discover and manage devices." Href="/legacy" ActionText="Configure router" />
+        }
+        @if (_devices.Count == 0 && _error is null)
+        {
+            <EmptyState Title="No devices discovered yet" Body="Refresh from the router, or wait for the Agent’s next tick." Icon="devices" />
+            <MudButton OnClick="RefreshFromRouterAsync" Disabled="@(_connection is null || _refreshing)" Color="Color.Primary">Refresh from router</MudButton>
+        }
+        else if (_devices.Count > 0)
+        {
+            <MudGrid Spacing="3">
+                <MudItem xs="12" sm="6"><MudTextField T="string" Label="Search devices" Placeholder="Name, hostname, MAC or IP" @bind-Value="_search" Immediate="true" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search" /></MudItem>
+                <MudItem xs="12" sm="3"><MudSelect T="string" Label="Category" @bind-Value="_category"><MudSelectItem T="string" Value="@(string.Empty)">All categories</MudSelectItem>@foreach (var category in Categories) { <MudSelectItem T="string" Value="@category">@category.Replace('_', ' ')</MudSelectItem> }</MudSelect></MudItem>
+                <MudItem xs="12" sm="3"><MudSelect T="DeviceSortKey" Label="Sort devices" @bind-Value="_sort"><MudSelectItem Value="DeviceSortKey.UsageTodayDesc">Usage today</MudSelectItem><MudSelectItem Value="DeviceSortKey.Name">Name</MudSelectItem><MudSelectItem Value="DeviceSortKey.LastSeen">Last seen</MudSelectItem></MudSelect></MudItem>
+            </MudGrid>
+            <MudStack Row="true" Wrap="Wrap.Wrap">
+                <MudSwitch @bind-Value="_onlineOnly" Label="Online only" Color="Color.Primary" />
+                <MudSwitch @bind-Value="_restrictedOnly" Label="Restricted only" Color="Color.Primary" />
+                <MudSwitch @bind-Value="_groupByCategory" Label="Group by category" Color="Color.Primary" />
+            </MudStack>
+            <MudCheckBox T="bool" Value="@(VisibleRows.Count > 0 && VisibleRows.All(r => _selected.Contains(r.Device.Mac)))" ValueChanged="SelectAll" Label="@($"Select all {VisibleRows.Count} filtered devices")" Disabled="@_bulkBusy" />
+            @if (_selected.Count > 0)
+            {
+                <MudPaper Class="pa-3" Outlined="true" role="region" aria-label="Selected devices">
+                    <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center">
+                        <MudText>@_selected.Count selected (includes hidden selections)</MudText>
+                        <MudButton Color="Color.Error" OnClick="@(() => BulkSetBlockAsync(true))" Disabled="@(_bulkBusy || _connection is null)">Block selected</MudButton>
+                        <MudButton OnClick="@(() => BulkSetBlockAsync(false))" Disabled="@(_bulkBusy || _connection is null)">Unblock selected</MudButton>
+                        <MudButton OnClick="@(() => _selected.Clear())" Disabled="@_bulkBusy">Clear selection</MudButton>
+                    </MudStack>
+                    <MudText Typo="Typo.caption">Protected devices are not exempt from manual blocks today.</MudText>
+                </MudPaper>
+            }
+            @if (VisibleRows.Count == 0)
+            {
+                <EmptyState Title="No matching devices" Body="Try another search or clear the filters." Icon="devices" />
+                <MudButton OnClick="ClearFilters">Clear filters</MudButton>
+            }
+            @foreach (var section in Sections)
+            {
+                @if (section.Category is { } category) { <MudText Typo="Typo.h2">@category.Replace('_', ' ')</MudText> }
+                <div class="devices-table">
+                    <MudTable T="DeviceListRow" Items="section.Rows" Breakpoint="Breakpoint.None" Elevation="0" Hover="true">
+                        <HeaderContent><MudTh>Select</MudTh><MudTh>Device</MudTh><MudTh>Connection</MudTh><MudTh>Internet usage / quota</MudTh><MudTh>Limits / status</MudTh><MudTh>Actions</MudTh></HeaderContent>
+                        <RowTemplate Context="row">
+                            <MudTd><MudCheckBox T="bool" Value="@_selected.Contains(row.Device.Mac)" ValueChanged="@(selected => ToggleSelect(row.Device.Mac, selected))" aria-label="@($"Select {row.DisplayName}")" Disabled="@_bulkBusy" /></MudTd>
+                            <MudTd><MudIcon Icon="@MaterialIcon.For(row.Device.LocalIconKey ?? row.Device.CategoryKey)" /><MudLink Href="@($"/devices/{row.Device.Mac}")">@row.DisplayName</MudLink><MudText Typo="Typo.caption">@row.Device.Mac · @row.Device.IpAddress</MudText><MudChip T="string" Size="Size.Small">@row.Device.CategoryKey.Replace('_', ' ')</MudChip></MudTd>
+                            <MudTd><StatusPill Kind="@(row.Device.Connection.IsOnline ? "ok" : "info")">@(row.Device.Connection.IsOnline ? "Online" : "Offline")</StatusPill><MudText Typo="Typo.caption">@DeviceList.DescribeMedium(row.Device.Connection.Medium) · @DeviceList.DescribeLastSeen(row.Device.LastSeenAtUtc, Clock.GetUtcNow())</MudText></MudTd>
+                            <MudTd><MudText>@DataSize.Format(row.InternetTodayBytes) today</MudText><MudText Typo="Typo.caption">@DataSize.Format(row.InternetMonthBytes) this month</MudText><DeviceQuotaMeter Resolution="@QuotaResolver.Resolve(row.Device, _quotas)" TodayBytes="row.InternetTodayBytes" MonthBytes="row.InternetMonthBytes" /></MudTd>
+                            <MudTd><DeviceStatusChips Row="row" /><DeviceLimits Device="row.Device" Policies="_policies" /></MudTd>
+                            <MudTd><DeviceBlockActions Device="row.Device" Changed="LoadAsync" Disabled="@(_connection is null || _bulkBusy || _refreshing)" /></MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                </div>
+                <div class="devices-cards">
+                    <MudStack Spacing="3">
+                        @foreach (var row in section.Rows)
+                        {
+                            <MudCard @key="row.Device.Mac" Outlined="true">
+                                <MudCardContent>
+                                    <MudStack Spacing="2">
+                                        <MudStack Row="true" AlignItems="AlignItems.Center"><MudIcon Icon="@MaterialIcon.For(row.Device.LocalIconKey ?? row.Device.CategoryKey)" /><MudLink Href="@($"/devices/{row.Device.Mac}")">@row.DisplayName</MudLink><MudSpacer /><MudCheckBox T="bool" Value="@_selected.Contains(row.Device.Mac)" ValueChanged="@(selected => ToggleSelect(row.Device.Mac, selected))" aria-label="@($"Select {row.DisplayName}")" Disabled="@_bulkBusy" /></MudStack>
+                                        <MudText Typo="Typo.caption">@row.Device.Mac · @row.Device.IpAddress</MudText>
+                                        <MudStack Row="true" Wrap="Wrap.Wrap"><StatusPill Kind="@(row.Device.Connection.IsOnline ? "ok" : "info")">@(row.Device.Connection.IsOnline ? "Online" : "Offline")</StatusPill><MudChip T="string" Size="Size.Small">@row.Device.CategoryKey.Replace('_', ' ')</MudChip></MudStack>
+                                        <MudText Typo="Typo.caption">@DeviceList.DescribeMedium(row.Device.Connection.Medium) · Last seen @DeviceList.DescribeLastSeen(row.Device.LastSeenAtUtc, Clock.GetUtcNow())</MudText>
+                                        <MudText>@DataSize.Format(row.InternetTodayBytes) Internet today · @DataSize.Format(row.InternetMonthBytes) this month</MudText>
+                                        <DeviceQuotaMeter Resolution="@QuotaResolver.Resolve(row.Device, _quotas)" TodayBytes="row.InternetTodayBytes" MonthBytes="row.InternetMonthBytes" />
+                                        <DeviceStatusChips Row="row" /><DeviceLimits Device="row.Device" Policies="_policies" />
+                                        <DeviceBlockActions Device="row.Device" Changed="LoadAsync" Disabled="@(_connection is null || _bulkBusy || _refreshing)" />
+                                    </MudStack>
+                                </MudCardContent>
+                            </MudCard>
+                        }
+                    </MudStack>
+                </div>
+            }
+        }
+    }
+</MudStack>

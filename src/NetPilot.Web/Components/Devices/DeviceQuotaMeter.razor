@@ -1,0 +1,23 @@
+@using NetPilot.Core.Quota
+@using NetPilot.Core.Devices
+@if (Resolution.Kind == QuotaResolutionKind.Policy)
+{
+    <MudText Typo="Typo.caption">@(Resolution.MatchedPolicy!.DryRun ? "Quota · dry-run" : "Quota · enforcing")</MudText>
+    <MudText Typo="Typo.body2">Today: @QuotaPolicyText.Meter(Resolution, TodayBytes)</MudText>
+    @if (Resolution.MatchedPolicy!.DailyBytes is > 0)
+    {
+        <MudProgressLinear Value="@Percent(TodayBytes, Resolution.MatchedPolicy!.DailyBytes)" Color="Color.Primary" aria-label="Daily quota used" />
+    }
+    <MudText Typo="Typo.body2">Month: @QuotaPolicyText.MonthlyMeter(Resolution, MonthBytes)</MudText>
+    @if (Resolution.MatchedPolicy!.MonthlyBytes is > 0)
+    {
+        <MudProgressLinear Value="@Percent(MonthBytes, Resolution.MatchedPolicy!.MonthlyBytes)" Color="Color.Primary" aria-label="Monthly quota used" />
+    }
+}
+else if (Resolution.Kind == QuotaResolutionKind.Exempt) { <MudText Typo="Typo.caption">Quota exempt</MudText> }
+@code {
+    [Parameter, EditorRequired] public QuotaResolution Resolution { get; set; } = default!;
+    [Parameter] public long TodayBytes { get; set; }
+    [Parameter] public long MonthBytes { get; set; }
+    private static double Percent(long used, long? cap) => cap is > 0 ? (double)Math.Clamp((decimal)used * 100 / cap.Value, 0, 100) : 0;
+}

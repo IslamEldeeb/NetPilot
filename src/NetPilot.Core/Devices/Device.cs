@@ -18,6 +18,21 @@ public class Device
     public bool UsageLanOnly { get; set; }
     public bool IsBlocked { get; set; }
 
+    /// <summary>Last category the router reported. Kept distinct from <see cref="CategoryKey"/>
+    /// so a local category override can be shown next to the router's own value.</summary>
+    public string RouterCategoryKey { get; set; } = "";
+
+    /// <summary>Local category override chosen in the dashboard. Null inherits the router-reported
+    /// category; when set it becomes the effective <see cref="CategoryKey"/> until cleared.</summary>
+    public string? LocalCategoryKey { get; set; }
+
+    /// <summary>True when <see cref="FriendlyName"/> is user-owned and must survive router snapshots.
+    /// The Agent never writes a friendly name, but this keeps the guarantee explicit.</summary>
+    public bool FriendlyNameLocked { get; set; }
+
+    /// <summary>Optional local icon key; null derives the icon from the effective category.</summary>
+    public string? LocalIconKey { get; set; }
+
     /// <summary>Provider-specific token returned by IRouterProvider.BlockDeviceAsync — required
     /// to reverse the block later. See that method's remarks for why this can't be re-derived.</summary>
     public string? BlockListToken { get; set; }

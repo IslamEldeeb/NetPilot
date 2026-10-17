@@ -1,0 +1,9 @@
+@using NetPilot.Core.Devices
+<MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1">
+    @if (Row.IsBlocked) { <StatusPill Kind="danger">Blocked</StatusPill> }
+    @if (Row.IsThrottled) { <StatusPill Kind="warning">Throttled</StatusPill> }
+    @if (Row.IsProtected) { <StatusPill Kind="ok">Protected</StatusPill> }
+    @if (Row.IsLanOnly) { <StatusPill>LAN-only</StatusPill> }
+    @if (Row.IsNew) { <StatusPill>New</StatusPill> }
+</MudStack>
+@code { [Parameter, EditorRequired] public DeviceListRow Row { get; set; } = default!; }

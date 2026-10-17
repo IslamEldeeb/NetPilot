@@ -36,11 +36,15 @@ public class PolicyReconciliationService(
             };
 
             var wasOffline = !device.Connection.IsOnline && !isNewDevice;
-            var isNewCategory = await EnsurePolicyExistsAsync(categoryKey, ct);
 
             device.Hostname = snapshot.Hostname;
             device.IpAddress = snapshot.IpAddress;
-            device.CategoryKey = categoryKey;
+            // Local identity overrides are user-owned and must survive every snapshot. The
+            // router-reported category is retained separately for display.
+            device.RouterCategoryKey = categoryKey;
+            device.CategoryKey = device.LocalCategoryKey ?? categoryKey;
+            var isNewCategory = await EnsurePolicyExistsAsync(categoryKey, ct);
+            if (device.CategoryKey != categoryKey) await EnsurePolicyExistsAsync(device.CategoryKey, ct);
             device.Connection = snapshot.Connection;
             device.RouterReportedLimit = snapshot.CurrentLimit;
             device.LastSeenAtUtc = DateTimeOffset.UtcNow;
@@ -49,7 +53,7 @@ public class PolicyReconciliationService(
             {
                 await activityLog.AppendAsync(
                     new ActivityLogEntry(DateTimeOffset.UtcNow, ActivityEventType.DeviceDiscovered, mac,
-                        $"New device discovered: {device.Hostname} ({categoryKey})"), ct);
+                        $"New device discovered: {device.Hostname} ({device.CategoryKey})"), ct);
             }
             else if (wasOffline && snapshot.Connection.IsOnline)
             {
