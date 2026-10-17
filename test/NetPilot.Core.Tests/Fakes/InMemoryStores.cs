@@ -210,6 +210,12 @@ public class InMemoryActionClaimStore : IActionClaimStore
         return Task.CompletedTask;
     }
 
+    public Task<bool> TryAddAsync(ActionClaim claim, CancellationToken ct)
+    {
+        claim.Validate();
+        return Task.FromResult(_claims.TryAdd(claim.Id, claim));
+    }
+
     public Task RemoveAsync(string id, CancellationToken ct)
     {
         _claims.Remove(id);

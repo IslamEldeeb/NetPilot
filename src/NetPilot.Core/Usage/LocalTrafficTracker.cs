@@ -5,12 +5,17 @@ using NetPilot.Core.Devices;
 
 namespace NetPilot.Core.Usage;
 
+public sealed record LocalTrafficSample(IReadOnlyDictionary<string, long>? Deltas, bool HadOutage);
+
 /// <summary>Persisted directional baselines are shared by Agent and manual Web refreshes.</summary>
 public sealed class LocalTrafficTracker(ILocalTrafficSource source, ILocalTrafficStore store,
     IActivityLogStore activityLog, UsagePeriodClock clock)
 {
     public async Task<IReadOnlyDictionary<string, long>?> ReadDeltasAsync(
         IReadOnlyList<RouterDeviceSnapshot> snapshots, CancellationToken ct)
+        => (await ReadSampleAsync(snapshots, ct)).Deltas;
+
+    public async Task<LocalTrafficSample> ReadSampleAsync(IReadOnlyList<RouterDeviceSnapshot> snapshots, CancellationToken ct)
     {
         LocalTrafficReading? reading;
         try
@@ -23,16 +28,16 @@ public sealed class LocalTrafficTracker(ILocalTrafficSource source, ILocalTraffi
             // Sources are optional, including third-party implementations. Never expose their
             // exception text: HTTP errors can contain URLs or credentials.
             await RecordFailureAsync(ct);
-            return null;
+            return new(null, true);
         }
 
         if (reading is null)
         {
             await store.SaveStatusAsync(new LocalTrafficStatus(), ct);
-            return null;
+            return new(null, false);
         }
 
-        return await AccumulateAsync(reading, snapshots, ct);
+        return new(await AccumulateAsync(reading, snapshots, ct), false);
     }
 
     private async Task<IReadOnlyDictionary<string, long>> AccumulateAsync(LocalTrafficReading reading,

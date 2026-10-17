@@ -1,0 +1,111 @@
+@using NetPilot.Core.Actions
+@using NetPilot.Core.Devices
+@using NetPilot.Core.Enforcement.Claims
+@using NetPilot.Core.Quota
+@using NetPilot.Core.Usage
+@inject TemporaryActions Commands
+@inject NetPilot.Core.Actions.TemporaryActionOptions ActionOptions
+@inject QuotaBonusCommands Bonuses
+@inject IDeviceStore Devices
+@inject IProtectedDeviceStore Protection
+@inject UsagePeriodClock Clock
+@inject IConfiguration Configuration
+@inject ILogger<QuickActionsSheet> Logger
+<AppSheet Open="Open" OpenChanged="OpenChanged" Title="Quick actions">
+    <MudStack Spacing="3">
+        <MudSelect T="string" @bind-Value="_action" Label="Action"><MudSelectItem T="string" Value="@("pause")">Pause Internet</MudSelectItem><MudSelectItem T="string" Value="@("throttle")">Temporary throttle</MudSelectItem><MudSelectItem T="string" Value="@("bonus")">Quota bonus</MudSelectItem></MudSelect>
+        <MudSelect T="string" @bind-Value="_target" Label="Target">
+            @foreach (var device in _devices) { <MudSelectItem T="string" Value="@($"device:{device.Mac}")">@HouseholdUsage.DeviceName(device)</MudSelectItem> }
+            @if (_action != "bonus") { @foreach (var category in _devices.Select(device => device.CategoryKey).Distinct().Order()) { <MudSelectItem T="string" Value="@($"category:{category}")">Category: @category</MudSelectItem> } }
+        </MudSelect>
+        @if (_action == "bonus")
+        {
+            <MudSelect T="QuotaPeriodKind" @bind-Value="_period" Label="Named quota period"><MudSelectItem Value="QuotaPeriodKind.Day">Day</MudSelectItem><MudSelectItem Value="QuotaPeriodKind.Month">Month</MudSelectItem></MudSelect>
+            <MudNumericField T="decimal" @bind-Value="_bonusGb" Label="Bonus (decimal GB)" Min="0.000000001m" />
+            <MudText>Grant @_bonusGb GB to @TargetName for @_period · @PeriodKey. Other quota periods, rules, manual blocks and base policies still apply. This is an allowance, not a timed exemption.</MudText>
+        }
+        else
+        {
+            <MudSelect T="int" @bind-Value="_minutes" Label="Duration"><MudSelectItem Value="15">15 minutes</MudSelectItem><MudSelectItem Value="30">30 minutes</MudSelectItem><MudSelectItem Value="60">60 minutes</MudSelectItem><MudSelectItem Value="0">Custom duration</MudSelectItem></MudSelect>
+            @if (_minutes == 0) { <MudNumericField T="int" @bind-Value="_customMinutes" Label="Custom minutes (1–1440)" Min="1" Max="1440" /> }
+            @if (_action == "throttle") { <MudNumericField T="int" @bind-Value="_kbps" Label="Symmetric throttle (Kbps)" Min="1" /> }
+            <MudText>Server mode: @(_dryRun ? "Dry-run preview (no router changes)" : "Enforcing"). Mode is configured on the server, not changed by this sheet.</MudText>
+            <MudText>Preview: @TargetName · @Targets.Length selected · @Targets.Count(mac => _protected.Contains(mac)) protected targets skipped · @Duration minutes.</MudText>
+            <MudAlert Severity="@(_dryRun ? Severity.Info : Severity.Warning)">
+                @(_dryRun ? "Next tick: preview only; no router restriction." : _action == "pause" ? "Next tick: pause Internet through an expiring block claim." : $"Next tick: throttle to {_kbps} Kbps through an expiring claim.")
+                Expiry is measured from save; the Agent releases on the first successful tick after expiry. Other holds remain. Base policies are preserved. Protected devices are checked again by the Agent.
+            </MudAlert>
+        }
+        <MudText Typo="Typo.caption">Takes effect on the Agent’s next tick (about @IntervalSeconds seconds). Retries or an offline Agent can take longer. No router command is sent by this sheet.</MudText>
+        @if (_message is not null) { <MudAlert Severity="Severity.Success" role="status">@_message</MudAlert> }
+        @if (_error is not null) { <MudAlert Severity="Severity.Error" role="alert">@_error</MudAlert> }
+        <MudButton OnClick="SaveAsync" Disabled="@(_busy || _devices.Count == 0 || _accepted)" Variant="Variant.Filled" Color="Color.Primary">Save for next tick</MudButton>
+        <MudButton OnClick="@(() => OpenChanged.InvokeAsync(false))">Close</MudButton>
+    </MudStack>
+</AppSheet>
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public EventCallback<bool> OpenChanged { get; set; }
+    [Parameter] public string? DeviceMac { get; set; }
+    [Parameter] public EventCallback Saved { get; set; }
+    private IReadOnlyList<Device> _devices = [];
+    private IReadOnlyList<MacAddress> _protected = [];
+    private string _action = "pause", _target = "";
+    private string? _error, _message;
+    private int _minutes = 30, _customMinutes = 45, _kbps = 512;
+    private decimal _bonusGb = 1;
+    private QuotaPeriodKind _period;
+    private bool _dryRun = true, _busy, _wasOpen, _accepted;
+    private Guid _requestId;
+    private string _dayKey = "", _monthKey = "";
+    private int Duration => _minutes == 0 ? _customMinutes : _minutes;
+    private int IntervalSeconds => Configuration.GetValue("NetPilot:PollIntervalSeconds", 180);
+    private string PeriodKey => _period == QuotaPeriodKind.Day ? _dayKey : _monthKey;
+    private MacAddress[] Targets => _devices.Where(device => _target == $"device:{device.Mac}" || (_action != "bonus" && _target == $"category:{device.CategoryKey}")).Select(device => device.Mac).ToArray();
+    private string TargetName => _target.StartsWith("category:", StringComparison.Ordinal) ? _target[9..]
+        : _devices.FirstOrDefault(device => _target == $"device:{device.Mac}") is { } device ? HouseholdUsage.DeviceName(device) : "Choose a device";
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Open && !_wasOpen)
+        {
+            _error = _message = null;
+            _accepted = false;
+            _requestId = Guid.NewGuid();
+            _dryRun = ActionOptions.ForceDryRun;
+            _dayKey = Clock.TodayKey(); _monthKey = Clock.ThisMonthKey();
+            try
+            {
+                _devices = await Devices.GetAllAsync(CancellationToken.None);
+                _protected = await Protection.GetAllAsync(CancellationToken.None);
+                _target = DeviceMac is not null ? $"device:{DeviceMac}" : _devices.FirstOrDefault() is { } first ? $"device:{first.Mac}" : "";
+            }
+            catch (Exception ex) { Logger.LogWarning(ex, "Cannot load action targets"); _error = "Could not load targets. Close and retry."; _devices = []; }
+        }
+        _wasOpen = Open;
+    }
+    private async Task SaveAsync()
+    {
+        _busy = true; _error = _message = null;
+        try
+        {
+            if (_action == "bonus")
+            {
+                if (Targets.Length != 1) throw new ArgumentException("Choose one device with a configured quota.");
+                await Bonuses.GrantAsync(new(_requestId, Targets[0], _period, PeriodKey, DataSize.FromGb(_bonusGb)), CancellationToken.None);
+                _message = $"Bonus saved for {_period} {PeriodKey}; the Agent evaluates it on its next tick. Other holds remain.";
+            }
+            else
+            {
+                var saved = await Commands.RequestAsync(new(_requestId, Targets, _action == "pause" ? ClaimKind.Block : ClaimKind.Throttle,
+                    Duration, _action == "throttle" ? _kbps : null, _dryRun), CancellationToken.None);
+                _message = $"Saved {saved.Accepted} request(s); skipped {saved.ProtectedSkipped} protected device(s). {(_dryRun ? "Dry-run preview only." : "Waiting for the Agent's next tick.")}";
+            }
+            _accepted = true;
+            await Saved.InvokeAsync();
+        }
+        catch (ArgumentException ex) { _error = ex.Message; }
+        catch (OverflowException) { _error = "The bonus exceeds the supported byte count."; }
+        catch (Exception ex) { Logger.LogWarning(ex, "Cannot save quick action"); _error = "Could not complete the request. Retry safely; already saved requests are retained."; }
+        finally { _busy = false; }
+    }
+}

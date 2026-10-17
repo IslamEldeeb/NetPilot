@@ -43,7 +43,7 @@ public class ClaimEnforcementService(
         var state = await claimStore.FindDeviceStateAsync(device.Mac, ct) ?? new(device.Mac);
         if (state.UnblockProjectionPending)
             state = await CompleteUnblockProjectionAsync(device, state, ct);
-        if (claims.Any(c => c.Kind == ClaimKind.Throttle) && state.PriorLimit is null)
+        if (claims.Any(c => c.IsEffective && c.Kind == ClaimKind.Throttle) && state.PriorLimit is null)
             state = state with { PriorLimit = await CapturePriorLimitAsync(device, ct) };
         if (effective.IsBlocked)
             return await ApplyBlockAsync(provider, (device, state), ct);

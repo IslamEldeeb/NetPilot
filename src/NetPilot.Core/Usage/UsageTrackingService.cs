@@ -33,7 +33,8 @@ public class UsageTrackingService(IUsageStore usageStore, IActivityLogStore acti
         var monthKey = periodClock.MonthKey(now);
         var dayKey = periodClock.DayKey(now);
 
-        var lanDeltas = await localTraffic.ReadDeltasAsync(snapshots, ct);
+        var lanSample = await localTraffic.ReadSampleAsync(snapshots, ct);
+        var lanDeltas = lanSample.Deltas;
         var lanOnly = (await deviceStore.GetAllAsync(ct)).Where(d => d.UsageLanOnly).Select(d => d.Mac).ToHashSet();
 
         foreach (var snapshot in snapshots)
@@ -62,12 +63,18 @@ public class UsageTrackingService(IUsageStore usageStore, IActivityLogStore acti
                 if (!string.IsNullOrEmpty(state.CurrentDayKey))
                 {
                     await usageStore.AppendDailyHistoryAsync(
-                        new UsageDailyHistoryEntry(mac, state.CurrentDayKey, state.CurrentDayBytes, now, state.CurrentDayLanBytes), ct);
+                        new UsageDailyHistoryEntry(mac, state.CurrentDayKey, state.CurrentDayBytes, now, state.CurrentDayLanBytes, UsageSampleCoverage.IsComplete(state, now, periodClock)), ct);
                 }
                 state.CurrentDayKey = dayKey;
                 state.CurrentDayBytes = 0;
                 state.CurrentDayLanBytes = 0;
+                state.DayFirstPollAtUtc = null;
+                state.DayHasSamplingGap = false;
             }
+            state.DayFirstPollAtUtc ??= now;
+            state.DayHasSamplingGap |= lanSample.HadOutage;
+            if (state.LastPollAtUtc is { } lastPoll && now - lastPoll > UsageSampleCoverage.MaximumGap)
+                state.DayHasSamplingGap = true;
 
             var current = snapshot.Usage.TotalBytes;
 
@@ -90,6 +97,7 @@ public class UsageTrackingService(IUsageStore usageStore, IActivityLogStore acti
                 // Counter went backwards — reset, cause unknown and irrelevant (restart, daily
                 // rollover, whatever). Assume it restarted at 0 and resume from here.
                 routerDelta = current;
+                state.DayHasSamplingGap = true;
                 await activityLog.AppendAsync(new ActivityLogEntry(now, ActivityEventType.UsageCounterReset, mac,
                     $"Usage counter reset detected (was {state.LastRawCounterBytes} bytes, now {current}) — resumed accumulation from new baseline"), ct);
             }

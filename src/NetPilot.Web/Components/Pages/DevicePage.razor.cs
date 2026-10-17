@@ -35,6 +35,7 @@ public partial class DevicePage : IDisposable
     private readonly Dictionary<string, DateTimeOffset> _saves = [];
     private Device? _device;
     private MacAddress _mac;
+    private bool _quickActions;
     private bool _valid, _loaded, _busy, _editing, _protected, _hasRouter, _month;
     private string? _error;
     private string _name = "", _category = "", _icon = "";

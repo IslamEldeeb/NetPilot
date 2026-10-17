@@ -65,6 +65,7 @@ public class LiteUsageStore : IUsageStore
             Id = $"{entry.Mac}|{entry.DayKey}",
             Mac = entry.Mac,
             DayKey = entry.DayKey,
+            ForecastEligible = entry.ForecastEligible,
             TotalBytes = entry.TotalBytes,
             LanBytes = entry.LanBytes,
             FinalizedAtUtc = entry.FinalizedAtUtc
@@ -75,7 +76,7 @@ public class LiteUsageStore : IUsageStore
     public Task<IReadOnlyList<UsageDailyHistoryEntry>> GetAllDailyHistoryAsync(CancellationToken ct)
     {
         IReadOnlyList<UsageDailyHistoryEntry> entries = _dailyHistory.FindAll()
-            .Select(h => new UsageDailyHistoryEntry(new MacAddress(h.Mac), h.DayKey, h.TotalBytes, h.FinalizedAtUtc, h.LanBytes))
+            .Select(h => new UsageDailyHistoryEntry(new MacAddress(h.Mac), h.DayKey, h.TotalBytes, h.FinalizedAtUtc, h.LanBytes, h.ForecastEligible))
             .ToList();
         return Task.FromResult(entries);
     }
@@ -91,6 +92,7 @@ public class LiteUsageStore : IUsageStore
         CurrentDayLanBytes = doc.CurrentDayLanBytes,
         CurrentMonthLanBytes = doc.CurrentMonthLanBytes,
         PendingLanCarryBytes = doc.PendingLanCarryBytes,
+        DayFirstPollAtUtc = doc.DayFirstPollAtUtc, DayHasSamplingGap = doc.DayHasSamplingGap,
         CurrentDayBytes = doc.CurrentDayBytes
     };
 
@@ -105,6 +107,7 @@ public class LiteUsageStore : IUsageStore
         CurrentDayLanBytes = state.CurrentDayLanBytes,
         CurrentMonthLanBytes = state.CurrentMonthLanBytes,
         PendingLanCarryBytes = state.PendingLanCarryBytes,
+        DayFirstPollAtUtc = state.DayFirstPollAtUtc, DayHasSamplingGap = state.DayHasSamplingGap,
         CurrentDayBytes = state.CurrentDayBytes
     };
 }

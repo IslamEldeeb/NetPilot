@@ -1,5 +1,66 @@
 @page "/usage"
 @layout AppShell
+@using NetPilot.Core.Budget
+@using NetPilot.Core.Usage
+@using NetPilot.Web.Features
+@using NetPilot.Web.Components.Usage
+@using NetPilot.Web.Components.Devices
+@inject UsageOverviewQuery Query
+@inject IHouseholdBudgetStore Budgets
+@inject UsagePeriodClock Clock
+@inject ILogger<Usage> Logger
 <PageTitle>Usage · NetPilot</PageTitle>
-<MudStack Spacing="2" Class="mb-6"><MudText Typo="Typo.h1" HtmlTag="h1">Usage</MudText></MudStack>
-<EmptyState Body="Internet totals, LAN exclusions and device rankings remain available in Classic view." Href="/legacy#usage" Icon="usage" />
+<MudStack Spacing="4">
+    <MudText Typo="Typo.h1" HtmlTag="h1">Usage</MudText>
+    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+        <MudButton OnClick="LoadAsync">Refresh saved usage</MudButton>
+        <MudButton OnClick="OpenBudget">ISP budget</MudButton>
+        <MudLink Href="/legacy#usage">Classic usage</MudLink>
+    </MudStack>
+    @if (_error is not null) { <MudAlert Severity="Severity.Error" role="alert">@_error</MudAlert> }
+    @if (_overview is null && _error is null) { <MudProgressCircular Indeterminate="true" aria-label="Loading usage" /> }
+    @if (_overview is { } overview)
+    {
+        <MudAlert Severity="Severity.Info" id="usage-confidence">@overview.Confidence Historical bytes are not reclassified. LAN totals count both endpoints. Decimal GB (1 GB = 1,000,000,000 bytes).</MudAlert>
+        <MudText Typo="Typo.caption">Last successful router read: @LocalTime(overview.Heartbeat?.LastSuccessfulRouterReadUtc). LAN source last read: @LocalTime(overview.LanStatus.LastReadAtUtc). Unavailable since: @LocalTime(overview.LanStatus.UnavailableSinceUtc).</MudText>
+        <MudGrid>
+            <MudItem xs="12" sm="4"><MudSelect T="ReportPeriod" Value="_period" ValueChanged="ChangePeriod" Label="Period"><MudSelectItem Value="ReportPeriod.Day">Day</MudSelectItem><MudSelectItem Value="ReportPeriod.Week">Week (Monday–Sunday)</MudSelectItem><MudSelectItem Value="ReportPeriod.Month">Month</MudSelectItem></MudSelect></MudItem>
+            <MudItem xs="12" sm="4"><MudDatePicker Label="Date within period" Date="_date" DateChanged="ChangeDate" DateFormat="yyyy-MM-dd" Editable="true" /></MudItem>
+            <MudItem xs="12" sm="4"><MudSelect T="string" Value="_mac" ValueChanged="ChangeDevice" Label="Device"><MudSelectItem T="string" Value="@(string.Empty)">All devices</MudSelectItem>@foreach (var choice in DeviceChoices) { <MudSelectItem T="string" Value="@choice.Mac">@choice.Name</MudSelectItem> }</MudSelect></MudItem>
+        </MudGrid>
+        @if (_report is { } report)
+        {
+            <MudText>@report.Range.Start.ToString("yyyy-MM-dd") to @report.Range.EndExclusive.AddDays(-1).ToString("yyyy-MM-dd") · @Clock.TimeZone.Id</MudText>
+            @if (report.HasObservation)
+            {
+                <MudText Typo="Typo.h2">@DataSize.ToGb(report.InternetBytes).ToString("0.##") GB Internet · @DataSize.ToGb(report.LanBytes).ToString("0.##") GB excluded LAN</MudText>
+                <MudText Typo="Typo.caption">Recorded totals; missing days are not zero. Calendar-month counters preserve all legacy monthly history.</MudText>
+                <MudButton Variant="Variant.Outlined" Href="@CsvHref" download="@($"netpilot-usage-{report.Range.Start:yyyy-MM-dd}.csv")">Export shown period CSV</MudButton>
+            }
+            else { <EmptyState Title="No saved usage for this period" Body="Usage appears after the next successful tick. Missing observations are not zero." Href="/devices" ActionText="See devices" /> }
+            <MudGrid>
+                <MudItem xs="12" md="8"><MudPaper Outlined="true" Class="pa-4"><DeviceUsageChart Days="_days" /><MudText Typo="Typo.caption">30 days ending on the selected date. Daily totals only; no hourly samples are stored.</MudText></MudPaper></MudItem>
+                <MudItem xs="12" md="4"><BudgetCard Overview="@(_error is null ? overview : overview with { Forecast = null })" TimeZone="@Clock.TimeZone.Id" /></MudItem>
+            </MudGrid>
+            <MudText Typo="Typo.h2">Category ranking</MudText>
+            @foreach (var category in report.Rows.GroupBy(row => row.Category).OrderByDescending(group => group.Sum(row => row.InternetBytes)))
+            { <MudText>@category.Key · @DataSize.ToGb(category.Sum(row => row.InternetBytes)).ToString("0.##") GB Internet</MudText> }
+            <MudText Typo="Typo.h2">Per-device usage</MudText>
+            <MudTable Items="report.Rows" Dense="true" Elevation="0" Breakpoint="Breakpoint.Sm">
+                <HeaderContent><MudTh>Device</MudTh><MudTh>Category</MudTh><MudTh>Internet GB</MudTh><MudTh>Excluded LAN GB</MudTh></HeaderContent>
+                <RowTemplate><MudTd DataLabel="Device"><MudLink Href="@($"/devices/{context.Mac}")">@context.Name</MudLink><MudText Typo="Typo.caption">@context.Mac</MudText></MudTd><MudTd DataLabel="Category">@context.Category</MudTd><MudTd DataLabel="Internet GB">@DataSize.ToGb(context.InternetBytes).ToString("0.#########")</MudTd><MudTd DataLabel="Excluded LAN GB">@DataSize.ToGb(context.LanBytes).ToString("0.#########")</MudTd></RowTemplate>
+                <NoRecordsContent><MudText>No saved observations.</MudText></NoRecordsContent>
+            </MudTable>
+        }
+    }
+</MudStack>
+<AppSheet @bind-Open="_editingBudget" Title="Household ISP budget">
+    <MudStack Spacing="3">
+        <MudText>This monthly household budget is separate from per-device quota caps. Saving it never changes enforcement.</MudText>
+        <MudNumericField T="decimal?" @bind-Value="_budgetGb" Label="Monthly budget (decimal GB)" Min="0.000000001m" />
+        <MudNumericField T="int" @bind-Value="_billingDay" Label="Billing day (1–31)" Min="1" Max="31" HelperText="Clamped independently to each month's last day." />
+        @if (_budgetError is not null) { <MudAlert Severity="Severity.Error">@_budgetError</MudAlert> }
+        <MudButton OnClick="SaveBudgetAsync" Disabled="_savingBudget" Variant="Variant.Filled" Color="Color.Primary">Save budget</MudButton>
+        <MudButton OnClick="RemoveBudgetAsync" Disabled="_savingBudget">Remove household budget</MudButton>
+    </MudStack>
+</AppSheet>

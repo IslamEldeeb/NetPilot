@@ -1,0 +1,28 @@
+@using NetPilot.Core.Usage
+@using NetPilot.Web.Features
+<MudCard Outlined="true"><MudCardContent><MudStack Spacing="2">
+    <MudText Typo="Typo.h2">Household ISP budget</MudText>
+    @if (Overview.Budget is { } budget && Overview.Cycle is { } cycle)
+    {
+        <MudText>@cycle.Start.ToString("yyyy-MM-dd") to @cycle.EndExclusive.AddDays(-1).ToString("yyyy-MM-dd") · @TimeZone</MudText>
+        @if (Overview.CycleUsage is { HasObservation: true } usage)
+        {
+            <MudText>@DataSize.ToGb(usage.InternetBytes).ToString("0.##") of @DataSize.ToGb(budget.MonthlyBytes).ToString("0.##") GB Internet recorded</MudText>
+            <MudText Typo="Typo.caption">Missing days are unobserved, not zero. Billing-cycle totals use available saved history.</MudText>
+        }
+        else { <MudText>Usage unknown · budget @DataSize.ToGb(budget.MonthlyBytes).ToString("0.##") GB</MudText> }
+        @if (Overview.Forecast is { } estimate)
+        {
+            <MudText>Estimated: about @decimal.Ceiling(estimate.DaysRemaining) days left, around @estimate.EstimatedExhaustion.ToString("yyyy-MM-dd").</MudText>
+            <MudText Typo="Typo.caption">@DataSize.ToGb(estimate.AverageBytesPerDay).ToString("0.##") GB/day from @estimate.SampleDays valid completed days in the last seven days.</MudText>
+        }
+        else { <MudText>Estimate unavailable: not enough reliable history, incomplete cycle coverage, or a stale read/outage.</MudText> }
+        <MudText Typo="Typo.caption">Method: average Internet bytes across valid completed days in the last seven days (at least three). Divide remaining cycle budget by that daily average. Forecast is an estimate and never triggers enforcement.</MudText>
+    }
+    else { <MudText>No household budget configured. Device quotas are separate.</MudText> }
+    <MudButton Href="/usage?budget=true">@(Overview.Budget is null ? "Set ISP budget" : "Edit ISP budget")</MudButton>
+</MudStack></MudCardContent></MudCard>
+@code {
+    [Parameter, EditorRequired] public UsageOverview Overview { get; set; } = default!;
+    [Parameter] public string TimeZone { get; set; } = UsagePeriodClock.DefaultTimeZoneId;
+}

@@ -182,6 +182,30 @@ public class RuleAgentIntegrationTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task Worker_AppliesQueuedTemporaryPause_ThenExpiryLeavesRuleThrottle()
+    {
+        using var services = Services();
+        var fixture = new Fixture(services);
+        await fixture.SeedAsync();
+        var time = new BatchCTimeProvider(Now);
+        var clock = new UsagePeriodClock(timeProvider: time);
+        var claims = services.GetRequiredService<IActionClaimStore>();
+        var protection = services.GetRequiredService<IProtectedDeviceStore>();
+        var commands = new NetPilot.Core.Actions.TemporaryActions(fixture.Devices, protection, claims, clock, new(false));
+        var temporary = new NetPilot.Core.Actions.TemporaryActionEnforcement(claims, fixture.Devices, protection, fixture.Claims, clock, new(false));
+        await commands.RequestAsync(new(Guid.NewGuid(), [Mac], ClaimKind.Block, 15, DryRun: false), Ct);
+        var worker = fixture.Worker(services.GetRequiredService<IAgentHeartbeatStore>(), temporary: temporary);
+        await worker.RunTickAsync(Ct);
+        Assert.Single(fixture.Provider.BlockedMacs);
+        time.UtcNow = time.UtcNow.AddMinutes(15);
+        await worker.RunTickAsync(Ct);
+        Assert.Single(fixture.Provider.UnblockRequests);
+        Assert.DoesNotContain(await claims.GetAllAsync(Ct), claim => claim.Source.StartsWith("temporary:"));
+        Assert.Contains(await claims.GetAllAsync(Ct), claim => claim.Source.StartsWith("rule:"));
+        Assert.Equal(128, (await fixture.Devices.FindByMacAsync(Mac, Ct))!.QuotaThrottle!.DownloadKbps);
+    }
+
     private ServiceProvider Services() => new ServiceCollection()
         .AddNetPilotData(Path.Combine(_directory, "test.db"), Path.Combine(_directory, "keys")).BuildServiceProvider();
 
@@ -225,12 +249,12 @@ public class RuleAgentIntegrationTests : IDisposable
                 new(true, 5000, 1000, null), new(1000))];
             return rule.Id;
         }
-        public Worker Worker(IAgentHeartbeatStore heartbeatStore, IRuleStore? rules = null) => new(
+        public Worker Worker(IAgentHeartbeatStore heartbeatStore, IRuleStore? rules = null, NetPilot.Core.Actions.TemporaryActionEnforcement? temporary = null) => new(
             NullLogger<Worker>.Instance, new ConfigurationBuilder().Build(), Policies,
             _services.GetRequiredService<IRouterConnectionStore>(), _services.GetRequiredService<RouterPasswordProtector>(),
             Provider, Reconciliation,
             new(Usage, Activity, Clock, new(new NullLocalTrafficSource(), _services.GetRequiredService<ILocalTrafficStore>(), Activity, Clock), Devices),
-            Quota, Evaluator(rules), heartbeatStore, new() { ForceDryRun = true }, new FixedTime());
+            Quota, Evaluator(rules), heartbeatStore, new() { ForceDryRun = true }, new FixedTime(), temporary);
 
         public RuleEvaluationService Evaluator(IRuleStore? rules = null) => new(rules ?? _services.GetRequiredService<IRuleStore>(),
             Firings, Devices, Usage, _services.GetRequiredService<IProtectedDeviceStore>(), _services.GetRequiredService<IActionClaimStore>(), Claims,

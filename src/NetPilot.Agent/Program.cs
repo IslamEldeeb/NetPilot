@@ -1,4 +1,5 @@
 using NetPilot.Agent;
+using NetPilot.Core.Actions;
 using NetPilot.Core.Enforcement;
 using NetPilot.Core.Enforcement.Claims;
 using NetPilot.Core.Notifications;
@@ -29,11 +30,14 @@ builder.Services.AddSingleton<IQuotaEventSink, NullQuotaEventSink>();
 builder.Services.AddSingleton<IQuotaEventSink, ActivityLogQuotaEventSink>();
 builder.Services.AddSingleton<IQuotaEventSink, NotificationQuotaEventSink>();
 builder.Services.AddSingleton<ClaimEnforcementService>();
+builder.Services.AddSingleton<TemporaryActionEnforcement>();
 builder.Services.AddSingleton<QuotaEnforcementService>();
 var rulesOptions = new RulesOptions();
 builder.Configuration.GetSection("NetPilot:Rules").Bind(rulesOptions);
 rulesOptions.Validate();
 builder.Services.AddSingleton(rulesOptions);
+builder.Services.AddSingleton(new NetPilot.Core.Actions.TemporaryActionOptions(
+    builder.Configuration.GetValue("NetPilot:TemporaryActions:ForceDryRun", true)));
 builder.Services.AddSingleton<RuleEvaluationService>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddHostedService<Worker>();

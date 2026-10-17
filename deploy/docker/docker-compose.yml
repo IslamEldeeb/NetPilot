@@ -10,6 +10,7 @@ services:
       - ROUTER_HOST=${ROUTER_HOST:-}
       - ROUTER_PASSWORD=${ROUTER_PASSWORD:-}
       - NetPilot__Rules__ForceDryRun=${NETPILOT_RULES_FORCE_DRYRUN:-true}
+      - NetPilot__TemporaryActions__ForceDryRun=${NETPILOT_TEMPORARY_FORCE_DRYRUN:-true}
       - NetPilot__Rules__Enabled=${NETPILOT_RULES_ENABLED:-true}
       - NetPilot__PollIntervalSeconds=${NETPILOT_POLL_INTERVAL_SECONDS:-180}
       - NetPilot__Notifications__VapidSubject=${NETPILOT_VAPID_SUBJECT:-mailto:netpilot@localhost}
@@ -35,6 +36,7 @@ services:
       - NetPilot__Ui__RedesignEnabled=${NETPILOT_UI_REDESIGN:-true}
       - NetPilot__Web__Password=${NETPILOT_WEB_PASSWORD:-}
       - NetPilot__Rules__ForceDryRun=${NETPILOT_RULES_FORCE_DRYRUN:-true}
+      - NetPilot__TemporaryActions__ForceDryRun=${NETPILOT_TEMPORARY_FORCE_DRYRUN:-true}
       - NetPilot__Rules__Enabled=${NETPILOT_RULES_ENABLED:-true}
       - NetPilot__PollIntervalSeconds=${NETPILOT_POLL_INTERVAL_SECONDS:-180}
       - NetPilot__Notifications__VapidSubject=${NETPILOT_VAPID_SUBJECT:-mailto:netpilot@localhost}

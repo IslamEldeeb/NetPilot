@@ -8,7 +8,7 @@ Implementation is underway: all projects in `src/` exist and build (`NetPilot.Ab
 
 ### UI redesign status
 
-Batch A1 foundation, M1 MudBlazor adoption and Batch B Devices list/detail (including persisted identity overrides) are implemented; the UI redesign is in progress. Batch B uses existing manual router paths, heartbeat-based status and safe claim release requests; live mobile/router verification remains pending. The shell uses MudBlazor 9.11.0 with a system-font light/dark `NetPilotTheme`; Classic view retains Bootstrap and its existing components. `NetPilot:Ui:RedesignEnabled` defaults to true (Compose: `NETPILOT_UI_REDESIGN`); false restores the classic dashboard at `/`. All existing tabs remain at `/legacy` during migration. See `docs/design/README.md`.
+Batch A1 foundation, M1 MudBlazor adoption, Batch B Devices list/detail and Batch C Home/Usage, ISP budget/forecast and Agent-owned temporary actions/bonuses are implemented; the UI redesign is in progress. Batch B uses existing manual router paths, heartbeat-based status and safe claim release requests; live mobile/router verification remains pending. Temporary actions default to forced dry-run; see `docs/batch-c-usage-actions.md`. The shell uses MudBlazor 9.11.0 with a system-font light/dark `NetPilotTheme`; Classic view retains Bootstrap and its existing components. `NetPilot:Ui:RedesignEnabled` defaults to true (Compose: `NETPILOT_UI_REDESIGN`); false restores the classic dashboard at `/`. All existing tabs remain at `/legacy` during migration. See `docs/design/README.md`.
 
 ### Phase 5 status
 

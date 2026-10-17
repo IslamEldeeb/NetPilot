@@ -15,4 +15,6 @@ public class UsageStateDocument
     public long CurrentDayLanBytes { get; set; }
     public long CurrentMonthLanBytes { get; set; }
     public long PendingLanCarryBytes { get; set; }
+    public DateTimeOffset? DayFirstPollAtUtc { get; set; }
+    public bool DayHasSamplingGap { get; set; }
 }

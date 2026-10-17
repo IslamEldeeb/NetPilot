@@ -26,7 +26,7 @@ namespace NetPilot.Data.Tests.Web;
 public sealed class ShellRenderingTests
 {
     [Theory]
-    [InlineData(typeof(Home), "Welcome to the new NetPilot", "/legacy")]
+    [InlineData(typeof(Home), "Home network", "/legacy")]
     [InlineData(typeof(Devices), "Devices", "/legacy#devices")]
     [InlineData(typeof(Usage), "Usage", "/legacy#usage")]
     [InlineData(typeof(Automations), "Global default", "/legacy#policies")]
@@ -224,7 +224,7 @@ public sealed class ShellRenderingTests
         finally { Directory.Delete(directory, recursive: true); }
     }
 
-    private static ServiceProvider Services(string directory, bool loginEnabled = false)
+    internal static ServiceProvider Services(string directory, bool loginEnabled = false, Action<IServiceCollection>? configure = null)
     {
         var configuration = new ConfigurationBuilder().Build();
         var services = new ServiceCollection().AddLogging()
@@ -237,6 +237,8 @@ public sealed class ShellRenderingTests
         services.AddMudServices();
         services.AddScoped<Confirm>();
         services.AddScoped<DeviceRouterActions>();
+        services.AddScoped<NetPilot.Web.Features.UsageOverviewQuery>();
+        services.AddSingleton(new NetPilot.Core.Actions.TemporaryActionOptions());
         services.AddDashboardLogin(configuration);
         if (loginEnabled) services.AddSingleton(new DashboardLoginOptions("test-password"));
         services.AddSingleton<AntiforgeryStateProvider, StaticAntiforgery>();
@@ -244,6 +246,7 @@ public sealed class ShellRenderingTests
         services.AddNetPilotWebPush(configuration);
         services.AddNetPilotLocalTraffic(configuration);
         services.AddSingleton<PolicyReconciliationService>().AddSingleton<UsageTrackingService>();
+        configure?.Invoke(services);
         return services.BuildServiceProvider();
     }
 

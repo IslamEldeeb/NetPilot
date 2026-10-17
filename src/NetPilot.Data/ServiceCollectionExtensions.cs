@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
 using NetPilot.Core.Devices;
+using NetPilot.Core.Budget;
+using NetPilot.Core.Actions;
 using NetPilot.Core.Health;
 using NetPilot.Core.Enforcement;
 using NetPilot.Core.Enforcement.Claims;
@@ -66,6 +68,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IActivityLogStore, LiteActivityLogStore>();
         services.AddSingleton<IRouterConnectionStore, LiteRouterConnectionStore>();
         services.AddSingleton<IUsageStore, LiteUsageStore>();
+        services.AddSingleton<IHouseholdBudgetStore, LiteHouseholdBudgetStore>();
+        services.AddSingleton<TemporaryActions>();
+        services.AddSingleton<QuotaBonusCommands>();
         services.AddSingleton<ILocalTrafficStore, LiteLocalTrafficStore>();
         services.AddSingleton<IDeviceClassifier, HeuristicDeviceClassifier>();
         services.AddSingleton<RouterPasswordProtector>();

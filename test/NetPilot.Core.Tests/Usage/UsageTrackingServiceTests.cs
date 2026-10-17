@@ -126,6 +126,23 @@ public class UsageTrackingServiceTests
         Assert.Empty(log.Entries);
     }
 
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public async Task FinalizedDay_OnlyQualifiesForForecastWithContinuousPolling(bool missedPolls, bool expected)
+    {
+        var midnight = DateTimeOffset.Parse("2026-10-15T21:00:00Z");
+        var time = new FakeTimeProvider(midnight.AddMinutes(3));
+        var (service, usage, _) = Build(time);
+        for (var minutes = 3; minutes <= 1443; minutes += 3)
+        {
+            if (missedPolls && minutes is > 120 and < 180) continue;
+            time.UtcNow = midnight.AddMinutes(minutes);
+            await service.TrackAsync([MakeSnapshot(usage: new UsageSnapshot(minutes * 1000))], default);
+        }
+        Assert.Equal(expected, Assert.Single(usage.DailyHistory).ForecastEligible);
+    }
+
     [Fact]
     public async Task SnapshotWithNullUsage_IsSkipped()
     {
