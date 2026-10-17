@@ -1,4 +1,6 @@
 using NetPilot.Core.Usage;
+using NetPilot.Core.Enforcement;
+using NetPilot.Core.Activity;
 
 namespace NetPilot.Core.Notifications;
 
@@ -8,11 +10,13 @@ public sealed class NotificationDispatcher
     private readonly INotificationLogStore _log;
     private readonly UsagePeriodClock _clock;
     private readonly NotificationOptions _options;
+    private readonly IActivityLogStore? _activity;
 
     public NotificationDispatcher(IEnumerable<INotificationChannel> channels, INotificationLogStore log,
-        UsagePeriodClock clock, NotificationOptions options)
+        UsagePeriodClock clock, NotificationOptions options, IActivityLogStore? activity = null)
     {
         options.Validate();
+        _activity = activity;
         _channels = channels.Select(c => new ChannelState(c)).ToArray();
         _log = log;
         _clock = clock;
@@ -24,6 +28,16 @@ public sealed class NotificationDispatcher
 
     public async Task DispatchAsync(NotificationMessage message, NotificationInterruption interruption, CancellationToken ct)
     {
+        if (_activity is not null)
+        {
+            await _activity.AppendAsync(new(_clock.GetUtcNow(), ActivityEventType.NotificationCreated, message.Mac,
+                ActivityPrivacy.Redact(message.Title + ": " + message.Body))
+            {
+                Source = "notifications", Kind = "notification", IsNotification = true,
+                DeduplicationKey = "notification:" + message.Tag, CorrelationId = message.CorrelationId, DryRun = message.DryRun
+            }, ct);
+            if (_activity is IActivityFeed feed) await feed.PruneAsync(_clock.GetUtcNow().AddDays(-62), ct);
+        }
         await Task.WhenAll(_channels.Select(channel => SendToChannelAsync(channel, message, interruption, ct)));
         await _log.PruneAsync(500, ct);
     }

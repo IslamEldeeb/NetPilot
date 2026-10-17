@@ -37,7 +37,7 @@ public class NotificationQuotaEventSink(NotificationDispatcher dispatcher, IQuot
                 new NotificationAction(NotificationActionIds.RestoreNow, "Restore now",
                     tokens.Create(new(e.Mac, e.PeriodKind, e.PeriodKey, NotificationActionIds.RestoreNow)))
             } : [];
-        return new("NetPilot quota", body, "/", tag, actions);
+        return new("NetPilot quota", body, "/", tag, actions) { DryRun = e.DryRun, Mac = e.Mac, CorrelationId = $"quota:{e.Mac}:{e.PeriodKind}:{e.PeriodKey}" };
     }
 
     private static string DryRunBody(QuotaEvent e) => e.Action switch

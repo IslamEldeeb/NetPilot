@@ -49,7 +49,7 @@ public partial class RuleEvaluationService(
             }
             catch (Exception ex) when (!ct.IsCancellationRequested)
             {
-                await LogAsync(ActivityEventType.RuleFailed, rule.Name, null, $"evaluation failed: {ex.Message}", ct);
+                await LogAsync(ActivityEventType.RuleFailed, (rule.Name, rule.Id.ToString(), rule.DryRun || options.ForceDryRun), null, $"evaluation failed: {ex.Message}", ct);
             }
         }
         await firingStore.PruneAsync(1000, ct);
@@ -74,20 +74,12 @@ public partial class RuleEvaluationService(
         }
         catch (Exception ex) when (!ct.IsCancellationRequested)
         {
-            await LogAsync(ActivityEventType.RuleFailed, rule.Name, device?.Mac, $"evaluation failed: {ex.Message}", ct);
+            await LogAsync(ActivityEventType.RuleFailed, (rule.Name, rule.Id.ToString(), rule.DryRun || options.ForceDryRun), device?.Mac, $"evaluation failed: {ex.Message}", ct);
         }
     }
 
-    private bool Suppressed(Rule rule, TriggerMatch match, RuleFiring? latest)
-    {
-        if (latest is null) return false;
-        if (rule.Trigger is DeviceJoined) return true;
-        if (rule.Trigger is TimeWindow or DeviceIdle && latest.TriggerEpisodeKey == match.EpisodeKey) return true;
-        if (rule.OncePer == RuleOncePer.Day) return latest.DayKey == clock.TodayKey();
-        if (rule.OncePer == RuleOncePer.Month) return latest.MonthKey == clock.ThisMonthKey();
-        return latest.FiredAtUtc >= clock.GetUtcNow()
-            || (clock.GetUtcNow() - latest.FiredAtUtc).TotalMinutes < rule.CooldownMinutes;
-    }
+    private bool Suppressed(Rule rule, TriggerMatch match, RuleFiring? latest) =>
+        RuleRepeatSuppression.IsSuppressed(rule, match, latest, clock);
 
     private RuleFiring NewFiring(Rule rule, Device? device, TriggerMatch match, MacAddress[] targets)
     {
@@ -123,7 +115,7 @@ public partial class RuleEvaluationService(
         {
             var current = await firingStore.FindAsync(firing.Id, ct) ?? firing;
             await SaveAsync(current with { Outcome = RuleFiringOutcome.Failed, Error = ex.Message }, ct);
-            await LogAsync(ActivityEventType.RuleFailed, firing.RuleName, SubjectMac(firing), $"action failed: {ex.Message}", ct);
+            await LogAsync(ActivityEventType.RuleFailed, (firing.RuleName, firing.Id, firing.DryRun), SubjectMac(firing), $"action failed: {ex.Message}", ct);
         }
     }
 
@@ -131,8 +123,9 @@ public partial class RuleEvaluationService(
         current => firing with { ReleaseRequested = firing.Status == RuleFiringStatus.Active
             && (firing.ReleaseRequested || current?.ReleaseRequested == true) }, ct);
 
-    private Task LogAsync(ActivityEventType type, string ruleName, MacAddress? mac, string message, CancellationToken ct) =>
-        activityLog.AppendAsync(new(clock.GetUtcNow(), type, mac, $"Rule '{ruleName}': {message}"), ct);
+    private Task LogAsync(ActivityEventType type, (string Name, string Correlation, bool DryRun) rule, MacAddress? mac, string message, CancellationToken ct) =>
+        activityLog.AppendAsync(new(clock.GetUtcNow(), type, mac, $"Rule '{rule.Name}': {message}")
+        { Source = "rules", Actor = "Agent", Kind = "rule", CorrelationId = rule.Correlation, DryRun = rule.DryRun, Failed = type == ActivityEventType.RuleFailed }, ct);
 
     private static MacAddress? SubjectMac(RuleFiring firing) => firing.Subject == "household" ? null : new MacAddress(firing.Subject);
     private static string Source(Guid id) => $"rule:{id}";

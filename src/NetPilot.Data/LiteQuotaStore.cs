@@ -23,13 +23,21 @@ public class LiteQuotaStore(NetPilotDatabase db) : IQuotaStore
         var errors = policy.Validate();
         if (errors.Count > 0)
             throw new ArgumentException(string.Join(" ", errors), nameof(policy));
-        _collection.Upsert(ToDocument(policy));
+        db.InTransaction(() =>
+        {
+            _collection.Upsert(ToDocument(policy));
+            AutomationRevision.Advance(db, "quota:" + policy.Id);
+        });
         return Task.CompletedTask;
     }
 
     public Task DeleteAsync(string id, CancellationToken ct)
     {
-        _collection.Delete(id);
+        db.InTransaction(() =>
+        {
+            _collection.Delete(id);
+            AutomationRevision.Advance(db, "quota:" + id);
+        });
         return Task.CompletedTask;
     }
 

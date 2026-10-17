@@ -27,13 +27,21 @@ public class LiteRuleStore(NetPilotDatabase db, ILogger<LiteRuleStore>? logger =
         ct.ThrowIfCancellationRequested();
         var errors = rule.Validate();
         if (errors.Count > 0) throw new ArgumentException(string.Join(" ", errors), nameof(rule));
-        _rules.Upsert(new RuleDocument { Id = rule.Id.ToString(), Payload = JsonSerializer.Serialize(rule, RuleJson.Options) });
+        db.InTransaction(() =>
+        {
+            _rules.Upsert(new RuleDocument { Id = rule.Id.ToString(), Payload = JsonSerializer.Serialize(rule, RuleJson.Options) });
+            AutomationRevision.Advance(db, "rule:" + rule.Id);
+        });
         return Task.CompletedTask;
     }
 
     public Task DeleteAsync(Guid id, CancellationToken ct)
     {
-        _rules.Delete(id.ToString());
+        db.InTransaction(() =>
+        {
+            _rules.Delete(id.ToString());
+            AutomationRevision.Advance(db, "rule:" + id);
+        });
         return Task.CompletedTask;
     }
 

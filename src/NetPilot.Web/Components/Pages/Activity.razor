@@ -1,5 +1,125 @@
 @page "/activity"
+@page "/activity/inbox"
+@page "/activity/events/{EventId:int}"
 @layout AppShell
+@using NetPilot.Core.Activity
+@using NetPilot.Core.Automations
+@using NetPilot.Core.Enforcement
+@using NetPilot.Core.Notifications
+@using NetPilot.Core.Usage
+@inject IActivityFeed Feed
+@inject IAutomationCommands Commands
+@inject INotificationLogStore DeliveryLog
+@inject UsagePeriodClock Clock
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@inject ActivityInboxState InboxState
+@inject ILogger<Activity> Logger
 <PageTitle>Activity · NetPilot</PageTitle>
-<MudStack Spacing="2" Class="mb-6"><MudText Typo="Typo.h1" HtmlTag="h1">Activity</MudText></MudStack>
-<EmptyState Body="Your existing activity log remains available in Classic view." Href="/legacy#activity" Icon="activity" />
+<MudStack Spacing="3">
+    <MudText Typo="Typo.h1" HtmlTag="h1">Activity</MudText>
+    <MudStack Row Wrap="Wrap.Wrap" role="navigation" aria-label="Activity sections">
+        <MudButton Href="/activity" Color="Color.Primary" Variant="@(!Inbox ? Variant.Filled : Variant.Outlined)">Timeline</MudButton>
+        <MudButton Href="/activity/inbox" Color="Color.Primary" Variant="@(Inbox ? Variant.Filled : Variant.Outlined)">Inbox · @_unread unread</MudButton>
+        <MudButton OnClick="Refresh">Refresh</MudButton>
+    </MudStack>
+    @if (_error is not null) { <MudAlert Severity="Severity.Error" role="alert">@_error</MudAlert> }
+    <MudGrid>
+        <MudItem xs="12" sm="4"><MudSelect T="string" Label="Kind" @bind-Value="_kind">
+            @foreach (var kind in new[] { "all", "rule", "quota", "system", "notification" }) { <MudSelectItem Value="kind">@kind</MudSelectItem> }
+        </MudSelect></MudItem>
+        <MudItem xs="12" sm="4"><MudSelect T="string" Label="Mode" @bind-Value="_mode"><MudSelectItem Value='@("all")'>All / unknown</MudSelectItem><MudSelectItem Value='@("dry-run")'>Dry-run</MudSelectItem><MudSelectItem Value='@("live")'>Live / not marked dry-run</MudSelectItem></MudSelect></MudItem>
+        <MudItem xs="12" sm="4"><MudTextField T="string" Label="Device MAC (optional)" @bind-Value="_mac" /></MudItem>
+    </MudGrid>
+    <MudCheckBox T="bool" @bind-Value="_failed" Label="Failed only" />
+    <MudButton OnClick="ApplyFilters" Disabled="_busy" Variant="Variant.Outlined">Apply filters</MudButton>
+    <MudText Typo="Typo.caption">@Clock.TimeZone.Id · Saved events, newest appended first. Older events retain unknown actor/mode. Inbox contains notification events; delivery attempts are shown separately.</MudText>
+    @if (_detailMissing) { <MudAlert Severity="Severity.Info">Event not found or removed by retention. <MudLink Href="/activity">View timeline</MudLink></MudAlert> }
+    @foreach (var entry in _entries)
+    {
+        <MudPaper Outlined Class="pa-4" @key="entry.EventId" aria-label="@($"Event {entry.EventId}")">
+            <MudText Typo="Typo.h3">@entry.Type @(entry.IsNotification && entry.ReadAtUtc is null ? "· Unread" : "")</MudText>
+            <MudText Typo="Typo.caption">@TimeZoneInfo.ConvertTime(entry.AtUtc, Clock.TimeZone).ToString("ddd, dd MMM yyyy HH:mm:ss") · @entry.Source · @entry.Actor · Event #@entry.EventId</MudText>
+            <MudText>@entry.Message</MudText>
+            <MudText Typo="Typo.caption">@(entry.DryRun == true ? "Dry-run" : entry.DryRun == false ? "Live" : "Mode not recorded") @(entry.Failed ? "· Failed" : "")</MudText>
+            <MudStack Row Wrap="Wrap.Wrap">
+                <MudLink Href="@($"/activity/events/{entry.EventId}")">Event details</MudLink>
+                @if (entry.Mac is {} mac) { <MudLink Href="@($"/devices/{mac}")">@mac · Why</MudLink> }
+                @if (entry.Kind == "rule") { <MudLink Href="@RuleWhy(entry)">Rule history / Why</MudLink> }
+                @if (entry.Kind == "quota") { <MudLink Href="/automations/quotas">Quota policy / Why</MudLink> }
+                @if (entry.IsNotification && entry.ReadAtUtc is null) { <MudButton OnClick="() => MarkRead(entry.EventId)">Mark read</MudButton> }
+                @if (entry.ChangeId is {} changeId && entry.Type == ActivityEventType.ConfigurationChanged && Clock.GetUtcNow() < entry.AtUtc.AddSeconds(10))
+                { <MudButton OnClick="() => Undo(changeId)">Undo configuration change</MudButton> }
+            </MudStack>
+            @if (EventId is not null && entry.CorrelationId is {} correlation) { <MudText Typo="Typo.caption">Correlation: @ActivityPrivacy.Redact(correlation)</MudText> }
+        </MudPaper>
+    }
+    @if (_entries.Count == 0 && !_detailMissing) { <MudText>@(Inbox ? "You're all caught up." : "Nothing to report yet.")</MudText> }
+    @if (_nextId is not null) { <MudButton OnClick="More" Disabled="_busy">Load older events</MudButton> }
+    <MudExpansionPanels><MudExpansionPanel Text="Notification delivery attempts (latest 20)">
+        <MudText>Sent means accepted by the push service, not delivered to a phone. Quiet-hours suppression, duplicate suppression and failed attempts remain distinct. Credentials and action URLs are never included here.</MudText>
+        @foreach (var attempt in _attempts)
+        {
+            <MudPaper Outlined Class="pa-3 my-2"><MudText>@ActivityPrivacy.Redact(attempt.Title)</MudText>
+                <MudText Typo="Typo.caption">@TimeZoneInfo.ConvertTime(attempt.AtUtc, Clock.TimeZone).ToString("yyyy-MM-dd HH:mm:ss") · @attempt.ChannelId · @(attempt.Outcome == NotificationOutcome.Sent ? "Sent to push service" : attempt.Outcome.ToString()) · @ActivityPrivacy.Redact(attempt.Error ?? "")</MudText>
+            </MudPaper>
+        }
+        <MudLink Href="/settings/notifications">Notification settings</MudLink>
+    </MudExpansionPanel></MudExpansionPanels>
+    <MudLink Href="/legacy#activity" Target="_top">Classic activity log</MudLink>
+</MudStack>
+@code {
+    [Parameter] public int? EventId { get; set; }
+    [SupplyParameterFromQuery(Name = "kind")] public string? Kind { get; set; }
+    [SupplyParameterFromQuery(Name = "mac")] public string? Mac { get; set; }
+    [SupplyParameterFromQuery(Name = "mode")] public string? Mode { get; set; }
+    [SupplyParameterFromQuery(Name = "failed")] public bool? Failed { get; set; }
+    private List<ActivityLogEntry> _entries = [];
+    private IReadOnlyList<NotificationLogEntry> _attempts = [];
+    private int? _nextId;
+    private int _unread;
+    private string _kind = "all", _mode = "all", _mac = "";
+    private bool _failed, _busy, _detailMissing;
+    private string? _error;
+    private bool Inbox => new Uri(Navigation.Uri).AbsolutePath == "/activity/inbox";
+    protected override async Task OnParametersSetAsync()
+    {
+        _kind = Kind ?? "all"; _mode = Mode ?? "all"; _mac = Mac ?? ""; _failed = Failed ?? false;
+        await Refresh();
+    }
+    private ActivityFilter Filter => new() { Kind = _kind, Mac = _mac.Length == 0 ? null : new NetPilot.Core.Devices.MacAddress(_mac).ToString(),
+        DryRun = _mode == "all" ? null : _mode == "dry-run", FailedOnly = _failed, Inbox = Inbox, BeforeId = _nextId };
+    private Task Refresh() => Run(Read);
+    private async Task Read()
+    {
+        await Feed.PruneAsync(Clock.GetUtcNow().AddDays(-62), default);
+        _entries = []; _nextId = null; _detailMissing = false;
+        if (EventId is {} id)
+        {
+            var entry = await Feed.FindAsync(id, default);
+            if (entry is not null) _entries.Add(entry); else _detailMissing = true;
+        }
+        else await LoadPage();
+        _unread = await Feed.UnreadCountAsync(default); _attempts = await DeliveryLog.GetRecentAsync(20, default);
+    }
+    private void ApplyFilters() => Navigation.NavigateTo(Navigation.GetUriWithQueryParameters(new Dictionary<string, object?>
+        { ["kind"] = _kind, ["mac"] = _mac, ["mode"] = _mode, ["failed"] = _failed }));
+    private Task More() => Run(LoadPage);
+    private async Task LoadPage() { var page = await Feed.QueryAsync(Filter, default); _entries.AddRange(page.Entries); _nextId = page.NextId; }
+    private Task MarkRead(int id) => Run(async () => { await Feed.MarkReadAsync(id, default); await InboxState.RefreshAsync(); await Read(); });
+    private Task Undo(string id) => Run(async () => { var outcome = await Commands.UndoAsync(id, default); Snackbar.Add(outcome == UndoOutcome.Restored ? "Configuration restored. Awaiting Agent." : $"Undo: {outcome}."); await Read(); });
+    private static string RuleWhy(ActivityLogEntry entry)
+    {
+        var id = entry.CorrelationId?.Split('|')[0];
+        return Guid.TryParse(id, out var ruleId) ? $"/automations/rules/{ruleId}/history" : "/automations/rules";
+    }
+    private async Task Run(Func<Task> action)
+    {
+        if (_busy) return;
+        _busy = true; _error = null;
+        try { await action(); }
+        catch (ArgumentException ex) { _error = ex.Message; }
+        catch (Exception ex) { Logger.LogError(ex, "Activity operation failed"); _error = "Could not load or update Activity. Refresh to retry."; }
+        finally { _busy = false; }
+    }
+}

@@ -19,7 +19,8 @@ public class ActivityLogQuotaEventSink(IActivityLogStore activityLog) : IQuotaEv
         };
         return activityLog.AppendAsync(new(quotaEvent.AtUtc, type, quotaEvent.Mac,
             $"{description} — {quotaEvent.DeviceDisplayName}: {quotaEvent.UsedBytes} / {quotaEvent.CapBytes} bytes "
-            + $"({quotaEvent.Percent:F1}%), {quotaEvent.PeriodKind} {quotaEvent.PeriodKey}"), ct);
+            + $"({quotaEvent.Percent:F1}%), {quotaEvent.PeriodKind} {quotaEvent.PeriodKey}")
+        { Source = "quotas", Actor = "Agent", Kind = "quota", DryRun = quotaEvent.DryRun, CorrelationId = $"quota:{quotaEvent.Mac}:{quotaEvent.PeriodKind}:{quotaEvent.PeriodKey}" }, ct);
     }
 
     private static string DescribeDryRun(QuotaEvent quotaEvent) => quotaEvent.Action switch

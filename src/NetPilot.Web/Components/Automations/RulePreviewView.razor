@@ -1,0 +1,27 @@
+@using NetPilot.Core.Rules
+@using NetPilot.Core.Rules.Presentation
+@using NetPilot.Core.Usage
+@inject UsagePeriodClock Clock
+@{ var preview = RulePreview.Evaluate(Rule, Context, Clock); }
+<MudPaper Outlined Class="pa-3" aria-label="Current-state rule preview">
+    <MudText Typo="Typo.h3">What would this rule do now?</MudText>
+    <MudText>@RuleSummary.Describe(Rule)</MudText>
+    <MudText>@preview.Subjects.Count subject(s) · @preview.TargetCount scoped device(s) · @preview.ProtectedCount protected target(s)</MudText>
+    <MudText>Effective mode: @(preview.DryRun ? "Dry-run" : "Live") · @Clock.TimeZone.Id</MudText>
+    <MudText Typo="Typo.caption">@preview.Limitations</MudText>
+    @if (preview.Subjects.Count == 0) { <MudText>No saved devices match the scope.</MudText> }
+    @foreach (var subject in preview.Subjects)
+    {
+        <MudText Typo="Typo.subtitle1">@subject.Subject · @subject.Status</MudText>
+        @foreach (var target in subject.Targets) { <MudText Typo="Typo.body2">@target</MudText> }
+        @foreach (var notification in subject.Notifications)
+        {
+            <MudText Typo="Typo.caption">@(subject.TriggerMatches ? "Notification text (sending still follows guards/quiet hours):" : "Hypothetical notification; trigger does not match:")</MudText>
+            <MudText>@notification.Title</MudText><MudText>@notification.Body</MudText>
+        }
+    }
+</MudPaper>
+@code {
+    [Parameter, EditorRequired] public Rule Rule { get; set; } = default!;
+    [Parameter] public RulePreviewContext Context { get; set; } = new();
+}

@@ -1,0 +1,90 @@
+@using NetPilot.Core.Policy
+@using NetPilot.Core.Devices
+@using NetPilot.Core.RouterConnection
+@inject IPolicyStore Policies
+@inject IDeviceStore Devices
+@inject IRouterConnectionStore Connections
+@inject DeviceRouterActions Router
+@inject Confirm Confirm
+@inject ISnackbar Snackbar
+@inject ILogger<SpeedPolicies> Logger
+<MudStack Spacing="3">
+    <MudText Typo="Typo.h2">Category speed policies</MudText>
+    <MudAlert Severity="Severity.Warning">Dry-run quotas/rules do not protect against base speed policy writes. Save awaits the Agent. Force reapply writes through the existing Web router path immediately.</MudAlert>
+    <MudText>Not configured: existing router limits are left alone. Saving a new category explicitly configures it. Blank direction means unlimited; download and upload are independent.</MudText>
+    @if (_error is not null) { <MudAlert Severity="Severity.Error" role="alert">@_error <MudButton OnClick="Reload">Reload saved policies</MudButton></MudAlert> }
+    <MudPaper Outlined Class="pa-4">
+        <MudText Typo="Typo.h3">Bulk fill (draft only)</MudText>
+        <MudCheckBox T="bool" @bind-Value="_bulkEnabled" Label="Limit enabled" />
+        <MudNumericField T="decimal?" Label="Download Mbps" @bind-Value="_bulkDown" Min="0" />
+        <MudNumericField T="decimal?" Label="Upload Mbps" @bind-Value="_bulkUp" Min="0" />
+        <MudButton OnClick="Fill" Disabled="_busy">Apply to all drafts</MudButton>
+    </MudPaper>
+    <MudStack Row Wrap="Wrap.Wrap">
+        <MudButton OnClick="SaveAll" Disabled="@(_busy || _rows.Count == 0)" Color="Color.Primary" Variant="Variant.Filled">Save all</MudButton>
+        <MudButton OnClick="SyncAll" Disabled="@(_busy || !_connected || _rows.Count == 0)">Force reapply all</MudButton>
+    </MudStack>
+    @foreach (var row in _rows)
+    {
+        <MudPaper Outlined Class="pa-4" @key="row.Original.CategoryKey">
+            <MudText Typo="Typo.h3">@row.Original.CategoryKey</MudText>
+            <MudText Typo="Typo.caption">Version @row.Original.DefinitionVersion · @(row.Original.IsUserConfigured ? "Configured" : "Not configured / not applied") · @_devices.Count(d => d.CategoryKey == row.Original.CategoryKey) saved devices</MudText>
+            <MudCheckBox T="bool" @bind-Value="row.Enabled" Label="Limit enabled (off = unlimited)" />
+            <MudGrid>
+                <MudItem xs="12" sm="6"><MudNumericField T="decimal?" Label="Download Mbps" @bind-Value="row.DownloadMbps" Min="0" /></MudItem>
+                <MudItem xs="12" sm="6"><MudNumericField T="decimal?" Label="Upload Mbps" @bind-Value="row.UploadMbps" Min="0" /></MudItem>
+            </MudGrid>
+            <MudStack Row Wrap="Wrap.Wrap"><MudButton OnClick="() => Save(row)" Disabled="_busy">Save</MudButton><MudButton OnClick="() => Reapply(row)" Disabled="@(_busy || !_connected)">Force reapply</MudButton></MudStack>
+        </MudPaper>
+    }
+</MudStack>
+@code {
+    private List<SpeedPolicyDraft> _rows = [];
+    private IReadOnlyList<Device> _devices = [];
+    private bool _bulkEnabled, _busy, _connected;
+    private decimal? _bulkDown, _bulkUp;
+    private string? _error;
+    protected override Task OnInitializedAsync() => Reload();
+    private Task Reload() => Run(Load);
+    private async Task Load()
+    {
+        await Policies.EnsureSeedCategoriesAsync(default);
+        _devices = await Devices.GetAllAsync(default);
+        _rows = (await Policies.GetAllAsync(default)).Select(SpeedPolicyDraft.From).OrderBy(p => p.Original.CategoryKey).ToList();
+        _connected = await Connections.GetAsync(default) is not null;
+    }
+    private void Fill() { foreach (var row in _rows) { row.Enabled = _bulkEnabled; row.DownloadMbps = _bulkDown; row.UploadMbps = _bulkUp; } }
+    private async Task Persist(SpeedPolicyDraft row, DevicePolicy changed)
+    {
+        var current = await Policies.FindByCategoryAsync(row.Original.CategoryKey, default);
+        if (current != row.Original) throw new InvalidOperationException("Category policy changed elsewhere. Reopen Speed policies before saving.");
+        await Policies.UpsertAsync(changed, default); row.Original = changed;
+    }
+    private Task Save(SpeedPolicyDraft row) => Run(async () => { await Persist(row, row.SavedPolicy()); Snackbar.Add("Policy saved. Awaiting Agent."); });
+    private Task SaveAll() => Run(async () => { foreach (var row in _rows) await Persist(row, row.SavedPolicy()); Snackbar.Add("Policies saved. Awaiting Agent."); });
+    private async Task Reapply(SpeedPolicyDraft row)
+    {
+        if (!await Confirm.DangerAsync("Reapply speed policy now?", $"Save and force reapply {row.Original.CategoryKey} to {_devices.Count(d => d.CategoryKey == row.Original.CategoryKey)} saved devices? This Web action changes the router immediately, including protected devices.", "Force reapply")) return;
+        await Run(async () => { await Persist(row, row.ReappliedPolicy()); await Push(); });
+    }
+    private async Task SyncAll()
+    {
+        if (!await Confirm.DangerAsync("Force reapply all?", $"Save all drafts and force reapply {_rows.Count} categories ({_devices.Count} saved devices) immediately? This includes protected devices.", "Force reapply all")) return;
+        await Run(async () => { foreach (var row in _rows) await Persist(row, row.ReappliedPolicy()); await Push(); });
+    }
+    private async Task Push()
+    {
+        try { await Router.RefreshAsync(); Snackbar.Add("Reapply reconciliation completed. Check Activity for per-device results."); }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        { Logger.LogWarning(ex, "Immediate policy reapply failed"); _error = "Policies saved, but immediate reapply failed. The Agent retries on its next tick; check Activity."; }
+    }
+    private async Task Run(Func<Task> action)
+    {
+        if (_busy) return;
+        _busy = true; _error = null;
+        try { await action(); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or OverflowException) { _error = ex.Message; }
+        catch (Exception ex) { Logger.LogError(ex, "Speed policy operation failed"); _error = "Could not complete this operation. Drafts retained; reload saved state before retrying."; }
+        finally { _busy = false; }
+    }
+}

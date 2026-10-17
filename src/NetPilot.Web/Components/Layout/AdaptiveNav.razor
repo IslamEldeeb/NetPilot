@@ -1,12 +1,13 @@
-@implements IDisposable
+@implements IAsyncDisposable
 @inject NavigationManager Navigation
+@inject ActivityInboxState InboxState
 <div class="np-wide-drawer">
     <MudDrawer Open="true" Variant="DrawerVariant.Persistent" Width="248px" Elevation="0">
         <MudDrawerHeader><MudLink Href="/" Typo="Typo.h6">NetPilot</MudLink></MudDrawerHeader>
         <MudNavMenu aria-label="Primary">
             @foreach (var destination in ShellNavigation.Primary)
             {
-                <MudNavLink Href="@destination.Path" Icon="@MaterialIcon.For(destination.Icon)" Match="@Match(destination)" aria-current="@Current(destination)">@destination.Label</MudNavLink>
+                <MudNavLink Href="@destination.Path" Icon="@MaterialIcon.For(destination.Icon)" Match="@Match(destination)" aria-current="@Current(destination)">@destination.Label @if (destination.Path == "/activity" && _unread > 0) { <MudChip T="string" Size="Size.Small" Color="Color.Primary" aria-label="@($"{_unread} unread notifications")">@_unread</MudChip> }</MudNavLink>
             }
         </MudNavMenu>
         <MudDivider Class="my-4" />
@@ -24,8 +25,8 @@
                 @foreach (var destination in ShellNavigation.Primary.Append(ShellNavigation.Settings))
                 {
                     <MudStack AlignItems="AlignItems.Center" Spacing="0">
-                        <MudIconButton Href="@destination.Path" Icon="@MaterialIcon.For(destination.Icon)" Color="@(Selected == destination ? Color.Primary : Color.Default)" Class="@(Selected == destination ? "np-selected" : null)" aria-label="@destination.Label" aria-current="@Current(destination)" />
-                        <MudText Typo="Typo.caption">@destination.Label</MudText>
+                        <MudIconButton Href="@destination.Path" Icon="@MaterialIcon.For(destination.Icon)" Color="@(Selected == destination ? Color.Primary : Color.Default)" Class="@(Selected == destination ? "np-selected" : null)" aria-label="@AccessibleLabel(destination)" aria-current="@Current(destination)" />
+                        <MudText Typo="Typo.caption">@destination.Label @(destination.Path == "/activity" && _unread > 0 ? $"({_unread})" : "")</MudText>
                     </MudStack>
                 }
                 <MudIconButton Href="/settings/safety" Icon="@Icons.Material.Outlined.Shield" aria-label="Safety Center" />
@@ -39,17 +40,42 @@
         @foreach (var destination in ShellNavigation.Primary)
         {
             <div>
-                <MudIconButton Href="@destination.Path" Icon="@MaterialIcon.For(destination.Icon)" Class="@(Selected == destination ? "np-selected" : null)" aria-label="@destination.Label" aria-current="@Current(destination)" />
-                <MudText Typo="Typo.caption">@destination.Label</MudText>
+                <MudIconButton Href="@destination.Path" Icon="@MaterialIcon.For(destination.Icon)" Class="@(Selected == destination ? "np-selected" : null)" aria-label="@AccessibleLabel(destination)" aria-current="@Current(destination)" />
+                <MudText Typo="Typo.caption">@destination.Label @(destination.Path == "/activity" && _unread > 0 ? $"({_unread})" : "")</MudText>
             </div>
         }
     </nav>
 </MudPaper>
 @code {
+    private int _unread => InboxState.Unread;
+    private readonly CancellationTokenSource _stop = new();
+    private Task? _poll;
     private ShellDestination? Selected => ShellNavigation.Owner("/" + Navigation.ToBaseRelativePath(Navigation.Uri));
+    private string AccessibleLabel(ShellDestination destination) => destination.Path == "/activity" && _unread > 0 ? $"Activity, {_unread} unread notifications" : destination.Label;
     private string? Current(ShellDestination destination) => Selected == destination ? "page" : null;
     private static NavLinkMatch Match(ShellDestination destination) => destination.Path == "/" ? NavLinkMatch.All : NavLinkMatch.Prefix;
-    protected override void OnInitialized() => Navigation.LocationChanged += Changed;
-    private void Changed(object? sender, LocationChangedEventArgs args) => _ = InvokeAsync(StateHasChanged);
-    public void Dispose() => Navigation.LocationChanged -= Changed;
+    protected override async Task OnInitializedAsync()
+    {
+        Navigation.LocationChanged += Changed;
+        InboxState.Changed += InboxChanged;
+        await InboxState.RefreshAsync();
+    }
+    private void Changed(object? sender, LocationChangedEventArgs args) => _ = InvokeAsync(InboxState.RefreshAsync);
+    private void InboxChanged() => _ = InvokeAsync(StateHasChanged);
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) _poll = PollAsync();
+        return Task.CompletedTask;
+    }
+    private async Task PollAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+        try { while (await timer.WaitForNextTickAsync(_stop.Token)) await InvokeAsync(InboxState.RefreshAsync); }
+        catch (OperationCanceledException) when (_stop.IsCancellationRequested) { }
+    }
+    public async ValueTask DisposeAsync()
+    {
+        Navigation.LocationChanged -= Changed; InboxState.Changed -= InboxChanged;
+        _stop.Cancel(); if (_poll is not null) await _poll; _stop.Dispose();
+    }
 }

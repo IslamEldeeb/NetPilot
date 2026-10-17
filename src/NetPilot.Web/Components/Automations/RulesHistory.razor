@@ -1,0 +1,78 @@
+@using NetPilot.Core.Activity
+@using NetPilot.Core.Rules
+@using NetPilot.Core.Rules.Presentation
+@using NetPilot.Core.Devices
+@using NetPilot.Core.Enforcement.Claims
+@using NetPilot.Core.Usage
+@inject UsagePeriodClock Clock
+@inject Confirm Confirm
+<MudStack Spacing="3" aria-label="Activity from rules">
+    <MudText Typo="Typo.h3">Activity from rules</MudText>
+    <MudText>Active is persisted intent, not proof of success. Failed firings may be partly applied. Release affects only that firing; other claims and base/manual limits may remain.</MudText>
+    <MudGrid>
+        <MudItem xs="12" sm="4"><MudSelect T="string" Label="Filter by rule" @bind-Value="_ruleId"><MudSelectItem Value="@string.Empty">All rules</MudSelectItem>
+            @foreach (var rule in Rules.Select(r => (r.Id, r.Name)).UnionBy(Firings.Select(f => (Id: f.RuleId, Name: f.RuleName)), r => r.Id).OrderBy(r => r.Name)) { <MudSelectItem Value="@(rule.Id.ToString())">@rule.Name</MudSelectItem> }
+        </MudSelect></MudItem>
+        <MudItem xs="12" sm="4"><MudSelect T="string" Label="Why is this device restricted?" @bind-Value="_mac"><MudSelectItem Value="@string.Empty">All devices / household</MudSelectItem>
+            @foreach (var mac in Devices.Select(d => d.Mac.ToString()).Union(Claims.Select(c => c.Mac.ToString())).Union(Firings.SelectMany(f => f.TargetMacs.Select(m => m.ToString())))) { <MudSelectItem Value="mac">@DeviceLabel(mac)</MudSelectItem> }
+        </MudSelect></MudItem>
+        <MudItem xs="12" sm="4"><MudSelect T="string" Label="Results" @bind-Value="_mode"><MudSelectItem Value='@("all")'>All</MudSelectItem><MudSelectItem Value='@("dry")'>Dry-run</MudSelectItem><MudSelectItem Value='@("live")'>Live</MudSelectItem><MudSelectItem Value='@("failed")'>Failed</MudSelectItem></MudSelect></MudItem>
+    </MudGrid>
+    @if (_mac.Length > 0)
+    {
+        var claims = Claims.Where(c => c.Mac.ToString() == _mac).ToArray();
+        var effective = EffectiveRestriction.Compute(claims);
+        <MudPaper Outlined Class="pa-3" aria-label="Active restrictions">
+            <MudText Typo="Typo.h3">Active claims for @DeviceLabel(_mac)</MudText>
+            <MudText>@(effective.IsBlocked ? "Block wins over every throttle." : effective.Throttle is {} cap ? $"Lowest active cap wins: {cap.DownloadKbps} Kbps in both directions." : "No active automatic throttle or block claims.")</MudText>
+            @foreach (var claim in claims) { <MudText>@RuleSummary.Claim(claim, Rules)</MudText> }
+            <MudLink Href="@($"/devices/{_mac}")">Device details / Why</MudLink>
+        </MudPaper>
+    }
+    @foreach (var firing in Filtered.Take(_visible))
+    {
+        <MudPaper Outlined Class="pa-4" @key="firing.Id" id="@($"firing-{Uri.EscapeDataString(firing.Id)}")">
+            <MudText Typo="Typo.h3">@firing.RuleName</MudText>
+            <MudText Typo="Typo.caption">@LocalTime(firing.FiredAtUtc) · @Clock.TimeZone.Id · @Subject(firing)</MudText>
+            <MudText>@firing.Outcome · @firing.Status @(firing.Reverting ? "(releasing)" : "")</MudText>
+            <MudText>@RuleSummary.FiringActions(firing)</MudText><MudText>@RuleSummary.FiringReason(firing)</MudText>
+            <MudText>Revert: @Revert(firing)</MudText>
+            @if (firing.Error is not null) { <MudAlert Severity="Severity.Error">@ActivityPrivacy.Redact(firing.Error)</MudAlert> }
+            @if (firing.Status == RuleFiringStatus.Active)
+            {
+                @if (firing.AppliedClaimIds.Length == 0) { <MudText>Active firing; no device claim recorded yet.</MudText> }
+                @if (firing.ReleaseRequested) { <MudText role="status">Release requested — awaiting the Agent's next tick.</MudText> }
+                else { <MudButton Disabled="Busy" OnClick="() => Release(firing)">Release now</MudButton> }
+            }
+        </MudPaper>
+    }
+    @if (!Filtered.Any()) { <MudText>No matching firings yet.</MudText> }
+    @if (Filtered.Skip(_visible).Any()) { <MudButton OnClick="() => _visible += 30">More firings</MudButton> }
+</MudStack>
+@code {
+    [Parameter] public IReadOnlyList<RuleFiring> Firings { get; set; } = [];
+    [Parameter] public IReadOnlyList<Rule> Rules { get; set; } = [];
+    [Parameter] public IReadOnlyList<Device> Devices { get; set; } = [];
+    [Parameter] public IReadOnlyList<ActionClaim> Claims { get; set; } = [];
+    [Parameter] public string? InitialRuleId { get; set; }
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public EventCallback<string> ReleaseRequested { get; set; }
+    private string _ruleId = "", _mac = "", _mode = "all";
+    private int _visible = 30;
+    protected override void OnInitialized() => _ruleId = InitialRuleId ?? "";
+    private IEnumerable<RuleFiring> Filtered => Firings.Where(f => (_ruleId.Length == 0 || f.RuleId.ToString() == _ruleId)
+        && (_mac.Length == 0 || f.Subject == _mac || f.TargetMacs.Any(m => m.ToString() == _mac))
+        && (_mode == "all" || _mode == "failed" && f.Outcome == RuleFiringOutcome.Failed || _mode is "dry" or "live" && f.DryRun == (_mode == "dry"))).OrderByDescending(f => f.FiredAtUtc);
+    private string DeviceLabel(string mac) => Devices.FirstOrDefault(d => d.Mac.ToString() == mac) is {} device ? $"{DeviceList.DisplayName(device)} ({mac})" : $"{mac} (no longer in device list)";
+    private string Subject(RuleFiring firing) => (firing.Subject == "household" ? "Household" : firing.DeviceName + " (" + firing.Subject + ")")
+        + (firing.Actions.OfType<SetWireless>().Any() ? " · wireless: " + string.Join(", ", firing.Actions.OfType<SetWireless>().Select(w => w.NetworkId).Distinct()) : "");
+    private string LocalTime(DateTimeOffset utc) => TimeZoneInfo.ConvertTime(utc, Clock.TimeZone).ToString("yyyy-MM-dd HH:mm:ss");
+    private string Revert(RuleFiring firing) => firing.RevertAtUtc is {} at ? LocalTime(at)
+        : firing.RevertWhenTriggerEnds ? $"When time window ends ({firing.Window?.End})"
+        : firing.RevertPeriod is {} period ? $"At end of {period} {firing.RevertPeriodKey}" : "Manual release (no scheduled revert)";
+    private async Task Release(RuleFiring firing)
+    {
+        if (await Confirm.DangerAsync("Release this firing?", $"Release {firing.RuleName} for {Subject(firing)} on the next Agent tick? Other claims can remain; usage rules can fire again after cooldown/OncePer.", "Request release"))
+            await ReleaseRequested.InvokeAsync(firing.Id);
+    }
+}

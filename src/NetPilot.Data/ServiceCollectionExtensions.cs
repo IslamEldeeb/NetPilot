@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
+using NetPilot.Core.Activity;
+using NetPilot.Core.Automations;
 using NetPilot.Core.Devices;
 using NetPilot.Core.Health;
 using NetPilot.Core.Enforcement;
@@ -63,7 +65,10 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IQuotaStore, LiteQuotaStore>();
         services.AddSingleton<IQuotaStateStore, LiteQuotaStateStore>();
         services.AddSingleton<IProtectedDeviceStore, LiteProtectedDeviceStore>();
-        services.AddSingleton<IActivityLogStore, LiteActivityLogStore>();
+        services.AddSingleton<LiteActivityLogStore>();
+        services.AddSingleton<IActivityLogStore>(sp => sp.GetRequiredService<LiteActivityLogStore>());
+        services.AddSingleton<IActivityFeed>(sp => sp.GetRequiredService<LiteActivityLogStore>());
+        services.AddSingleton<IAutomationCommands, LiteAutomationCommands>();
         services.AddSingleton<IRouterConnectionStore, LiteRouterConnectionStore>();
         services.AddSingleton<IUsageStore, LiteUsageStore>();
         services.AddSingleton<ILocalTrafficStore, LiteLocalTrafficStore>();

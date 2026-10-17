@@ -1,38 +1,35 @@
 @page "/automations"
-@page "/automations/quotas"
-@page "/automations/rules"
-@page "/automations/policies"
+@page "/automations/{Section}"
+@page "/automations/quotas/{QuotaScopeKey}"
+@page "/automations/quotas/{QuotaScopeKey}/{Target}"
+@page "/automations/rules/{RuleId:guid}/edit"
+@page "/automations/rules/{RuleId:guid}/history"
+@page "/automations/rules/new"
+@page "/automations/rules/templates"
 @layout AppShell
-@using NetPilot.Core.Devices
-@using NetPilot.Core.Usage
-@using NetPilot.Web.Components.Tabs
-@inject IDeviceStore DeviceStore
-@inject IUsageStore UsageStore
-@inject ILogger<Automations> Logger
+@using NetPilot.Web.Components.Automations
+@inject NavigationManager Navigation
 <PageTitle>Automations · NetPilot</PageTitle>
-<MudStack Spacing="2" Class="mb-6"><MudText Typo="Typo.h1" HtmlTag="h1">Automations</MudText></MudStack>
-<MudStack Spacing="5">
-    <EmptyState Body="The redesigned editors are coming next. Existing quotas and rules are available below; category speed policies remain in Classic view." Href="/legacy#policies" ActionText="Open classic speed policies" Icon="automations" />
-    <MudPaper Elevation="0" Class="np-legacy-panel pa-5" aria-label="Existing quotas">
-        @if (_error is not null) { <p role="alert">@_error</p> }
-        else if (_loaded) { <QuotasTab Devices="_devices" UsageStates="_usage" /> }
-        else { <MudSkeleton Height="80px" aria-label="Loading quota devices and usage" /> }
-    </MudPaper>
-    <MudPaper Elevation="0" Class="np-legacy-panel pa-5" aria-label="Existing rules"><RulesTab /></MudPaper>
+<MudStack Spacing="4">
+    <MudText Typo="Typo.h1" HtmlTag="h1">Automations</MudText>
+    <MudText>Choose a quota, rule or schedule. Saves await the Agent; dry-run observes and notifies.</MudText>
+    <MudStack Row Wrap="Wrap.Wrap" Spacing="1" role="navigation" aria-label="Automation sections">
+        @foreach (var destination in Sections)
+        {
+            <MudButton Href="@($"/automations/{destination.Key}")" Variant="@(Active == destination.Key ? Variant.Filled : Variant.Outlined)" Color="Color.Primary" aria-current="@(Active == destination.Key ? "page" : null)">@destination.Label</MudButton>
+        }
+    </MudStack>
+    @if (Active == "quotas") { <QuotaPanel @key="Navigation.Uri" ScopeKey="QuotaScopeKey" Target="Target" /> }
+    else if (Active is "rules" or "schedules") { <RulesPanel @key="Navigation.Uri" Schedules="@(Active == "schedules")" RuleId="RuleId" /> }
+    else if (Active == "policies") { <SpeedPolicies /> }
+    else { <MudAlert Severity="Severity.Warning">Unknown automation section. Choose a section above.</MudAlert> }
+    <MudLink Href="/legacy#policies" Target="_top">Classic automation controls</MudLink>
 </MudStack>
 @code {
-    private IReadOnlyList<Device> _devices = [];
-    private IReadOnlyList<DeviceUsageState> _usage = [];
-    private bool _loaded;
-    private string? _error;
-    protected override async Task OnInitializedAsync()
-    {
-        try
-        {
-            _devices = await DeviceStore.GetAllAsync(CancellationToken.None);
-            _usage = await UsageStore.GetAllStatesAsync(CancellationToken.None);
-            _loaded = true;
-        }
-        catch (Exception ex) { Logger.LogWarning(ex, "Cannot load automation context"); _error = "Could not load devices and usage. Reopen this page to retry, or use Classic view."; }
-    }
+    [Parameter] public string? Section { get; set; }
+    [Parameter] public string? QuotaScopeKey { get; set; }
+    [Parameter] public string? Target { get; set; }
+    [Parameter] public Guid? RuleId { get; set; }
+    private static readonly (string Key, string Label)[] Sections = [("quotas", "Quotas"), ("rules", "Rules"), ("schedules", "Schedules"), ("policies", "Speed policies")];
+    private string Active => new Uri(Navigation.Uri).AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries).ElementAtOrDefault(1) ?? "quotas";
 }

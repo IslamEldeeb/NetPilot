@@ -14,6 +14,7 @@ namespace NetPilot.Data;
 public sealed class NetPilotDatabase : IDisposable
 {
     private readonly LiteDatabase _db;
+    private bool _inTransaction;
 
     public NetPilotDatabase(string dbPath)
     {
@@ -26,9 +27,14 @@ public sealed class NetPilotDatabase : IDisposable
     {
         lock (_db)
         {
+            // SharedEngine opens a handle on BeginTrans, even for a nested call.
+            // Only the outer scope may open/commit it or writes remain invisible to other handles.
+            if (_inTransaction) { action(); return; }
             _db.BeginTrans();
+            _inTransaction = true;
             try { action(); _db.Commit(); }
             catch { _db.Rollback(); throw; }
+            finally { _inTransaction = false; }
         }
     }
 

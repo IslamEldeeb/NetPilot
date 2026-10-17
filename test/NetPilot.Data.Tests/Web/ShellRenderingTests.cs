@@ -2,6 +2,9 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.Forms;
 using NetPilot.Core.Health;
+using NetPilot.Core.Activity;
+using NetPilot.Web.Components.Automations;
+using NetPilot.Core.Rules.Presentation;
 using NetPilot.Core.Security;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -29,7 +32,7 @@ public sealed class ShellRenderingTests
     [InlineData(typeof(Home), "Welcome to the new NetPilot", "/legacy")]
     [InlineData(typeof(Devices), "Devices", "/legacy#devices")]
     [InlineData(typeof(Usage), "Usage", "/legacy#usage")]
-    [InlineData(typeof(Automations), "Global default", "/legacy#policies")]
+    [InlineData(typeof(Automations), "Quotas", "/legacy#policies")]
     [InlineData(typeof(Activity), "Activity", "/legacy#activity")]
     [InlineData(typeof(Settings), "This browser", "/legacy#notifications")]
     public async Task PlaceholderInMudShell_RendersContentAndClassicEscape(Type page, string content, string classicPath)
@@ -224,6 +227,82 @@ public sealed class ShellRenderingTests
         finally { Directory.Delete(directory, recursive: true); }
     }
 
+    [Theory]
+    [InlineData("quotas", "Today's progress")]
+    [InlineData("rules", "Guest WiFi off at night")]
+    [InlineData("schedules", "same rule IDs")]
+    [InlineData("policies", "Force reapply all")]
+    public async Task AutomationSections_RenderMudControlsAndSavedState(string section, string expected)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"netpilot-d1-render-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            await using var provider = Services(directory);
+            provider.GetRequiredService<NavigationManager>().NavigateTo("/automations/" + section);
+            await provider.GetRequiredService<IDeviceStore>().UpsertAsync(new Device { Mac = new("AA-BB-CC-DD-EE-01"), Hostname = "My TV", CategoryKey = "television" }, default);
+            await using var renderer = new HtmlRenderer(provider, provider.GetRequiredService<ILoggerFactory>());
+            var html = await renderer.Dispatcher.InvokeAsync(async () => (await renderer.RenderComponentAsync<Automations>()).ToHtmlString());
+            Assert.Contains(expected, html); Assert.Contains("mud-", html);
+            Assert.DoesNotContain("np-legacy", html); Assert.DoesNotContain("form-control", html);
+            if (section == "rules")
+            {
+                foreach (var template in TemplateCatalog.All) Assert.Contains(template.Name, html);
+                Assert.Contains("Forced dry-run", html); Assert.Contains("Kill switch", html);
+            }
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    [Fact]
+    public async Task Inbox_EventDetailsAndNav_RenderDurableUnreadAndRedactedContent()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"netpilot-d1-inbox-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            await using var provider = Services(directory);
+            provider.GetRequiredService<NavigationManager>().NavigateTo("/activity/inbox");
+            await provider.GetRequiredService<IActivityLogStore>().AppendAsync(new(DateTimeOffset.UtcNow, ActivityEventType.NotificationCreated, null, "quota token=private-secret")
+                { IsNotification = true, Source = "notifications", Kind = "notification", DeduplicationKey = "one" }, default);
+            await using var renderer = new HtmlRenderer(provider, provider.GetRequiredService<ILoggerFactory>());
+            var html = await renderer.Dispatcher.InvokeAsync(async () =>
+            {
+                RenderFragment body = builder => { builder.OpenComponent<Activity>(0); builder.CloseComponent(); };
+                return (await renderer.RenderComponentAsync<AppShell>(ParameterView.FromDictionary(new Dictionary<string, object?> { [nameof(AppShell.Body)] = body }))).ToHtmlString();
+            });
+            Assert.Contains("1 unread", html); Assert.Contains("Mark read", html); Assert.Contains("Event #", html);
+            Assert.Contains("Africa/Cairo", html); Assert.DoesNotContain("private-secret", html);
+            var id = (await provider.GetRequiredService<IActivityFeed>().QueryAsync(new() { Inbox = true }, default)).Entries[0].EventId;
+            await provider.GetRequiredService<IActivityFeed>().MarkReadAsync(id, default);
+            provider.GetRequiredService<NavigationManager>().NavigateTo($"/activity/events/{id}");
+            var detail = await renderer.Dispatcher.InvokeAsync(async () => (await renderer.RenderComponentAsync<Activity>(ParameterView.FromDictionary(new Dictionary<string, object?> { [nameof(Activity.EventId)] = id }))).ToHtmlString());
+            Assert.Contains("0 unread", detail); Assert.DoesNotContain("Mark read", detail);
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    [Theory]
+    [InlineData("quota")]
+    [InlineData("rule")]
+    public async Task AutomationEditors_RenderValidationAndPreviewWithoutLegacyMarkup(string editor)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"netpilot-d1-edit-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            await using var provider = Services(directory);
+            await using var renderer = new HtmlRenderer(provider, provider.GetRequiredService<ILoggerFactory>());
+            var html = await renderer.Dispatcher.InvokeAsync(async () => editor == "quota"
+                ? (await renderer.RenderComponentAsync<QuotaSheet>(ParameterView.FromDictionary(new Dictionary<string, object?> { [nameof(QuotaSheet.Initial)] = new QuotaPolicy { Id = "default" } }))).ToHtmlString()
+                : (await renderer.RenderComponentAsync<RuleWizard>(ParameterView.FromDictionary(new Dictionary<string, object?> { [nameof(RuleWizard.Initial)] = TemplateCatalog.All[0].Create() }))).ToHtmlString());
+            Assert.Contains(editor == "quota" ? "Daily cap (decimal GB)" : "Scope and name", html);
+            Assert.Contains(editor == "quota" ? "Save quota" : "Save disabled draft", html);
+            Assert.DoesNotContain("form-control", html);
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
     private static ServiceProvider Services(string directory, bool loginEnabled = false)
     {
         var configuration = new ConfigurationBuilder().Build();
@@ -236,6 +315,8 @@ public sealed class ShellRenderingTests
         services.AddSingleton<IJSRuntime, StaticJs>();
         services.AddMudServices();
         services.AddScoped<Confirm>();
+        services.AddScoped<ActivityInboxState>();
+        services.AddScoped<AutomationFeedback>();
         services.AddScoped<DeviceRouterActions>();
         services.AddDashboardLogin(configuration);
         if (loginEnabled) services.AddSingleton(new DashboardLoginOptions("test-password"));

@@ -1,0 +1,163 @@
+@using NetPilot.Core.Rules
+@using NetPilot.Core.Rules.Presentation
+@using NetPilot.Core.Devices
+@using NetPilot.Core.Usage
+@inject UsagePeriodClock Clock
+<MudStack Spacing="3">
+    <MudText>@Hint</MudText>
+    <MudStepper @bind-ActiveIndex="_step" NonLinear Vertical>
+        <ChildContent>
+            <MudStep Title="Scope and name" />
+            <MudStep Title="Trigger" />
+            <MudStep Title="Actions" />
+            <MudStep Title="Revert and repeat" />
+            <MudStep Title="Preview and save" />
+        </ChildContent>
+        <ActionContent />
+    </MudStepper>
+    <MudText Typo="Typo.h3">@StepTitles[_step]</MudText>
+    @if (_step == 0)
+    {
+        <MudStack Spacing="2">
+            <MudTextField T="string" Label="Rule name" @bind-Value="_form.Name" Immediate MaxLength="80" Required />
+            <MudSelect T="RuleScopeKind" Label="Scope" @bind-Value="_form.Scope">
+                @foreach (var scope in Enum.GetValues<RuleScopeKind>()) { <MudSelectItem Value="scope">@scope</MudSelectItem> }
+            </MudSelect>
+            @if (_form.Scope == RuleScopeKind.Category)
+            {
+                <MudSelect T="string" Label="Category" @bind-Value="_form.Category">
+                    @foreach (var category in Categories.Union(new[] { _form.Category }).Where(c => c.Length > 0)) { <MudSelectItem Value="category">@category</MudSelectItem> }
+                </MudSelect>
+            }
+            @if (_form.Scope == RuleScopeKind.Devices)
+            {
+                @foreach (var mac in Devices.Select(d => d.Mac.ToString()).Union(_form.Devices))
+                {
+                    <MudCheckBox T="bool" Value="@_form.Devices.Contains(mac)" ValueChanged="selected => SelectDevice(mac, selected)" Label="@DeviceLabel(mac)" />
+                }
+            }
+        </MudStack>
+    }
+    @if (_step == 1)
+    {
+        <MudStack Spacing="2">
+            <MudSelect T="RuleTriggerKind" Label="Trigger" Value="_form.Trigger" ValueChanged="ChangeTrigger">
+                @foreach (var trigger in Enum.GetValues<RuleTriggerKind>()) { <MudSelectItem Value="trigger">@trigger</MudSelectItem> }
+            </MudSelect>
+            @if (_form.Trigger is RuleTriggerKind.UsageOver or RuleTriggerKind.HouseholdUsageOver)
+            {
+                <MudSelect T="RulePeriod" Label="Usage period" @bind-Value="_form.Period"><MudSelectItem Value="RulePeriod.Day">Day</MudSelectItem><MudSelectItem Value="RulePeriod.Month">Month</MudSelectItem></MudSelect>
+                <MudTextField T="string" Label="Threshold (decimal GB)" @bind-Value="_form.Gigabytes" Immediate InputMode="@(InputMode.@decimal)" HelperText="1 GB = 1,000,000,000 Internet bytes; at most 9 decimal places" />
+                @if (_form.Trigger == RuleTriggerKind.HouseholdUsageOver) { <MudText>Usage sums the whole household; scope selects action targets.</MudText> }
+            }
+            @if (_form.Trigger == RuleTriggerKind.TimeWindow)
+            {
+                <MudTextField T="string" Label="Start (HH:mm)" @bind-Value="_form.Start" Immediate />
+                <MudTextField T="string" Label="End (HH:mm)" @bind-Value="_form.End" Immediate />
+                @foreach (var day in Enum.GetValues<DayOfWeek>())
+                {
+                    <MudCheckBox T="bool" Value="@_form.Days.Contains(day)" ValueChanged="selected => SelectDay(day, selected)" Label="@day.ToString()" />
+                }
+                <MudText>Start inclusive, end exclusive. Overnight belongs to the starting weekday. @Clock.TimeZone.Id; start/end follow Agent cadence, not exact-minute scheduling.</MudText>
+            }
+            @if (_form.Trigger == RuleTriggerKind.DeviceIdle) { <MudTextField T="string" Label="Days without being seen" @bind-Value="_form.IdleDays" Immediate InputMode="InputMode.numeric" /> }
+            @if (_form.Trigger == RuleTriggerKind.DeviceJoined) { <MudText>Matches devices first discovered after rule creation.</MudText> }
+        </MudStack>
+    }
+    @if (_step == 2)
+    {
+        <MudStack Spacing="3">
+            @foreach (var action in _form.Actions)
+            {
+                <MudPaper Outlined Class="pa-3" @key="action">
+                    <MudSelect T="RuleActionKind" Label="Action" @bind-Value="action.Kind">
+                        @foreach (var kind in Enum.GetValues<RuleActionKind>()) { <MudSelectItem Value="kind">@kind</MudSelectItem> }
+                    </MudSelect>
+                    @if (action.Kind == RuleActionKind.Notify)
+                    {
+                        <MudTextField T="string" Label="Notification title" @bind-Value="action.Title" Immediate />
+                        <MudTextField T="string" Label="Notification body" @bind-Value="action.Body" Immediate Lines="3" />
+                        <MudText Typo="Typo.caption">Placeholders: {rule}, {device}, {used}, {cap}. Usage and threshold are raw bytes. Actual saved-state output appears in Preview.</MudText>
+                    }
+                    @if (action.Kind == RuleActionKind.Throttle) { <MudTextField T="string" Label="Symmetric Kbps" @bind-Value="action.Kbps" Immediate InputMode="InputMode.numeric" /> }
+                    @if (action.Kind == RuleActionKind.SetWireless)
+                    {
+                        <MudSelect T="string" Label="Guest / IoT network ID" @bind-Value="action.NetworkId">
+                            @foreach (var id in RuleForm.SafeNetworkIds) { <MudSelectItem Value="id">@id</MudSelectItem> }
+                        </MudSelect>
+                        <MudCheckBox T="bool" @bind-Value="action.WirelessEnabled" Label="Network enabled" />
+                        <MudAlert Severity="Severity.Warning">Main WiFi is forbidden. These are model IDs; availability has not been observed. Unsupported networks record failed firings.</MudAlert>
+                    }
+                    <MudButton Color="Color.Error" OnClick="() => _form.Actions.Remove(action)">Remove action</MudButton>
+                </MudPaper>
+            }
+            <MudButton OnClick="() => _form.Actions.Add(new())">Add action</MudButton>
+            <MudText>Protected devices skip automatic throttle/block. Notifications and guest/IoT changes still apply.</MudText>
+        </MudStack>
+    }
+    @if (_step == 3)
+    {
+        <MudStack Spacing="2">
+            <MudSelect T="RuleRevertKind" Label="Revert policy" @bind-Value="_form.Revert">
+                @foreach (var revert in Enum.GetValues<RuleRevertKind>().Where(r => r != RuleRevertKind.WhenTriggerEnds || _form.Trigger == RuleTriggerKind.TimeWindow)) { <MudSelectItem Value="revert">@revert</MudSelectItem> }
+            </MudSelect>
+            @if (_form.Revert == RuleRevertKind.AfterMinutes) { <MudTextField T="string" Label="Revert after (minutes)" @bind-Value="_form.RevertMinutes" Immediate InputMode="InputMode.numeric" /> }
+            <MudTextField T="string" Label="Cooldown minutes" @bind-Value="_form.CooldownMinutes" Immediate InputMode="InputMode.numeric" />
+            <MudSelect T="RuleOncePer" Label="Once per" @bind-Value="_form.OncePer">
+                @foreach (var once in Enum.GetValues<RuleOncePer>()) { <MudSelectItem Value="once">@once</MudSelectItem> }
+            </MudSelect>
+            <MudText>OncePer replaces cooldown repeat behavior. Active/episode guards still apply. AtPeriodEnd uses the usage period, or Cairo midnight for other triggers. None means manual release.</MudText>
+        </MudStack>
+    }
+    @if (_step == 4)
+    {
+        <MudCheckBox T="bool" @bind-Value="_form.Enabled" Label="Enabled" />
+        <MudCheckBox T="bool" Value="_form.DryRun" ValueChanged="EnableDryRun" Disabled="_form.DryRun" Label="Dry-run: logs and notifies, no router writes" />
+        @if (_form.Build(out _) is { } valid)
+        {
+            <MudText>@RuleSummary.Describe(valid)</MudText>
+            <RulePreviewView Rule="valid" Context="PreviewContext" />
+        }
+    }
+    <MudStack Row Wrap="Wrap.Wrap" Class="mt-3">
+        <MudButton OnClick="Back" Disabled="@(_step == 0)">Back</MudButton>
+        <MudButton OnClick="Next" Disabled="@(_step == 4)">Next</MudButton>
+        <MudButton OnClick="() => _step = 4">Review</MudButton>
+    </MudStack>
+    @if (_form.Build(out var errors) is null)
+    {
+        <MudAlert Severity="Severity.Error" role="alert"><MudList T="string">@foreach (var error in errors) { <MudListItem>@error</MudListItem> }</MudList></MudAlert>
+    }
+    <MudText Typo="Typo.caption">Saved → awaiting the Agent's next tick. Enforcement requires verified Internet counters and a deployment change; Back keeps this draft.</MudText>
+    <MudStack Row Wrap="Wrap.Wrap">
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Save" Disabled="@(Busy || _form.Build(out _) is null)">Save rule</MudButton>
+        <MudButton OnClick="SaveDisabled" Disabled="@(Busy || _form.Build(out _) is null)">Save disabled draft</MudButton>
+        <MudButton Href="/automations/rules">Cancel</MudButton>
+    </MudStack>
+</MudStack>
+@code {
+    [Parameter, EditorRequired] public Rule Initial { get; set; } = new();
+    [Parameter] public string Hint { get; set; } = "";
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public IReadOnlyList<Device> Devices { get; set; } = [];
+    [Parameter] public IReadOnlyList<string> Categories { get; set; } = [];
+    [Parameter] public RulePreviewContext PreviewContext { get; set; } = new();
+    [Parameter] public EventCallback<Rule> Saved { get; set; }
+    private RuleForm _form = new();
+    private int _step;
+    private static readonly string[] StepTitles = ["Scope and name", "Trigger", "Actions", "Revert and repeat", "Preview and save"];
+    protected override void OnInitialized() => _form = RuleForm.From(Initial);
+    private void Back() => _step = Math.Max(0, _step - 1);
+    private void Next() => _step = Math.Min(4, _step + 1);
+    private void SelectDevice(string mac, bool selected) { if (selected) _form.Devices.Add(mac); else _form.Devices.Remove(mac); }
+    private void SelectDay(DayOfWeek day, bool selected) { if (selected) _form.Days.Add(day); else _form.Days.Remove(day); }
+    private void ChangeTrigger(RuleTriggerKind trigger)
+    {
+        _form.Trigger = trigger;
+        if (trigger != RuleTriggerKind.TimeWindow && _form.Revert == RuleRevertKind.WhenTriggerEnds) _form.Revert = RuleRevertKind.None;
+    }
+    private string DeviceLabel(string mac) => Devices.FirstOrDefault(d => d.Mac.ToString() == mac) is {} device ? $"{DeviceList.DisplayName(device)} ({mac})" : $"{mac} (no longer in device list)";
+    private void EnableDryRun(bool enabled) { if (enabled) _form.DryRun = true; }
+    private Task Save() => _form.Build(out _) is {} rule ? Saved.InvokeAsync(rule) : Task.CompletedTask;
+    private Task SaveDisabled() => _form.Build(out _) is {} rule ? Saved.InvokeAsync(rule with { Enabled = false }) : Task.CompletedTask;
+}

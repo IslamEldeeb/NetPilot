@@ -22,7 +22,7 @@ public partial class RuleEvaluationService
             {
                 var current = await firingStore.FindAsync(firing.Id, ct) ?? firing;
                 await SaveAsync(current with { Outcome = RuleFiringOutcome.Failed, Error = ex.Message }, ct);
-                await LogAsync(ActivityEventType.RuleFailed, firing.RuleName, SubjectMac(firing), $"revert failed: {ex.Message}", ct);
+                await LogAsync(ActivityEventType.RuleFailed, (firing.RuleName, firing.Id, firing.DryRun), SubjectMac(firing), $"revert failed: {ex.Message}", ct);
             }
         }
     }
@@ -62,7 +62,7 @@ public partial class RuleEvaluationService
             await RestoreWirelessAsync(provider, firing, prior, ct);
         await SaveAsync(firing with { Status = firing.ReleaseRequested ? RuleFiringStatus.Released : RuleFiringStatus.Reverted,
             Completed = true, Error = null }, ct);
-        await LogAsync(ActivityEventType.RuleReverted, firing.RuleName, SubjectMac(firing), $"released effects for {firing.Subject}", ct);
+        await LogAsync(ActivityEventType.RuleReverted, (firing.RuleName, firing.Id, firing.DryRun), SubjectMac(firing), $"released effects for {firing.Subject}", ct);
     }
 
     private async Task RestoreWirelessAsync(IRouterProvider provider, RuleFiring firing, WirelessPrior prior, CancellationToken ct)
@@ -72,7 +72,7 @@ public partial class RuleEvaluationService
         var current = (await provider.GetWirelessNetworksAsync(ct)).Single(n => n.Id == id);
         if (current.Enabled != prior.AppliedEnabled)
         {
-            await LogAsync(ActivityEventType.RuleReverted, firing.RuleName, SubjectMac(firing),
+            await LogAsync(ActivityEventType.RuleReverted, (firing.RuleName, firing.Id, firing.DryRun), SubjectMac(firing),
                 $"left {prior.NetworkId} unchanged: current enabled state differs from the rule's last write", ct);
             return;
         }

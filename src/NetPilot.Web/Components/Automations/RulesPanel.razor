@@ -1,0 +1,201 @@
+@using System.Text.Json
+@using NetPilot.Core.Devices
+@using NetPilot.Core.Policy
+@using NetPilot.Core.Rules
+@using NetPilot.Core.Rules.Presentation
+@using NetPilot.Core.Enforcement.Claims
+@using NetPilot.Core.Quota
+@using NetPilot.Core.Usage
+@using NetPilot.Core.Automations
+@inject IRuleStore Rules
+@inject IRuleFiringStore Firings
+@inject IActionClaimStore Claims
+@inject IDeviceStore DeviceStore
+@inject IUsageStore Usage
+@inject IPolicyStore Policies
+@inject IProtectedDeviceStore Protection
+@inject IAutomationCommands Commands
+@inject RulesOptions Options
+@inject UsagePeriodClock Clock
+@inject IConfiguration Configuration
+@inject ISnackbar Snackbar
+@inject AutomationFeedback Feedback
+@inject ILogger<RulesPanel> Logger
+@inject Confirm Confirm
+@inject NavigationManager Navigation
+<MudStack Spacing="3">
+    <MudText Typo="Typo.h2">@(Schedules ? "Schedules" : "Rules")</MudText>
+    @if (Options.ForceDryRun) { <MudAlert Severity="Severity.Warning">Forced dry-run: no new router effects. Existing live effects are released on the Agent's next tick. NETPILOT_RULES_FORCE_DRYRUN remains true until Internet counters/T8 are verified.</MudAlert> }
+    @if (!Options.Enabled) { <MudAlert Severity="Severity.Warning">Rules kill switch is active. New firings stop and existing effects release on the Agent's next tick.</MudAlert> }
+    <MudText Typo="Typo.caption">Kill switch: set NetPilot:Rules:Enabled=false (Docker NETPILOT_RULES_ENABLED=false) and redeploy both services. Web configuration is not verified Agent runtime state. Agent cadence: about @TickMinutes minutes.</MudText>
+    @if (_error is not null) { <MudAlert Severity="Severity.Error" role="alert">@_error <MudButton OnClick="Reload">Refresh</MudButton></MudAlert> }
+    @if (!_loaded) { <MudSkeleton Height="100px" aria-label="Loading rules" /> }
+    else
+    {
+        @if (Schedules) { <MudAlert Severity="Severity.Info">Schedules are TimeWindow rules with the same rule IDs and evaluator. Overnight uses the starting weekday in @Clock.TimeZone.Id; start and end follow Agent cadence.</MudAlert> }
+        <MudStack Row Wrap="Wrap.Wrap">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="New">@(Schedules ? "Set bedtime" : "Create rule")</MudButton>
+            <MudButton OnClick="Reload">Refresh saved state</MudButton>
+        </MudStack>
+        <MudExpansionPanels>
+            <MudExpansionPanel Text="Start from a template (unsaved)" Expanded="@(_rules.Count == 0 || new Uri(Navigation.Uri).AbsolutePath.EndsWith("/templates", StringComparison.Ordinal))">
+                <MudGrid>
+                    @foreach (var template in TemplateCatalog.All.Where(t => !Schedules || t.Create().Trigger is TimeWindow))
+                    {
+                        <MudItem xs="12" sm="6"><MudPaper Outlined Class="pa-3">
+                            <MudText Typo="Typo.h3">@template.Name</MudText><MudText>@template.Description</MudText><MudText Typo="Typo.caption">@template.Hint</MudText>
+                            <MudButton OnClick="() => Start(template)">Start @template.Name</MudButton>
+                        </MudPaper></MudItem>
+                    }
+                </MudGrid>
+            </MudExpansionPanel>
+        </MudExpansionPanels>
+        @if (!VisibleRules.Any()) { <MudText>No saved @(Schedules ? "schedules" : "rules") yet. Start from a template.</MudText> }
+        @foreach (var rule in VisibleRules.OrderBy(r => r.Name))
+        {
+            <MudPaper Outlined Class="pa-4" @key="rule.Id">
+                <MudText Typo="Typo.h3">@rule.Name</MudText>
+                <MudText>@RuleSummary.Describe(rule)</MudText>
+                <MudText Typo="Typo.caption">Rule ID @rule.Id · Last fired @LocalTime(_firings.Where(f => f.RuleId == rule.Id).OrderByDescending(f => f.FiredAtUtc).FirstOrDefault()?.FiredAtUtc) · Active @_firings.Count(f => f.RuleId == rule.Id && f.Status == RuleFiringStatus.Active)</MudText>
+                <MudStack Row Wrap="Wrap.Wrap">
+                    <MudCheckBox T="bool" Value="rule.Enabled" ValueChanged="enabled => Toggle(rule, enabled)" Disabled="_busy" Label="Enabled" />
+                    <MudCheckBox T="bool" Value="rule.DryRun" ValueChanged="enabled => MakeDryRun(rule, enabled)" Disabled="@(_busy || rule.DryRun)" Label="Dry-run" />
+                    <MudButton Href="@($"/automations/rules/{rule.Id}/edit")">Edit</MudButton>
+                    <MudButton Href="@($"/automations/rules/{rule.Id}/history")">History / Why</MudButton>
+                    <MudButton OnClick="() => Preview(rule)">Preview now</MudButton>
+                    <MudButton Color="Color.Error" Disabled="_busy" OnClick="() => Delete(rule)">Delete</MudButton>
+                </MudStack>
+            </MudPaper>
+        }
+        <RulesHistory Firings="_firings" Rules="_rules" Devices="_devices" Claims="_claims" InitialRuleId="@(IsHistory ? RuleId?.ToString() : null)" Busy="_busy" ReleaseRequested="Release" />
+        @if (!Schedules)
+        {
+            <MudExpansionPanels><MudExpansionPanel Text="Rules JSON export / import">
+                <MudText>Version 1. Export contains rule configuration only. Import validates all IDs, never overwrites existing IDs, and creates DRY-RUN rules. To clone a rule, give it a new GUID.</MudText>
+                <MudButton OnClick="Export">Prepare export</MudButton>
+                @if (_export.Length > 0) { <MudButton Href="@("data:application/json;charset=utf-8," + Uri.EscapeDataString(_export))" download="netpilot-rules-v1.json">Download rules JSON</MudButton><MudTextField T="string" Label="Exported rules JSON" Value="_export" ReadOnly Lines="5" /> }
+                <MudTextField T="string" Label="Import rules JSON (or choose a file)" @bind-Value="_import" Lines="5" MaxLength="20000" />
+                <InputFile OnChange="ReadImportFile" accept=".json,application/json" aria-label="Choose rules JSON file (up to 1 MB)" />
+                <MudButton OnClick="Import" Disabled="@(_busy || string.IsNullOrWhiteSpace(_import))">Import as dry-run</MudButton>
+            </MudExpansionPanel></MudExpansionPanels>
+        }
+        @if (_editing is not null)
+        {
+            <AppSheet Open Title="@(_before is null ? "Create rule" : "Edit rule")" OpenChanged="Close">
+                <RuleWizard @key="_editing.Id" Initial="_editing" Hint="_hint" Devices="_devices" Categories="_categories" PreviewContext="_context" Busy="_busy" Saved="Save" />
+            </AppSheet>
+        }
+        @if (_preview is not null)
+        {
+            <AppSheet Open Title="Current-state preview" OpenChanged="ClosePreview"><RulePreviewView Rule="_preview" Context="_context" /></AppSheet>
+        }
+    }
+</MudStack>
+@code {
+    [Parameter] public bool Schedules { get; set; }
+    [Parameter] public Guid? RuleId { get; set; }
+    private IReadOnlyList<Rule> _rules = [];
+    private IReadOnlyList<RuleFiring> _firings = [];
+    private IReadOnlyList<Device> _devices = [];
+    private IReadOnlyList<ActionClaim> _claims = [];
+    private IReadOnlyList<string> _categories = [];
+    private RulePreviewContext _context = new();
+    private Rule? _editing, _before, _preview;
+    private string _hint = "", _import = "", _export = "";
+    private string? _error;
+    private bool _loaded, _busy;
+    private bool IsHistory => new Uri(Navigation.Uri).AbsolutePath.EndsWith("/history", StringComparison.Ordinal);
+    private IEnumerable<Rule> VisibleRules => _rules.Where(r => !Schedules || r.Trigger is TimeWindow);
+    private string TickMinutes => (Configuration.GetValue("NetPilot:PollIntervalSeconds", 180) / 60m).ToString("0.##");
+    protected override async Task OnInitializedAsync()
+    {
+        await Reload();
+        if (!_loaded) return;
+        if (RuleId is {} id && !IsHistory)
+        {
+            _before = _rules.FirstOrDefault(r => r.Id == id);
+            _editing = _before;
+            if (_editing is not null) await RefreshPreviewHistory(_editing);
+            if (_before is null) _error = "This rule no longer exists. Refresh the list.";
+        }
+        else if (new Uri(Navigation.Uri).AbsolutePath.EndsWith("/new", StringComparison.Ordinal)) New();
+    }
+    private Task Reload() => Run(Load);
+    private async Task Load()
+    {
+        _rules = await Rules.GetAllAsync(default); _firings = await Firings.GetAllAsync(default);
+        _devices = await DeviceStore.GetAllAsync(default); _claims = await Claims.GetAllAsync(default);
+        _categories = (await Policies.GetAllAsync(default)).Select(p => p.CategoryKey).Union(_devices.Select(d => d.CategoryKey))
+            .Union(_rules.Where(r => r.Scope.Kind == RuleScopeKind.Category).Select(r => r.Scope.CategoryKey!)).Order().ToArray();
+        _context = new() { Devices = _devices, Usage = await Usage.GetAllStatesAsync(default), Protected = (await Protection.GetAllAsync(default)).ToHashSet(),
+            Claims = _claims, Firings = _firings, Enabled = Options.Enabled, ForceDryRun = Options.ForceDryRun };
+        _loaded = true;
+    }
+    private void New() { _before = null; _hint = "Unsaved dry-run draft"; _editing = Schedules ? TemplateCatalog.All.First(t => t.Create().Trigger is TimeWindow).Create() : new() { Actions = [new Notify("{rule}", "{device}: {used} of {cap} bytes")] }; }
+    private void Start(RuleTemplate template) { _before = null; _editing = template.Create(); _hint = template.Hint; }
+    private async Task Preview(Rule rule)
+    {
+        await RefreshPreviewHistory(rule); _preview = rule;
+    }
+    private async Task RefreshPreviewHistory(Rule rule)
+    {
+        var subjects = _devices.Select(d => d.Mac.ToString()).Append("household");
+        var latest = new List<RuleFiring>();
+        foreach (var subject in subjects)
+            if (await Firings.FindLatestAsync(rule.Id, subject, default) is {} firing) latest.Add(firing);
+        _context = _context with { Firings = _firings.Concat(latest).DistinctBy(f => f.Id).ToArray() };
+    }
+    private Task Save(Rule rule) => Run(async () =>
+    {
+        var change = await Commands.SaveRuleAsync(_before, rule with { UpdatedAtUtc = Clock.GetUtcNow() }, default);
+        Saved(change, "Rule saved."); _editing = null; _before = null;
+        await Reload();
+        if (!_loaded) return;
+        if (RuleId is not null || new Uri(Navigation.Uri).AbsolutePath.EndsWith("/new", StringComparison.Ordinal)) Navigation.NavigateTo("/automations/rules");
+    });
+    private Task Toggle(Rule rule, bool enabled) => Change(rule, rule with { Enabled = enabled });
+    private Task MakeDryRun(Rule rule, bool enabled) => enabled ? Change(rule, rule with { DryRun = true }) : Task.CompletedTask;
+    private Task Change(Rule before, Rule after) => Run(async () =>
+    {
+        Saved(await Commands.SaveRuleAsync(before, after with { UpdatedAtUtc = Clock.GetUtcNow() }, default), "Rule updated."); await Load();
+    });
+    private async Task Delete(Rule rule)
+    {
+        if (!await Confirm.DangerAsync("Delete rule?", $"Delete {rule.Name}? Active effects release on the Agent's next tick (about {TickMinutes} minutes). Other rules and quotas may still restrict devices.")) return;
+        await Run(async () => { Saved(await Commands.SaveRuleAsync(rule, null, default), "Rule deleted."); await Load(); });
+    }
+    private void Saved(AutomationChange change, string message) => Feedback.Saved(change, message, Schedules ? "/automations/schedules" : "/automations/rules");
+    private async Task Release(string id)
+    {
+        await Run(async () => { Snackbar.Add(await Firings.RequestReleaseAsync(id, default) ? "Release requested. Awaiting Agent; other claims can remain." : "Firing is no longer active."); await Load(); });
+    }
+    private void Export() => _export = RulePortability.Export(_rules);
+    private Task ReadImportFile(InputFileChangeEventArgs args) => Run(async () =>
+    {
+        await using var stream = args.File.OpenReadStream(1_000_000);
+        using var reader = new StreamReader(stream);
+        _import = await reader.ReadToEndAsync();
+    });
+    private Task Import() => Run(async () =>
+    {
+        var imported = RulePortability.Import(_import, _rules.Select(r => r.Id));
+        if (!await Confirm.DangerAsync("Import dry-run rules?", $"Create {imported.Count} new dry-run rules? They may log and send notifications on the next Agent tick.", "Import")) return;
+        await Commands.ImportRulesAsync(imported, default); _import = ""; await Load(); Snackbar.Add("Imported as dry-run. Awaiting Agent.");
+    });
+    private Task Close(bool open)
+    {
+        if (!open) { _editing = null; if (RuleId is not null || new Uri(Navigation.Uri).AbsolutePath.EndsWith("/new", StringComparison.Ordinal)) Navigation.NavigateTo("/automations/rules"); }
+        return Task.CompletedTask;
+    }
+    private Task ClosePreview(bool open) { if (!open) _preview = null; return Task.CompletedTask; }
+    private string LocalTime(DateTimeOffset? at) => at is {} utc ? TimeZoneInfo.ConvertTime(utc, Clock.TimeZone).ToString("yyyy-MM-dd HH:mm:ss") : "Never";
+    private async Task Run(Func<Task> action)
+    {
+        if (_busy) return;
+        _busy = true; _error = null;
+        try { await action(); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or JsonException or NotSupportedException) { _error = ex is JsonException ? "Invalid rules JSON." : ex.Message; }
+        catch (Exception ex) { Logger.LogError(ex, "Rules operation failed"); _error = "Could not complete the rules operation. Draft retained; refresh saved state before retrying."; }
+        finally { _busy = false; }
+    }
+}

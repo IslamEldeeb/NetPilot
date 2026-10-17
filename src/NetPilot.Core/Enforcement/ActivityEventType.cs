@@ -27,5 +27,9 @@ public enum ActivityEventType
     RuleDryRun,
     RuleReverted,
     RuleActionSkippedProtected,
-    RuleFailed
+    RuleFailed,
+    ConfigurationChanged,
+    ConfigurationRestored,
+    NotificationCreated,
+    Unknown
 }

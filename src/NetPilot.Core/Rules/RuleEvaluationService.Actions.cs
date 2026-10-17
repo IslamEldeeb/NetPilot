@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text.RegularExpressions;
 using NetPilot.Abstractions;
 using NetPilot.Core.Devices;
 using NetPilot.Core.Enforcement;
@@ -73,8 +72,8 @@ public partial class RuleEvaluationService
             RuleFiringOutcome.DryRun => ActivityEventType.RuleDryRun,
             RuleFiringOutcome.SkippedProtected => ActivityEventType.RuleActionSkippedProtected,
             _ => ActivityEventType.RuleFired
-        }, firing.RuleName, SubjectMac(firing), outcome == RuleFiringOutcome.DryRun
-            ? "would have performed: " + DescribeActions(firing) : $"{outcome} for {firing.Subject}", ct);
+        }, (firing.RuleName, firing.Id, firing.DryRun), SubjectMac(firing), outcome == RuleFiringOutcome.DryRun
+            ? "would have performed: " + RuleNotificationText.DescribeActions(firing) : $"{outcome} for {firing.Subject}", ct);
     }
 
     private async Task<RuleFiring> ApplyClaimAsync(IRouterProvider provider, RuleFiring firing,
@@ -139,41 +138,11 @@ public partial class RuleEvaluationService
 
     private async Task NotifyAsync(RuleFiring firing, string title, string body, CancellationToken ct)
     {
-        title = Template(title, firing);
-        body = Template(body, firing);
-        if (firing.DryRun)
-        {
-            title = "[Dry-run] " + title;
-            body += " Would have performed: " + DescribeActions(firing);
-        }
+        var protectedMacs = new List<MacAddress>();
         if (firing.Actions.Any(a => a is Throttle or Block))
-        {
-            var protectedMacs = new List<MacAddress>();
             foreach (var mac in firing.TargetMacs)
                 if (await protectedDevices.IsProtectedAsync(mac, ct)) protectedMacs.Add(mac);
-            if (protectedMacs.Count > 0) body += " Protected devices: throttle/block skipped for " + string.Join(", ", protectedMacs) + ".";
-        }
-        await notifications.DispatchAsync(new(title, body, "/",
-            $"rule:{firing.RuleId}:{firing.Subject}:{firing.EpisodeKey}", []),
+        await notifications.DispatchAsync(RuleNotificationText.Create(firing, new Notify(title, body), protectedMacs),
             firing.DryRun ? NotificationInterruption.QuietHoursEligible : NotificationInterruption.Immediate, ct);
     }
-
-    private static string Template(string text, RuleFiring firing) => Regex.Replace(text, @"\{(rule|device|used|cap)\}", match =>
-        match.Groups[1].Value switch
-        {
-            "rule" => firing.RuleName,
-            "device" => firing.DeviceName,
-            "used" => firing.UsedBytes.ToString(CultureInfo.InvariantCulture),
-            "cap" => firing.CapBytes.ToString(CultureInfo.InvariantCulture),
-            _ => match.Value
-        });
-
-    private static string DescribeActions(RuleFiring firing) => string.Join(", ", firing.Actions.Select(a => a switch
-    {
-        Notify => "notify",
-        Throttle t => $"throttle {firing.Subject} to {t.Kbps} Kbps",
-        Block => $"block {firing.Subject}",
-        SetWireless w => $"{(w.Enabled ? "enable" : "disable")} {w.NetworkId}",
-        _ => "unknown action"
-    }));
 }

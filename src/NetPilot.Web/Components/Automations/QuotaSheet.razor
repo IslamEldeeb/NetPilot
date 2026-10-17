@@ -1,0 +1,49 @@
+@using NetPilot.Core.Quota
+@using NetPilot.Core.Devices
+@inject NavigationManager Navigation
+<MudStack Spacing="3">
+    <MudAlert Severity="Severity.Info">Blank means No cap at this scope for both periods. Remove the override to inherit. This default is per device, not a household budget.</MudAlert>
+    <MudTextField T="string" Label="Daily cap (decimal GB)" @bind-Value="_form.DailyGb" Immediate InputMode="@(InputMode.@decimal)" HelperText="1 GB = 1,000,000,000 bytes; blank means no daily cap" />
+    <MudTextField T="string" Label="Monthly cap (decimal GB)" @bind-Value="_form.MonthlyGb" Immediate InputMode="@(InputMode.@decimal)" />
+    <MudSelect T="QuotaAction" Label="Action" @bind-Value="_form.Action">
+        @foreach (var action in Enum.GetValues<QuotaAction>()) { <MudSelectItem Value="action">@action</MudSelectItem> }
+    </MudSelect>
+    <MudTextField T="string" Label="Symmetric throttle (Kbps)" @bind-Value="_form.ThrottleKbps" Immediate InputMode="InputMode.numeric" Disabled="@(_form.Action != QuotaAction.Throttle)" />
+    <MudTextField T="string" Label="Warn percents" @bind-Value="_form.Warnings" Immediate HelperText="Sorted, unique 1–99, e.g. 80,90. Blank disables warnings." />
+    <MudCheckBox T="bool" @bind-Value="_form.Exempt" Label="Exempt from quotas (usage still tracked)" />
+    <MudCheckBox T="bool" Value="_form.DryRun" ValueChanged="enabled => { if (enabled) _form.DryRun = true; }" Disabled="_form.DryRun" Label="Dry-run: log and notify; no automatic restrictions" />
+    <MudAlert Severity="Severity.Warning">Enforcement remains a deployment decision. Existing live policies retain their mode; review Internet counters and T8 before changing enforcement in Classic controls.</MudAlert>
+    <MudSelect T="string" Label="Preview inheritance for device" @bind-Value="_previewMac">
+        @foreach (var device in Devices) { <MudSelectItem Value="@(device.Mac.ToString())">@DeviceList.DisplayName(device)</MudSelectItem> }
+    </MudSelect>
+    @if (Draft(out var error) is { } draft)
+    {
+        var preview = Devices.FirstOrDefault(d => d.Mac.ToString() == _previewMac);
+        @if (preview is not null)
+        {
+            <MudText role="status">@QuotaPolicyText.EffectivePolicy(preview, QuotaResolver.Resolve(preview, Policies.Where(p => p.Id != draft.Id).Append(draft).ToArray()))</MudText>
+            <MudText Typo="Typo.caption">Protected devices still track usage and notify; automatic throttle/block is skipped.</MudText>
+        }
+    }
+    else { <MudAlert Severity="Severity.Error" role="alert">@error</MudAlert> }
+    <MudStack Row Wrap="Wrap.Wrap">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(Busy || Draft(out _) is null)" OnClick="Save">Save quota</MudButton>
+        <MudButton Href="/automations/quotas">Cancel</MudButton>
+    </MudStack>
+</MudStack>
+@code {
+    [Parameter, EditorRequired] public QuotaPolicy Initial { get; set; } = default!;
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public IReadOnlyList<Device> Devices { get; set; } = [];
+    [Parameter] public IReadOnlyList<QuotaPolicy> Policies { get; set; } = [];
+    [Parameter] public EventCallback<QuotaPolicy> Saved { get; set; }
+    private QuotaForm _form = new();
+    private string _previewMac = "";
+    protected override void OnInitialized() { _form = QuotaForm.From(Initial); _previewMac = Initial.Mac?.ToString() ?? Devices.FirstOrDefault()?.Mac.ToString() ?? ""; }
+    private QuotaPolicy? Draft(out string? error)
+    {
+        try { error = null; return _form.Build(Initial); }
+        catch (ArgumentException ex) { error = ex.Message; return null; }
+    }
+    private Task Save() => Draft(out _) is { } policy ? Saved.InvokeAsync(policy) : Task.CompletedTask;
+}

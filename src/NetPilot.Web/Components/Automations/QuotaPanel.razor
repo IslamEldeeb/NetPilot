@@ -1,0 +1,170 @@
+@using NetPilot.Core.Devices
+@using NetPilot.Core.Policy
+@using NetPilot.Core.Quota
+@using NetPilot.Core.Usage
+@using NetPilot.Core.Automations
+@using NetPilot.Web.Components.Devices
+@inject IQuotaStore Quotas
+@inject IDeviceStore DeviceStore
+@inject IPolicyStore Policies
+@inject IProtectedDeviceStore Protection
+@inject IUsageStore Usage
+@inject IAutomationCommands Commands
+@inject UsagePeriodClock Clock
+@inject Confirm Confirm
+@inject ISnackbar Snackbar
+@inject AutomationFeedback Feedback
+@inject ILogger<QuotaPanel> Logger
+@inject NavigationManager Navigation
+<MudStack Spacing="3">
+    <MudText Typo="Typo.h2">Quotas</MudText>
+    @if (_error is not null) { <MudAlert Severity="Severity.Error" role="alert">@_error <MudButton OnClick="Reload">Retry</MudButton></MudAlert> }
+    @if (!_loaded) { <MudSkeleton Height="100px" aria-label="Loading quotas" /> }
+    else
+    {
+        <MudAlert Severity="Severity.Info">Device → category → default. A matched policy supplies both periods; blank caps do not inherit. Protected and exempt have different meanings.</MudAlert>
+        <MudButton Href="/automations/quotas/default" Variant="Variant.Outlined">@(_policies.Any(p => p.Id == "default") ? "Edit global default" : "Set global default")</MudButton>
+        <MudGrid>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="string" Label="Category override" @bind-Value="_category">
+                    @foreach (var category in _categories) { <MudSelectItem Value="category">@category</MudSelectItem> }
+                </MudSelect>
+                <MudButton Disabled="@string.IsNullOrEmpty(_category)" Href="@($"/automations/quotas/category/{Uri.EscapeDataString(_category)}")">Add / edit category</MudButton>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="string" Label="Device override" @bind-Value="_mac">
+                    @foreach (var device in _devices) { <MudSelectItem Value="@(device.Mac.ToString())">@DeviceList.DisplayName(device) (@device.Mac)</MudSelectItem> }
+                </MudSelect>
+                <MudButton Disabled="@string.IsNullOrEmpty(_mac)" Href="@($"/automations/quotas/device/{_mac}")">Add / edit device</MudButton>
+            </MudItem>
+        </MudGrid>
+        @if (_policies.Count == 0) { <MudText>No quotas configured. Set a safe dry-run default.</MudText> }
+        @foreach (var policy in _policies.OrderBy(p => p.Scope).ThenBy(p => p.Id))
+        {
+            <MudPaper Outlined Class="pa-4" @key="policy.Id">
+                <MudText Typo="Typo.h3">@(policy.Scope == QuotaScope.Default ? "Global default" : policy.Id)</MudText>
+                <MudText>@(policy.Exempt ? "Exempt" : $"{policy.Action} · {(policy.DryRun ? "Dry-run" : "Enforcing")}") · Daily @(policy.DailyBytes is {} day ? DataSize.Format(day) : "No cap") · Month @(policy.MonthlyBytes is {} month ? DataSize.Format(month) : "No cap")</MudText>
+                <MudText Typo="Typo.caption">Warnings: @(policy.WarnPercents.Length == 0 ? "None" : string.Join(", ", policy.WarnPercents) + "%")</MudText>
+                <MudStack Row Wrap="Wrap.Wrap">
+                    <MudButton Href="@EditorPath(policy)">Edit</MudButton>
+                    <MudButton Color="Color.Error" Disabled="_busy" OnClick="() => Remove(policy)">Remove</MudButton>
+                </MudStack>
+            </MudPaper>
+        }
+        <MudText Typo="Typo.h3">Today's progress · @Clock.TodayKey() · @Clock.TimeZone.Id</MudText>
+        @foreach (var device in _devices)
+        {
+            var resolved = QuotaResolver.Resolve(device, _policies);
+            var state = _usage.FirstOrDefault(u => u.Mac == device.Mac);
+            <MudPaper Outlined Class="pa-4" @key="device.Mac">
+                <MudLink Href="@($"/devices/{device.Mac}")">@DeviceList.DisplayName(device)</MudLink>
+                <MudText>@QuotaPolicyText.EffectivePolicy(device, resolved)</MudText>
+                <MudText Typo="Typo.caption">@(state?.CurrentDayKey == Clock.TodayKey() ? DataSize.Format(state.CurrentDayBytes) : "0 B") Internet today</MudText>
+                <DeviceQuotaMeter Resolution="resolved" TodayBytes="@(state?.CurrentDayKey == Clock.TodayKey() ? state.CurrentDayBytes : 0)" MonthBytes="@(state?.CurrentMonthKey == Clock.ThisMonthKey() ? state.CurrentMonthBytes : 0)" />
+                <MudCheckBox T="bool" Value="@_protected.Contains(device.Mac)" ValueChanged="enabled => Protect(device, enabled)" Disabled="_busy" Label="Protected: skip automatic throttle/block; usage and notifications continue" />
+                <MudCheckBox T="bool" Value="device.UsageLanOnly" ValueChanged="enabled => Exclude(device, enabled)" Disabled="_busy" Label="LAN-only device" />
+            </MudPaper>
+        }
+        @foreach (var missing in _protected.Except(_devices.Select(d => d.Mac)))
+        {
+            <MudPaper Outlined Class="pa-4"><MudText>Protected: @missing (no longer in device list)</MudText><MudButton OnClick="() => Unprotect(missing)">Remove protection</MudButton></MudPaper>
+        }
+        <MudText Typo="Typo.caption">LAN-only excludes all future traffic, including remote viewers and Internet traffic, from Internet totals. Existing totals stay unchanged.</MudText>
+        @if (_editing is not null)
+        {
+            <AppSheet Open Title="@($"Quota · {_editing.Id}")" OpenChanged="Close">
+                <QuotaSheet Initial="_editing" Devices="_devices" Policies="_policies" Busy="_busy" Saved="Save" />
+            </AppSheet>
+        }
+    }
+</MudStack>
+@code {
+    [Parameter] public string? ScopeKey { get; set; }
+    [Parameter] public string? Target { get; set; }
+    private IReadOnlyList<QuotaPolicy> _policies = [];
+    private IReadOnlyList<Device> _devices = [];
+    private IReadOnlyList<DeviceUsageState> _usage = [];
+    private IReadOnlyList<string> _categories = [];
+    private HashSet<MacAddress> _protected = [];
+    private QuotaPolicy? _editing, _before;
+    private string _category = "", _mac = "";
+    private string? _error;
+    private bool _loaded, _busy;
+    protected override async Task OnInitializedAsync()
+    {
+        await Reload();
+        if (!_loaded) return;
+        if (ScopeKey is null) return;
+        try
+        {
+            var initial = ScopeKey switch
+            {
+                "default" => new QuotaPolicy { Id = "default" },
+                "category" when !string.IsNullOrWhiteSpace(Target) => new QuotaPolicy { Id = $"cat:{Target}", Scope = QuotaScope.Category, CategoryKey = Target },
+                "device" when !string.IsNullOrWhiteSpace(Target) => DeviceQuota(new MacAddress(Target)),
+                _ => throw new ArgumentException("Unknown quota scope.")
+            };
+            _before = _policies.FirstOrDefault(p => p.Id == initial.Id);
+            _editing = _before ?? initial;
+        }
+        catch (ArgumentException ex) { _error = ex.Message; }
+    }
+    private static QuotaPolicy DeviceQuota(MacAddress mac) => new() { Id = $"dev:{mac}", Scope = QuotaScope.Device, Mac = mac };
+    private Task Reload() => Run(Load);
+    private async Task Load()
+    {
+        _policies = await Quotas.GetAllAsync(default);
+        _devices = await DeviceStore.GetAllAsync(default);
+        _usage = await Usage.GetAllStatesAsync(default);
+        _protected = (await Protection.GetAllAsync(default)).ToHashSet();
+        _categories = (await Policies.GetAllAsync(default)).Select(p => p.CategoryKey).Union(_devices.Select(d => d.CategoryKey))
+            .Union(_policies.Where(p => p.Scope == QuotaScope.Category).Select(p => p.CategoryKey!)).Order().ToArray();
+        _loaded = true;
+    }
+    private static string EditorPath(QuotaPolicy policy) => policy.Scope switch
+    {
+        QuotaScope.Default => "/automations/quotas/default",
+        QuotaScope.Category => $"/automations/quotas/category/{Uri.EscapeDataString(policy.CategoryKey!)}",
+        _ => $"/automations/quotas/device/{policy.Mac}"
+    };
+    private Task Close(bool open) { if (!open) Navigation.NavigateTo("/automations/quotas"); return Task.CompletedTask; }
+    private Task Save(QuotaPolicy policy) => Run(async () =>
+    {
+        var change = await Commands.SaveQuotaAsync(_before, policy, default);
+        Feedback.Saved(change, "Quota saved.", "/automations/quotas");
+        Navigation.NavigateTo("/automations/quotas");
+    });
+    private async Task Remove(QuotaPolicy policy)
+    {
+        var remaining = _policies.Where(p => p.Id != policy.Id).ToArray();
+        var affected = _devices.Where(d => QuotaResolver.Resolve(d, _policies).MatchedPolicy?.Id == policy.Id);
+        var preview = string.Join(" ", affected.Select(d => $"{DeviceList.DisplayName(d)}: {QuotaPolicyText.EffectivePolicy(d, QuotaResolver.Resolve(d, remaining))}."));
+        if (!await Confirm.DangerAsync("Remove quota?", "Remove this policy to inherit. Existing claims settle on the Agent's next tick. " + preview, "Remove")) return;
+        await Run(async () =>
+        {
+            var change = await Commands.SaveQuotaAsync(policy, null, default);
+            Feedback.Saved(change, "Quota removed.", "/automations/quotas");
+            await Load();
+        });
+    }
+    private Task Protect(Device device, bool enabled) => Run(async () =>
+    {
+        if (enabled) await Protection.AddAsync(device.Mac, default); else await Protection.RemoveAsync(device.Mac, default);
+        await Load();
+    });
+    private Task Unprotect(MacAddress mac) => Run(async () => { await Protection.RemoveAsync(mac, default); await Load(); });
+    private Task Exclude(Device device, bool enabled) => Run(async () =>
+    {
+        var current = await DeviceStore.FindByMacAsync(device.Mac, default) ?? throw new InvalidOperationException("Device no longer exists.");
+        current.UsageLanOnly = enabled; await DeviceStore.UpsertAsync(current, default); await Load();
+    });
+    private async Task Run(Func<Task> action)
+    {
+        if (_busy) return;
+        _busy = true; _error = null;
+        try { await action(); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { _error = ex.Message; }
+        catch (Exception ex) { Logger.LogError(ex, "Quota operation failed"); _error = "Could not complete the quota operation. Draft retained; retry or reopen to reload saved state."; }
+        finally { _busy = false; }
+    }
+}

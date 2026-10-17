@@ -2,7 +2,12 @@ namespace NetPilot.Core.Notifications;
 
 public record NotificationAction(string Id, string Title, string Token);
 
-public record NotificationMessage(string Title, string Body, string? Url, string Tag, NotificationAction[] Actions);
+public record NotificationMessage(string Title, string Body, string? Url, string Tag, NotificationAction[] Actions)
+{
+    public bool? DryRun { get; init; }
+    public string? CorrelationId { get; init; }
+    public NetPilot.Core.Devices.MacAddress? Mac { get; init; }
+}
 
 public static class NotificationActionIds
 {
