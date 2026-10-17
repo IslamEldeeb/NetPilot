@@ -29,12 +29,14 @@ namespace NetPilot.Data.Tests.Web;
 public sealed class ShellRenderingTests
 {
     [Theory]
-    [InlineData(typeof(Home), "Welcome to the new NetPilot", "/legacy")]
+    [InlineData(typeof(Home), "Home network", "/legacy")]
     [InlineData(typeof(Devices), "Devices", "/legacy#devices")]
     [InlineData(typeof(Usage), "Usage", "/legacy#usage")]
     [InlineData(typeof(Automations), "Quotas", "/legacy#policies")]
     [InlineData(typeof(Activity), "Activity", "/legacy#activity")]
-    [InlineData(typeof(Settings), "This browser", "/legacy#notifications")]
+    [InlineData(typeof(Settings), "Open Router", "/legacy#notifications")]
+    [InlineData(typeof(Safety), "Evidence checklist", "/settings")]
+    [InlineData(typeof(Setup), "Step 1 of 6", "/settings")]
     public async Task PlaceholderInMudShell_RendersContentAndClassicEscape(Type page, string content, string classicPath)
     {
         var directory = Path.Combine(Path.GetTempPath(), $"netpilot-mud-render-{Guid.NewGuid():N}");
@@ -228,6 +230,69 @@ public sealed class ShellRenderingTests
     }
 
     [Theory]
+    [InlineData("router", "Router connection")]
+    [InlineData("wireless", "Main WiFi")]
+    [InlineData("notifications", "Shared notification preferences")]
+    [InlineData("health", "LAN exclusion / T8")]
+    [InlineData("traffic", "Accuracy: Not automatically verified")]
+    [InlineData("app", "HTTPS and installation")]
+    [InlineData("about", "Database size is not measured")]
+    [InlineData("appearance", "System")]
+    [InlineData("backup", "Download backup")]
+    [InlineData("security", "Dashboard access")]
+    public async Task SettingsSectionsRenderRealControlsWithoutSecrets(string section, string expected)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"netpilot-settings-render-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            await using var provider = Services(directory);
+            await provider.GetRequiredService<NetPilot.Core.RouterConnection.IRouterConnectionStore>().SaveAsync(new("tplink", "192.168.1.1", false, "admin", "saved-secret-ciphertext"), default);
+            await using var renderer = new HtmlRenderer(provider, provider.GetRequiredService<ILoggerFactory>());
+            var html = await renderer.Dispatcher.InvokeAsync(async () =>
+            {
+                var page = await renderer.RenderComponentAsync<Settings>(ParameterView.FromDictionary(new Dictionary<string, object?> { [nameof(Settings.Section)] = section }));
+                return page.ToHtmlString();
+            });
+            Assert.Contains(expected, html);
+            Assert.DoesNotContain("saved-secret-ciphertext", html);
+            Assert.DoesNotContain("Could not load", html);
+            Assert.DoesNotContain("np-", html);
+            if (section == "backup")
+            {
+                Assert.Contains("method=\"post\" action=\"/api/backup/download\"", html);
+                Assert.Contains("test-antiforgery-token", html);
+                Assert.Contains("docs/backup-restore.md", html);
+            }
+            if (section == "router") Assert.Contains("type=\"password\"", html);
+            if (section == "notifications") Assert.Contains("not prove Android display", html);
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    [Theory]
+    [InlineData(1, "Discover devices")]
+    [InlineData(2, "Categories and protection")]
+    [InlineData(3, "Optional safe quota")]
+    [InlineData(4, "Optional notifications")]
+    [InlineData(5, "Ready to observe")]
+    public async Task SetupResumesAtSavedStepWithSkipAndRetry(int step, string expected)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"netpilot-setup-render-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            await using var provider = Services(directory);
+            await provider.GetRequiredService<NetPilot.Core.Settings.ISetupProgressStore>().SaveAsync(new(step), default);
+            await using var renderer = new HtmlRenderer(provider, provider.GetRequiredService<ILoggerFactory>());
+            var html = await renderer.Dispatcher.InvokeAsync(async () => (await renderer.RenderComponentAsync<Setup>()).ToHtmlString());
+            Assert.Contains(expected, html); Assert.Contains("Skip setup for now", html); Assert.Contains("Retry", html);
+            Assert.DoesNotContain("Could not load", html);
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    [Theory]
     [InlineData("quotas", "Today's progress")]
     [InlineData("rules", "Guest WiFi off at night")]
     [InlineData("schedules", "same rule IDs")]
@@ -303,7 +368,7 @@ public sealed class ShellRenderingTests
         finally { Directory.Delete(directory, true); }
     }
 
-    private static ServiceProvider Services(string directory, bool loginEnabled = false)
+    internal static ServiceProvider Services(string directory, bool loginEnabled = false, Action<IServiceCollection>? configure = null)
     {
         var configuration = new ConfigurationBuilder().Build();
         var services = new ServiceCollection().AddLogging()
@@ -318,6 +383,10 @@ public sealed class ShellRenderingTests
         services.AddScoped<ActivityInboxState>();
         services.AddScoped<AutomationFeedback>();
         services.AddScoped<DeviceRouterActions>();
+        services.AddScoped<NetPilot.Web.Features.UsageOverviewQuery>();
+        services.AddSingleton(new NetPilot.Core.Actions.TemporaryActionOptions());
+        services.AddScoped<SettingsRouterActions>();
+        services.AddScoped<NetPilot.Core.Safety.SafetyGraduationService>();
         services.AddDashboardLogin(configuration);
         if (loginEnabled) services.AddSingleton(new DashboardLoginOptions("test-password"));
         services.AddSingleton<AntiforgeryStateProvider, StaticAntiforgery>();
@@ -325,6 +394,7 @@ public sealed class ShellRenderingTests
         services.AddNetPilotWebPush(configuration);
         services.AddNetPilotLocalTraffic(configuration);
         services.AddSingleton<PolicyReconciliationService>().AddSingleton<UsageTrackingService>();
+        configure?.Invoke(services);
         return services.BuildServiceProvider();
     }
 

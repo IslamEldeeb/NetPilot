@@ -8,11 +8,13 @@ namespace NetPilot.Data;
 
 public class LiteActionClaimStore : IActionClaimStore
 {
+    private readonly NetPilotDatabase _db;
     private readonly ILiteCollection<ActionClaimDocument> _claims;
     private readonly ILiteCollection<ClaimDeviceStateDocument> _devices;
 
     public LiteActionClaimStore(NetPilotDatabase db)
     {
+        _db = db;
         _claims = db.GetCollection<ActionClaimDocument>("action_claims");
         _claims.EnsureIndex(c => c.Mac);
         _claims.EnsureIndex(c => c.Source);
@@ -31,12 +33,22 @@ public class LiteActionClaimStore : IActionClaimStore
     public Task UpsertAsync(ActionClaim claim, CancellationToken ct)
     {
         claim.Validate();
-        _claims.Upsert(new ActionClaimDocument
-        {
-            Id = claim.Id, Mac = claim.Mac, Kind = claim.Kind, Source = claim.Source,
-            ThrottleKbps = claim.ThrottleKbps, CreatedAtUtc = claim.CreatedAtUtc, Reason = claim.Reason
-        });
+        _claims.Upsert(ToDocument(claim));
         return Task.CompletedTask;
+    }
+
+    public Task<bool> TryAddAsync(ActionClaim claim, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        claim.Validate();
+        var added = false;
+        _db.InTransaction(() =>
+        {
+            if (_claims.Exists(saved => saved.Id == claim.Id)) return;
+            _claims.Insert(ToDocument(claim));
+            added = true;
+        });
+        return Task.FromResult(added);
     }
 
     public Task RemoveAsync(string id, CancellationToken ct)
@@ -70,9 +82,17 @@ public class LiteActionClaimStore : IActionClaimStore
         return Task.CompletedTask;
     }
 
+    private static ActionClaimDocument ToDocument(ActionClaim claim) => new()
+    {
+        Id = claim.Id, Mac = claim.Mac, Kind = claim.Kind, Source = claim.Source,
+        ThrottleKbps = claim.ThrottleKbps, CreatedAtUtc = claim.CreatedAtUtc, Reason = claim.Reason,
+        ExpiresAtUtc = claim.ExpiresAtUtc, Pending = claim.Pending, DryRun = claim.DryRun
+    };
+
     private static ActionClaim ToDomain(ActionClaimDocument doc)
     {
-        var claim = new ActionClaim(new(doc.Mac), doc.Kind, doc.Source, doc.ThrottleKbps, doc.CreatedAtUtc, doc.Reason);
+        var claim = new ActionClaim(new(doc.Mac), doc.Kind, doc.Source, doc.ThrottleKbps, doc.CreatedAtUtc, doc.Reason)
+        { ExpiresAtUtc = doc.ExpiresAtUtc, Pending = doc.Pending, DryRun = doc.DryRun };
         claim.Validate();
         return claim;
     }

@@ -11,4 +11,5 @@ public class UsageDailyHistoryDocument
     public long TotalBytes { get; set; }
     public DateTimeOffset FinalizedAtUtc { get; set; }
     public long LanBytes { get; set; }
+    public bool ForecastEligible { get; set; }
 }

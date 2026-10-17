@@ -23,6 +23,8 @@ var rulesOptions = new RulesOptions();
 builder.Configuration.GetSection("NetPilot:Rules").Bind(rulesOptions);
 rulesOptions.Validate();
 builder.Services.AddSingleton(rulesOptions);
+builder.Services.AddSingleton(new NetPilot.Core.Actions.TemporaryActionOptions(
+    builder.Configuration.GetValue("NetPilot:TemporaryActions:ForceDryRun", true)));
 
 builder.Services.AddNetPilotData(dbPath, keyRingPath);
 builder.Services.AddTpLinkProvider();
@@ -38,6 +40,9 @@ builder.Services.AddScoped<Confirm>();
 builder.Services.AddScoped<ActivityInboxState>();
 builder.Services.AddScoped<AutomationFeedback>();
 builder.Services.AddScoped<DeviceRouterActions>();
+builder.Services.AddScoped<NetPilot.Web.Features.UsageOverviewQuery>();
+builder.Services.AddScoped<SettingsRouterActions>();
+builder.Services.AddScoped<NetPilot.Core.Safety.SafetyGraduationService>();
 
 // Add services to the container.
 builder.Services.AddRazorComponents()

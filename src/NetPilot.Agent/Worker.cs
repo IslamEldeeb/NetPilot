@@ -1,4 +1,5 @@
 using NetPilot.Abstractions;
+using NetPilot.Core.Actions;
 using NetPilot.Core.Enforcement;
 using NetPilot.Core.Policy;
 using NetPilot.Core.Health;
@@ -29,7 +30,7 @@ public class Worker(
     RuleEvaluationService ruleEvaluationService,
     IAgentHeartbeatStore heartbeatStore,
     RulesOptions rulesOptions,
-    TimeProvider clock) : BackgroundService
+    TimeProvider clock, TemporaryActionEnforcement? temporaryActions = null) : BackgroundService
 {
     private bool _connected;
     private AgentHeartbeat _heartbeat = new();
@@ -120,11 +121,21 @@ public class Worker(
     {
         var snapshots = await reconciliationService.ReconcileAsync(provider, stoppingToken);
         await usageTrackingService.TrackAsync(snapshots, stoppingToken);
+        string? temporaryError = null;
+        try
+        {
+            if (temporaryActions is not null) await temporaryActions.EvaluateAsync(provider, stoppingToken);
+        }
+        catch (Exception) when (!stoppingToken.IsCancellationRequested)
+        {
+            logger.LogError("Temporary action evaluation failed — will retry next tick.");
+            temporaryError = "Temporary action evaluation failed";
+        }
         await quotaEnforcementService.EvaluateAsync(provider, snapshots, stoppingToken);
         try
         {
             await ruleEvaluationService.EvaluateAsync(provider, snapshots, stoppingToken);
-            return null;
+            return temporaryError;
         }
         catch (Exception) when (!stoppingToken.IsCancellationRequested)
         {

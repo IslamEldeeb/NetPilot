@@ -142,7 +142,7 @@ public partial class RuleEvaluationService
         if (firing.Actions.Any(a => a is Throttle or Block))
             foreach (var mac in firing.TargetMacs)
                 if (await protectedDevices.IsProtectedAsync(mac, ct)) protectedMacs.Add(mac);
-        await notifications.DispatchAsync(RuleNotificationText.Create(firing, new Notify(title, body), protectedMacs),
+        await notifications.DispatchAsync(RuleNotificationText.Create(firing, new Notify(title, body), protectedMacs) with { Event = Settings.NotificationEvent.Rule },
             firing.DryRun ? NotificationInterruption.QuietHoursEligible : NotificationInterruption.Immediate, ct);
     }
 }

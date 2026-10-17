@@ -19,32 +19,11 @@ The endpoint requires a signed-in dashboard session (it is not on the login allo
 
 ## Downloading a backup
 
-The Settings → Backup button ships in a later UI batch. Until then, download with `curl` using your browser session. The dashboard login uses a cookie plus an antiforgery token; grab both from the login page form:
+Open **Settings → Backup** (`/settings/backup`) and select **Download backup**. The browser submits a normal form POST with a fresh antiforgery token and downloads the archive. A signed-in session is required when dashboard login is enabled. Antiforgery is required even when login is disabled; a plain tokenless `curl` POST is rejected. Retry after 30 seconds if another download is in progress.
 
-```bash
-# 1. Fetch the login page and store the cookie + the hidden antiforgery token.
-curl -c netpilot-cookies.txt https://<netpilot-host>/login -o login.html
-TOKEN=$(grep -o 'name="__RequestVerificationToken" type="hidden" value="[^"]*"' login.html | head -1 | sed 's/.*value="//;s/"//')
+The shared retention editor on the same page controls notification attempts, inactive quota-state days (minimum 62), and firing-history limits. Both hosts read the shared settings. Active claims, active quota actions, pending-claim restoration metadata, active rule firings and firing watermarks are retained. These controls do not prune usage/activity history or delete downloaded backup archives. Restore remains manual (D8), without an in-app upload or restart handshake.
 
-# 2. Sign in.
-curl -b netpilot-cookies.txt -c netpilot-cookies.txt \
-  -d "password=<dashboard-password>" \
-  -d "__RequestVerificationToken=$TOKEN" \
-  -L https://<netpilot-host>/login -o /dev/null
-
-# 3. Download the backup (form post, antiforgery-validated).
-curl -b netpilot-cookies.txt \
-  -F "__RequestVerificationToken=$TOKEN" \
-  -OJ https://<netpilot-host>/api/backup/download
-```
-
-If the dashboard login is disabled (no `NETPILOT_WEB_PASSWORD`), the endpoint needs no cookie and a plain form post is enough:
-
-```bash
-curl -X POST -d "" -OJ https://<netpilot-host>:8080/api/backup/download
-```
-
-The LiteDB file is copied, never locked, so it is safe to download while the Agent is running. Only one download runs at a time — retry if you get HTTP 429.
+A successful download and matching manifest checksums do not prove a successful restore. Rehearse on an isolated copied volume before relying on a backup for recovery.
 
 ## Restoring a backup (manual, Docker)
 
@@ -55,7 +34,7 @@ cd deploy/docker
 docker compose stop
 
 # Find the real volume name (Compose prefixes it with the project name).
-VOLUME_NAME=$(docker inspect "$(docker compose ps -q netpilot-agent)" \
+VOLUME_NAME=$(docker inspect "$(docker compose ps -a -q netpilot-agent)" \
   --format '{{ range .Mounts }}{{ if eq .Destination "/data" }}{{ .Name }}{{ end }}{{ end }}')
 
 docker run --rm -v "$VOLUME_NAME":/data -v "$(pwd)":/backup alpine \

@@ -1,0 +1,144 @@
+@page "/settings/safety"
+@page "/settings/safety/graduate"
+@layout AppShell
+@using NetPilot.Core.Safety
+@using NetPilot.Core.Quota
+@using NetPilot.Core.Devices
+@using NetPilot.Core.Health
+@using NetPilot.Core.Rules
+@using NetPilot.Core.Usage
+@inject ISafetyStore Store
+@inject SafetyGraduationService Graduation
+@inject IProtectedDeviceStore Protection
+@inject IDeviceStore Devices
+@inject IAgentHeartbeatStore Heartbeats
+@inject RulesOptions Rules
+@inject UsagePeriodClock Clock
+@inject Confirm Confirm
+<PageTitle>Safety Center · NetPilot</PageTitle>
+<MudStack Spacing="4">
+    <MudStack Row="true" Wrap="Wrap.Wrap"><MudText Typo="Typo.h1" HtmlTag="h1">Safety Center</MudText><MudButton Href="/settings">All settings</MudButton><MudButton OnClick="@(() => RunAsync(LoadAsync))" Disabled="_busy">Reload / Retry</MudButton></MudStack>
+    <MudAlert Severity="Severity.Warning">Keep enforcement dry-run until Internet counters and T8 are verified on your network. Manual controls and category speed policies operate separately. This UI never changes forced-dry-run deployment configuration.</MudAlert>
+    @if (_message is not null) { <MudAlert Severity="@(_failed ? Severity.Error : Severity.Info)" role="status">@_message</MudAlert> }
+    <MudGrid>
+        <MudItem xs="12" sm="6"><MudPaper Outlined="true" Class="pa-4"><MudText Typo="Typo.h2">Effective modes</MudText>
+            <MudText>Web rules: @(Rules.ForceDryRun ? "Forced dry-run" : "Per-policy dry-run") · Kill switch: @(Rules.Enabled ? "Enabled" : "Disabled")</MudText>
+            <MudText>Agent: @AgentHealth.Evaluate(_heartbeat, Clock.GetUtcNow()) · @(_heartbeat is null ? "Runtime mode unknown" : $"Reported rules {(_heartbeat.EffectiveModes.RulesForceDryRun ? "forced dry-run" : "per-policy")}; {(_heartbeat.EffectiveModes.RulesEnabled ? "enabled" : "disabled")}")</MudText>
+            <MudText>Quotas use each saved policy’s DryRun flag; rules forced mode does not force quota dry-run. Saved enforcing policies: @_policies.Count(p => !p.DryRun) of @_policies.Count.</MudText>
+            <MudText Typo="Typo.caption">Rules configuration: NETPILOT_RULES_FORCE_DRYRUN. Change only through a reviewed deployment after live checks, then wait for the Agent heartbeat. There is no configuration switch here.</MudText>
+        </MudPaper></MudItem>
+        <MudItem xs="12" sm="6"><MudPaper Outlined="true" Class="pa-4"><MudText Typo="Typo.h2">Protected devices</MudText>
+            <MudText>Protection skips automatic device throttle/block. It does not prevent manual blocks or network-wide wireless changes.</MudText>
+            @if (_protected.Count == 0) { <MudText>No protected devices recorded. Protect your management phone/server from device detail.</MudText> }
+            @foreach (var device in _protected) { <MudLink Href="@($"/devices/{device.Mac}")">@device.Name · @device.Mac</MudLink> }
+            <MudLink Href="/devices">Review devices and protection</MudLink>
+        </MudPaper></MudItem>
+    </MudGrid>
+    <MudPaper Outlined="true" Class="pa-4">
+        <MudStack Spacing="2">
+            <MudText Typo="Typo.h2">Evidence checklist</MudText>
+            <MudText>These are administrator attestations, not automatic verification. Record dates, measurements and method; include no passwords or tokens. Recheck after topology, firmware or policy changes.</MudText>
+            @foreach (var requirement in Requirements)
+            {
+                var saved = _evidence.FirstOrDefault(e => e.Id == requirement.Id);
+                <MudText>@requirement.Label — @(saved is null ? "Not attested" : $"Attested by {saved.Actor}, {Local(saved.AtUtc)}: {saved.Method}")</MudText>
+            }
+            <MudTextField T="string" Label="Administrator name" @bind-Value="_actor" MaxLength="80" />
+            <MudSelect T="string" Label="Evidence item" @bind-Value="_evidenceId">@foreach (var requirement in Requirements) { <MudSelectItem T="string" Value="@requirement.Id">@requirement.Label</MudSelectItem> }</MudSelect>
+            <MudTextField T="string" Label="Measurement / method and result" Lines="3" MaxLength="2000" @bind-Value="_method" />
+            <MudButton OnClick="SaveEvidenceAsync" Disabled="_busy" Color="Color.Primary">Record administrator attestation</MudButton>
+        </MudStack>
+    </MudPaper>
+    <MudText Typo="Typo.h2">Review one policy</MudText>
+    @if (_policies.Count == 0) { <EmptyState Title="No policies" Body="Create a quota or rule in dry-run before reviewing graduation." Href="/automations" ActionText="Open automations" /> }
+    @foreach (var policy in _policies)
+    {
+        <MudPaper Outlined="true" Class="pa-4" @key="(policy.Kind, policy.Id)">
+            <MudText Typo="Typo.h3">@policy.Kind · @policy.Name</MudText>
+            <MudText>@policy.Action · @policy.Targets current targets · Saved mode: @(policy.DryRun ? "Dry-run" : "Enforcing configured")</MudText>
+            @if (policy.Kind == SafetyPolicyKind.Rule && (Rules.ForceDryRun || _heartbeat?.EffectiveModes.RulesForceDryRun == true)) { <MudText>Effective rule mode: forced dry-run regardless of saved policy.</MudText> }
+            <MudButton OnClick="@(() => ReviewAsync(policy))" Disabled="@(_busy || !policy.DryRun)" Variant="Variant.Outlined">Review @policy.Name</MudButton>
+        </MudPaper>
+    }
+    @if (_review is { } selected)
+    {
+        <MudPaper Outlined="true" Class="pa-4" role="region" aria-label="Policy graduation review">
+            <MudStack Spacing="3">
+                <MudText Typo="Typo.h2">Graduate @selected.Name</MudText>
+                <MudText>@selected.Kind · @selected.Action · @selected.Targets current targets. Protected automatic device actions are skipped. Existing owners may still hold restrictions after release. Review windows and restores in @Clock.TimeZone.Id.</MudText>
+                <MudText Typo="Typo.caption">Current target MACs: @(selected.TargetMacs.Length == 0 ? "None" : string.Join(", ", selected.TargetMacs))</MudText>
+                @if (_blockReason is not null) { <MudAlert Severity="Severity.Warning">@_blockReason</MudAlert> }
+                <MudText Typo="Typo.h3">Release rehearsal</MudText>
+                <MudText>With physical router access, rehearse a single reversible throttle and release using existing controls. Check the router after the Agent tick and account for every other claim. Record the exact device, action, release and observed recovery. This form does not run a router command.</MudText>
+                <MudLink Href="/devices">Open device claims and Release controls</MudLink>
+                <MudTextField T="string" Label="Release rehearsal method and observed recovery" Lines="3" MaxLength="2000" @bind-Value="_rehearsal" />
+                <MudButton OnClick="SaveRehearsalAsync" Disabled="_busy">Record release rehearsal for this policy version</MudButton>
+                <MudText>Rehearsal: @(_evidence.Any(e => e.Id == selected.RehearsalId) ? "Administrator attestation recorded" : "Not recorded")</MudText>
+                <MudCheckBox T="bool" @bind-Value="_confirmed" Label="I reviewed this one policy, its targets, evidence, timing and release rehearsal." />
+                <MudButton OnClick="GraduateAsync" Disabled="@(_busy || !_confirmed || _blockReason is not null)" Color="Color.Error" Variant="Variant.Outlined">Confirm per-policy enforcement review</MudButton>
+                <MudButton OnClick="@(() => _review = null)" Disabled="_busy">Cancel review</MudButton>
+            </MudStack>
+        </MudPaper>
+    }
+    <MudText Typo="Typo.h2">Graduation history</MudText>
+    <MudText Typo="Typo.caption">Records capture the reviewed version and attestations. They do not prove router application or verify later edits.</MudText>
+    @if (_history.Count == 0) { <MudText>No graduation records.</MudText> }
+    @foreach (var record in _history.Take(50)) { <MudText>@Local(record.AtUtc) · @record.Actor · @record.Policy.Kind @record.Policy.Name · @record.Policy.Action · @record.Policy.Targets targets · @record.Evidence.Length evidence items</MudText> }
+</MudStack>
+@code {
+    private static readonly (string Id, string Label)[] Requirements =
+    [ ("counters", "Internet units, resets and several days of measurements"), ("lan-exclusion", "T8 TV/Jellyfin and YouTube counter experiment"),
+      ("coverage", "Exporter coverage and router-byte fallback reviewed"), ("protection", "Management devices protected"),
+      ("windows", "Cairo windows, actions and restore behavior reviewed"), ("phone", "Android notification display and delivery checked") ];
+    private IReadOnlyList<PolicyReview> _policies = [];
+    private IReadOnlyList<SafetyEvidence> _evidence = [];
+    private IReadOnlyList<GraduationRecord> _history = [];
+    private List<(string Mac, string Name)> _protected = [];
+    private AgentHeartbeat? _heartbeat;
+    private PolicyReview? _review;
+    private string _actor = "", _method = "", _evidenceId = "counters", _rehearsal = "";
+    private string? _message, _blockReason;
+    private bool _busy, _failed, _confirmed;
+    protected override Task OnInitializedAsync() => RunAsync(LoadAsync);
+    private async Task LoadAsync()
+    {
+        _policies = await Graduation.GetPoliciesAsync(CancellationToken.None);
+        _evidence = await Store.GetEvidenceAsync(CancellationToken.None); _history = await Store.GetGraduationsAsync(CancellationToken.None);
+        _heartbeat = await Heartbeats.GetAsync(CancellationToken.None);
+        var devices = await Devices.GetAllAsync(CancellationToken.None);
+        _protected = (await Protection.GetAllAsync(CancellationToken.None)).Select(mac => (mac.ToString(), devices.FirstOrDefault(d => d.Mac == mac) is { } device ? DeviceList.DisplayName(device) : "Saved protected device")).ToList();
+        if (_review is not null) _blockReason = await Graduation.BlockReasonAsync(_review.Kind, CancellationToken.None);
+    }
+    private async Task ReviewAsync(PolicyReview policy)
+    { _review = policy; _confirmed = false; _rehearsal = ""; _blockReason = await Graduation.BlockReasonAsync(policy.Kind, CancellationToken.None); }
+    private Task SaveEvidenceAsync() => RecordAsync(_evidenceId, _method);
+    private Task SaveRehearsalAsync() => _review is null ? Task.CompletedTask : RecordAsync(_review.RehearsalId, _rehearsal);
+    private Task RecordAsync(string id, string method) => RunAsync(async () =>
+    {
+        await Store.SaveEvidenceAsync(new(id, _actor.Trim(), method.Trim(), Clock.GetUtcNow()), CancellationToken.None);
+        _message = "Administrator attestation saved; no automatic verification is claimed.";
+        await LoadAsync();
+    });
+    private async Task GraduateAsync()
+    {
+        if (_busy || _review is not { } policy) return;
+        if (!await Confirm.DangerAsync($"Enable enforcement for {policy.Name}?", $"Only this {policy.Kind} policy: {policy.Action}, {policy.Targets} current targets. Takes effect on the Agent’s next tick; other claims may still restrict devices. Forced configuration is unchanged.", "Enable this policy")) return;
+        await RunAsync(async () =>
+        {
+            var error = await Graduation.GraduateAsync(policy, _actor, _confirmed, CancellationToken.None);
+            _failed = error is not null; _message = error ?? "One policy saved for enforcement. Pending Agent next tick; no individual router application is confirmed.";
+            if (error is null) _review = null;
+            await LoadAsync();
+        });
+    }
+    private async Task RunAsync(Func<Task> operation)
+    {
+        if (_busy) return;
+        _busy = true; _failed = false; _message = null;
+        try { await operation(); }
+        catch (ArgumentException ex) { _failed = true; _message = ex.Message; }
+        catch (Exception) { _failed = true; _message = "Safety operation failed. Reload and review before retrying."; }
+        finally { _busy = false; }
+    }
+    private string Local(DateTimeOffset at) => TimeZoneInfo.ConvertTime(at, Clock.TimeZone).ToString("g");
+}

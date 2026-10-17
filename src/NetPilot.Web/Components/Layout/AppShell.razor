@@ -5,6 +5,9 @@
 @inject IConfiguration Configuration
 @inject DashboardLoginOptions Login
 @inject IJSRuntime JS
+@inject NetPilot.Core.Settings.ISetupProgressStore SetupProgress
+@inject NetPilot.Core.RouterConnection.IRouterConnectionStore RouterConnections
+@inject NavigationManager Navigation
 @if (!Configuration.GetValue("NetPilot:Ui:RedesignEnabled", true))
 {
     <LayoutView Layout="typeof(MainLayout)">@Body</LayoutView>
@@ -35,7 +38,7 @@ else
             </MudAppBar>
             <ModeStrip />
             <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-6">
-                <main id="main-content" tabindex="-1">@Body</main>
+                <main id="main-content" tabindex="-1"><CascadingValue Value="this" IsFixed="true">@Body</CascadingValue></main>
                 <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2" Class="mt-6">
                     <MudLink Href="/legacy" Target="_top">Classic view</MudLink>
                     <MudText Typo="Typo.caption">@Clock.TimeZone.Id · Web configuration shown in Safety Center</MudText>
@@ -50,11 +53,20 @@ else
     private MudThemeProvider _themeProvider = default!;
     private bool _searchOpen, _dark, _systemDark, _themeReady;
     private string _preference = "system";
+    public string ThemePreference => _preference;
+    public async Task SetAppearanceAsync(string preference)
+    {
+        await ChangeThemeAsync(preference);
+        await InvokeAsync(StateHasChanged);
+    }
     private string ZoneName => Clock.TimeZone.Id.Split('/')[^1].Replace('_', ' ');
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender || !Configuration.GetValue("NetPilot:Ui:RedesignEnabled", true)) return;
+        if (new Uri(Navigation.Uri).AbsolutePath == "/" && await RouterConnections.GetAsync(CancellationToken.None) is null
+            && !(await SetupProgress.GetAsync(CancellationToken.None)).Completed)
+            Navigation.NavigateTo("/setup");
         _systemDark = await _themeProvider.GetSystemDarkModeAsync();
         _preference = await JS.InvokeAsync<string>("netpilotTheme.get");
         await _themeProvider.WatchSystemDarkModeAsync(SystemDarkModeChanged);

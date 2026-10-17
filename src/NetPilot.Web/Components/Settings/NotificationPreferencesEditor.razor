@@ -1,0 +1,61 @@
+@using NetPilot.Core.Settings
+@using NetPilot.Core.Notifications
+@inject IPreferencesStore Preferences
+@inject NotificationOptions Options
+@inject NetPilot.Core.Usage.UsagePeriodClock Clock
+<MudStack Spacing="2">
+    <MudText Typo="Typo.h2">Shared notification preferences</MudText>
+    <MudText>Saved in the shared database and read by both Agent and Web for each dispatch.</MudText>
+    @if (_message is not null) { <MudAlert Severity="@(_failed ? Severity.Error : Severity.Info)" role="status">@_message</MudAlert> }
+    <MudSwitch T="bool" Label="Automatic notifications enabled" @bind-Value="_enabled" />
+    <MudSwitch T="bool" Label="Quiet hours enabled" @bind-Value="_quiet" />
+    <MudGrid>
+        <MudItem xs="12" sm="6"><MudTextField T="string" Label="Quiet start (HH:mm)" @bind-Value="_start" /></MudItem>
+        <MudItem xs="12" sm="6"><MudTextField T="string" Label="Quiet end (HH:mm)" @bind-Value="_end" /></MudItem>
+    </MudGrid>
+    <MudText Typo="Typo.caption">@Clock.TimeZone.Id. Quiet hours suppress quota Warning/DryRun and dry-run rule messages. Exceeded, Applied, Reverted and Protected bypass quiet hours. Per-event switches still apply. Suppressed messages are dropped.</MudText>
+    @foreach (var kind in Enum.GetValues<NotificationEvent>().Where(e => e != NotificationEvent.General))
+    { <MudSwitch T="bool" Value="@(!_disabled.Contains(kind))" ValueChanged="@(enabled => Toggle(kind, enabled))" Label="@Label(kind)" /> }
+    <MudStack Row="true" Wrap="Wrap.Wrap">
+        <MudButton OnClick="SaveAsync" Disabled="_busy" Color="Color.Primary" Variant="Variant.Filled">Save shared preferences</MudButton>
+        <MudButton OnClick="LoadAsync" Disabled="_busy">Reload preferences</MudButton>
+    </MudStack>
+</MudStack>
+@code {
+    private bool _enabled = true, _quiet, _busy, _failed;
+    private string _start = "23:00", _end = "07:00";
+    private HashSet<NotificationEvent> _disabled = [];
+    private string? _message;
+    protected override Task OnInitializedAsync() => LoadAsync();
+    private async Task LoadAsync()
+    {
+        _failed = false; _message = null;
+        try
+        {
+            var saved = await Preferences.GetNotificationsAsync(CancellationToken.None) ?? NotificationPreferences.From(Options);
+            _enabled = saved.Enabled; _quiet = saved.QuietEnabled; _start = saved.QuietStart; _end = saved.QuietEnd; _disabled = saved.DisabledEvents.ToHashSet();
+        }
+        catch (Exception) { _failed = true; _message = "Could not load shared preferences. Retry with Reload."; }
+    }
+    private void Toggle(NotificationEvent kind, bool enabled) { if (enabled) _disabled.Remove(kind); else _disabled.Add(kind); }
+    private async Task SaveAsync()
+    {
+        if (_busy) return;
+        _busy = true; _failed = false;
+        try
+        {
+            await Preferences.SaveNotificationsAsync(new() { Enabled = _enabled, QuietEnabled = _quiet, QuietStart = _start, QuietEnd = _end, DisabledEvents = _disabled.ToArray() }, CancellationToken.None);
+            _message = "Shared preferences saved. Both hosts read them on the next notification dispatch.";
+        }
+        catch (ArgumentException ex) { _failed = true; _message = ex.Message; }
+        catch (Exception) { _failed = true; _message = "Preferences were not saved. Retry."; }
+        finally { _busy = false; }
+    }
+    private static string Label(NotificationEvent kind) => kind switch
+    {
+        NotificationEvent.QuotaWarning => "Quota warning", NotificationEvent.QuotaExceeded => "Quota exceeded",
+        NotificationEvent.QuotaApplied => "Quota action applied", NotificationEvent.QuotaReverted => "Quota restored",
+        NotificationEvent.QuotaDryRun => "Quota dry-run preview", NotificationEvent.QuotaProtected => "Protected device skipped",
+        NotificationEvent.Rule => "Rule notifications", _ => "Other"
+    };
+}

@@ -7,6 +7,7 @@ public record NotificationMessage(string Title, string Body, string? Url, string
     public bool? DryRun { get; init; }
     public string? CorrelationId { get; init; }
     public NetPilot.Core.Devices.MacAddress? Mac { get; init; }
+    public NetPilot.Core.Settings.NotificationEvent Event { get; init; }
 }
 
 public static class NotificationActionIds

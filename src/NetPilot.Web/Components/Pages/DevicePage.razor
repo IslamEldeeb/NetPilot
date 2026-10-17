@@ -21,6 +21,7 @@
             <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center">
                 <MudIcon Icon="@MaterialIcon.For(_device.LocalIconKey ?? _device.CategoryKey)" Size="Size.Large" Color="Color.Primary" />
                 <MudText Typo="Typo.h1" HtmlTag="h1">@DeviceList.DisplayName(_device)</MudText>
+                <MudButton OnClick="@(() => _quickActions = true)">Quick actions</MudButton>
                 <MudSpacer /><MudButton OnClick="BeginEdit" Variant="Variant.Outlined" Disabled="@_busy">Edit identity</MudButton>
             </MudStack>
             <MudStack Row="true" Wrap="Wrap.Wrap"><StatusPill Kind="@(_device.Connection.IsOnline ? "ok" : "info")">@(_device.Connection.IsOnline ? "Online" : "Offline")</StatusPill><MudChip T="string">@_device.CategoryKey.Replace('_', ' ')</MudChip>@if (_row is not null) { <DeviceStatusChips Row="_row" /> }</MudStack>
@@ -67,7 +68,8 @@
             {
                 <MudPaper Outlined="true" Class="pa-3"><MudStack Spacing="1">
                     <MudText Typo="Typo.subtitle2">@RuleSummary.Claim(claim, _rules)</MudText>
-                    <MudText Typo="Typo.caption">@claim.Reason · Created @LocalTime(claim.CreatedAtUtc)</MudText>
+                    <MudText Typo="Typo.caption">@claim.Reason · Created @LocalTime(claim.CreatedAtUtc)
+                        @if (claim.ExpiresAtUtc is { } expiry) { <span> · Expires @LocalTime(expiry) · @(claim.DryRun ? "Dry-run preview" : claim.Pending ? "Pending next tick" : "Active claim")</span> }</MudText>
                     <PendingChip State="@Status(claim.Id, claim.CreatedAtUtc)" />
                 </MudStack></MudPaper>
             }
@@ -126,6 +128,7 @@
         </MudStack></MudCardContent></MudCard>
     }
 </MudStack>
+<NetPilot.Web.Components.Actions.QuickActionsSheet @bind-Open="_quickActions" DeviceMac="Mac" Saved="LoadAsync" />
 <AppSheet @bind-Open="_editing" Title="Edit device identity">
     <MudStack Spacing="3">
         <MudTextField T="string" @bind-Value="_name" Label="Friendly name" MaxLength="80" HelperText="Blank uses the router hostname, then MAC." />

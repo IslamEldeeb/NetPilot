@@ -13,4 +13,7 @@ public class ActionClaimDocument
     public int? ThrottleKbps { get; set; }
     public DateTimeOffset CreatedAtUtc { get; set; }
     public string? Reason { get; set; }
+    public DateTimeOffset? ExpiresAtUtc { get; set; }
+    public bool Pending { get; set; }
+    public bool DryRun { get; set; }
 }

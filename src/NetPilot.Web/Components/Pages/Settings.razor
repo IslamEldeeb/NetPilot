@@ -1,17 +1,73 @@
 @page "/settings"
-@page "/settings/safety"
-@page "/settings/notifications"
+@page "/settings/{Section}"
+@page "/settings/wireless/{NetworkId}"
 @layout AppShell
-@using NetPilot.Web.Components.Tabs
+@using NetPilot.Web.Components.Settings
+@inject DashboardLoginOptions Login
 <PageTitle>Settings · NetPilot</PageTitle>
-<MudStack Spacing="2" Class="mb-6"><MudText Typo="Typo.h1" HtmlTag="h1">Settings</MudText></MudStack>
-<MudStack Spacing="5">
-    <EmptyState Body="Router, wireless and management settings remain in Classic view. Existing notification controls are available below." Href="/legacy#notifications" ActionText="Open classic notifications" Icon="settings" />
-    <MudPaper Elevation="0" Class="pa-6 mud-background" aria-label="Safety Center">
-        <MudText Typo="Typo.h2">Safety Center</MudText>
-        <p>The strip shows Web configuration and saved policies. It does not confirm the Agent’s runtime mode. Manual controls and category speed policies operate separately.</p>
-        <p>Keep automatic enforcement in dry-run until Internet usage and LAN counters are verified. Review protected devices, Cairo windows, Agent operation and phone notification delivery before changing deployment configuration.</p>
-        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="/legacy#quotas" Target="_top">Review quota safety</MudButton>
-    </MudPaper>
-    <MudPaper Elevation="0" Class="np-legacy-panel pa-5" aria-label="Existing notifications"><NotificationsTab /></MudPaper>
+<MudStack Spacing="4">
+    <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center">
+        <MudText Typo="Typo.h1" HtmlTag="h1">Settings</MudText>
+        @if (Section is not null || NetworkId is not null) { <MudButton Href="/settings">All settings</MudButton> }
+        <MudSpacer /><MudLink Href="/legacy#notifications" Target="_top">Classic settings</MudLink>
+    </MudStack>
+    @if (Section is null && NetworkId is null)
+    {
+        <MudGrid Spacing="3">
+            @foreach (var entry in Entries)
+            {
+                <MudItem xs="12" sm="6" md="4">
+                    <MudPaper Outlined="true" Class="pa-4">
+                        <MudText Typo="Typo.h2">@entry.Title</MudText><MudText Class="mb-3">@entry.Body</MudText>
+                        <MudButton Href="@entry.Href" Variant="Variant.Outlined" Color="Color.Primary">Open @entry.Title</MudButton>
+                    </MudPaper>
+                </MudItem>
+            }
+        </MudGrid>
+        @if (Login.Enabled)
+        {
+            <form method="post" action="/logout" data-enhance="false"><AntiforgeryToken /><MudButton ButtonType="ButtonType.Submit" StartIcon="@Icons.Material.Outlined.Logout">Sign out</MudButton></form>
+        }
+        else { <MudAlert Severity="Severity.Info">Dashboard login is off. Configure NETPILOT_WEB_PASSWORD in deployment to enable sign-out and password protection.</MudAlert> }
+    }
+    else
+    {
+        <MudPaper Outlined="true" Class="pa-4 pa-sm-6">
+            @switch (Section?.ToLowerInvariant() ?? "wireless")
+            {
+                case "router": <RouterSettings /> break;
+                case "wireless": <WirelessSettings NetworkId="@NetworkId" /> break;
+                case "notifications": <NotificationSettings /> break;
+                case "backup": <BackupSettings /> break;
+                case "appearance": <AppearanceSettings /> break;
+                case "health": case "traffic": case "app": case "about": <HealthSettings /> break;
+                case "security":
+                    <MudText Typo="Typo.h2">Dashboard access</MudText>
+                    <MudText>Shared password login: @(Login.Enabled ? "Enabled" : "Off"). Configure NETPILOT_WEB_PASSWORD in deployment. There are no individual accounts.</MudText>
+                    @if (Login.Enabled) { <form method="post" action="/logout" data-enhance="false"><AntiforgeryToken /><MudButton ButtonType="ButtonType.Submit">Sign out</MudButton></form> }
+                    break;
+                default: <EmptyState Title="Settings section not found" Body="Choose a section from Settings." Href="/settings" ActionText="All settings" /> break;
+            }
+        </MudPaper>
+    }
 </MudStack>
+@code {
+    [Parameter] public string? Section { get; set; }
+    [Parameter] public string? NetworkId { get; set; }
+    private static readonly (string Title, string Body, string Href)[] Entries =
+    [
+        ("Router", "Host, transport, encrypted credentials and connection test.", "/settings/router"),
+        ("Wireless", "Guest and IoT controls, main network read-only.", "/settings/wireless"),
+        ("Notifications", "This browser, shared preferences and push tests.", "/settings/notifications"),
+        ("Appearance", "System, Light or Dark.", "/settings/appearance"),
+        ("Health", "Agent heartbeat, router freshness and reboot.", "/settings/health"),
+        ("Traffic", "LAN exclusion and counter confidence.", "/settings/traffic"),
+        ("App", "HTTPS and phone installation guidance.", "/settings/app"),
+        ("About", "Versions, timezone and provider.", "/settings/about"),
+        ("Safety Center", "Evidence, protected devices and one-policy graduation.", "/settings/safety"),
+        ("Budget", "Household ISP budget, separate from per-device quotas.", "/usage/budget"),
+        ("Backup", "Download database and keys, restore guide and retention.", "/settings/backup"),
+        ("Setup", "Resume or revisit first-run setup.", "/setup"),
+        ("Security", "Shared dashboard password and sign-out.", "/settings/security")
+    ];
+}

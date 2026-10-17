@@ -1,0 +1,54 @@
+@using NetPilot.Core.Usage
+@using NetPilot.Core.Health
+@using NetPilot.Web.Components.Usage
+@using NetPilot.Web.Components.Actions
+@inject NetPilot.Web.Features.UsageOverviewQuery UsageQuery
+@inject UsagePeriodClock Clock
+@inject ILogger<HomeDashboard> Logger
+<PageTitle>Home · NetPilot</PageTitle>
+<MudStack Spacing="4">
+    <MudText Typo="Typo.h1" HtmlTag="h1">Home network</MudText>
+    <MudStack Row="true" Wrap="Wrap.Wrap"><MudButton OnClick="LoadAsync">Refresh saved summary</MudButton><MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="@(() => _quickActions = true)">Quick actions</MudButton><MudButton Href="/usage">View usage</MudButton><MudLink Href="/legacy">Classic view</MudLink></MudStack>
+    @if (_error is not null) { <MudAlert Severity="Severity.Error" role="alert">@_error</MudAlert> }
+    @if (_overview is null && _error is null) { <MudProgressCircular Indeterminate="true" aria-label="Loading home summary" /> }
+    @if (_overview is { } overview)
+    {
+        <MudPaper Outlined="true" Class="pa-4" id="network-health"><MudStack Spacing="2">
+            <MudText Typo="Typo.h2">Network health</MudText>
+            <StatusPill Kind="@(Health == AgentHealthStatus.Healthy ? "ok" : "warning")">Agent: @Health</StatusPill>
+            <MudText>Last completed tick: @LocalTime(overview.Heartbeat?.LastTickCompletedUtc)</MudText>
+            <MudText>Router: @RouterStatus · last successful read @LocalTime(overview.Heartbeat?.LastSuccessfulRouterReadUtc)</MudText>
+            <MudText>Saved quota mode: @_quotaMode · rules: @_rulesMode · temporary restrictions: @_temporaryMode</MudText>
+            <MudText Typo="Typo.caption">Modes describe saved intent and the last Agent heartbeat. Manual controls can still change the router. Next-tick timing is approximate; retries can take longer.</MudText>
+        </MudStack></MudPaper>
+        @if (!_configured) { <EmptyState Title="Connect your router" Body="No router configuration is saved." Href="/legacy" ActionText="Configure router" /> }
+        @if (overview.Readings.Devices.Count == 0) { <EmptyState Title="Let’s find your devices" Body="Saved devices appear after a successful discovery tick." Href="/devices" ActionText="See devices" /> }
+        <MudGrid>
+            <MudItem xs="12" md="7"><MudCard Outlined="true"><MudCardContent><MudText Typo="Typo.h2">Today’s Internet usage</MudText>
+                @if (_today is { HasObservation: true } today) { <MudText Typo="Typo.h3">@DataSize.ToGb(today.InternetBytes).ToString("0.##") GB</MudText><MudText>@DataSize.ToGb(today.LanBytes).ToString("0.##") GB excluded LAN (both endpoints)</MudText> }
+                else { <MudText>Unknown · no observation for today</MudText> }
+                <MudText>@overview.Readings.Today · @Clock.TimeZone.Id</MudText><MudText Typo="Typo.caption">@overview.Confidence</MudText>
+                <MudLink Href="/usage?period=day">See today in Usage</MudLink>
+            </MudCardContent></MudCard></MudItem>
+            <MudItem xs="12" md="5"><BudgetCard Overview="@(_error is null ? overview : overview with { Forecast = null })" TimeZone="@Clock.TimeZone.Id" /></MudItem>
+        </MudGrid>
+        <MudGrid>
+            <MudItem xs="12" md="6"><MudCard Outlined="true"><MudCardContent><MudStack Spacing="2"><MudText Typo="Typo.h2">Needs attention</MudText>
+                @foreach (var notice in _attention) { <MudLink Href="@notice.Href">@notice.Text</MudLink> }
+                <MudLink Href="/usage#usage-confidence">@overview.Confidence</MudLink>
+                @if (_attention.Count == 0) { <MudText>No device or Agent alerts in saved data.</MudText> }
+            </MudStack></MudCardContent></MudCard></MudItem>
+            <MudItem xs="12" md="6"><MudCard Outlined="true"><MudCardContent><MudStack Spacing="2"><MudText Typo="Typo.h2">Top consumers today</MudText>
+                @foreach (var row in _today?.Rows.Take(5) ?? []) { <MudLink Href="@($"/devices/{row.Mac}")">@row.Name · @DataSize.ToGb(row.InternetBytes).ToString("0.##") GB</MudLink> }
+                @if (_today is not { HasObservation: true }) { <MudText>No saved observations for today.</MudText> }
+                <MudLink Href="/devices">@overview.Readings.Devices.Count(device => device.Connection.IsOnline) online of @overview.Readings.Devices.Count devices</MudLink>
+            </MudStack></MudCardContent></MudCard></MudItem>
+        </MudGrid>
+        <MudCard Outlined="true" id="restrictions"><MudCardContent><MudStack Spacing="2"><MudText Typo="Typo.h2">Restrictions and previews</MudText>
+            <MudText Typo="Typo.caption">Block wins; otherwise the lowest automatic Kbps cap wins. Releasing one owner can leave others active. Base policy is never overwritten by a temporary action.</MudText>
+            @foreach (var restriction in _restrictions) { <MudLink Href="@restriction.Href">@restriction.Text</MudLink> }
+            @if (_restrictions.Count == 0) { <MudText>No recorded restrictions or previews.</MudText> }
+        </MudStack></MudCardContent></MudCard>
+    }
+</MudStack>
+<QuickActionsSheet @bind-Open="_quickActions" Saved="LoadAsync" />

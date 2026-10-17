@@ -4,6 +4,8 @@ using Microsoft.Extensions.Configuration;
 using NetPilot.Core.Activity;
 using NetPilot.Core.Automations;
 using NetPilot.Core.Devices;
+using NetPilot.Core.Budget;
+using NetPilot.Core.Actions;
 using NetPilot.Core.Health;
 using NetPilot.Core.Enforcement;
 using NetPilot.Core.Enforcement.Claims;
@@ -52,6 +54,10 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton(_ => new NetPilotDatabase(dbPath));
         services.AddSingleton<IDeviceStore, LiteDeviceStore>();
+        services.AddSingleton<LitePreferencesStore>();
+        services.AddSingleton<NetPilot.Core.Settings.IPreferencesStore>(sp => sp.GetRequiredService<LitePreferencesStore>());
+        services.AddSingleton<NetPilot.Core.Settings.ISetupProgressStore>(sp => sp.GetRequiredService<LitePreferencesStore>());
+        services.AddSingleton<NetPilot.Core.Safety.ISafetyStore, LiteSafetyStore>();
         services.AddSingleton<IAgentHeartbeatStore, LiteAgentHeartbeatStore>();
         services.AddSingleton<IPolicyStore, LitePolicyStore>();
         services.AddSingleton<IPushSubscriptionStore, LitePushSubscriptionStore>();
@@ -71,6 +77,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAutomationCommands, LiteAutomationCommands>();
         services.AddSingleton<IRouterConnectionStore, LiteRouterConnectionStore>();
         services.AddSingleton<IUsageStore, LiteUsageStore>();
+        services.AddSingleton<IHouseholdBudgetStore, LiteHouseholdBudgetStore>();
+        services.AddSingleton<TemporaryActions>();
+        services.AddSingleton<QuotaBonusCommands>();
         services.AddSingleton<ILocalTrafficStore, LiteLocalTrafficStore>();
         services.AddSingleton<IDeviceClassifier, HeuristicDeviceClassifier>();
         services.AddSingleton<RouterPasswordProtector>();
