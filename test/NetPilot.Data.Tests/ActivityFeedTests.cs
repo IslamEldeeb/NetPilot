@@ -14,6 +14,31 @@ public sealed class ActivityFeedTests : IDisposable
     public ActivityFeedTests() { _db = new(_path); _feed = new(_db); }
 
     [Fact]
+    public async Task ExistingLegacyActivity_DoesNotBuildNewIndexes_AndRemainsQueryable()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"netpilot-legacy-{Guid.NewGuid()}.db");
+        try
+        {
+            using var db = new NetPilotDatabase(path);
+            db.GetCollection<ActivityLogDocument>("activity_log").Insert(new ActivityLogDocument
+            {
+                Type = "QuotaDryRun", AtUtc = DateTimeOffset.UtcNow, Message = "Legacy event"
+            });
+            var feed = new LiteActivityLogStore(db);
+            Assert.Single((await feed.QueryAsync(new() { Kind = "quota", DryRun = true }, default)).Entries);
+            using var inspection = new LiteDB.LiteDatabase($"Filename={path};Connection=shared");
+            var indexes = inspection.GetCollection("$indexes").FindAll()
+                .Where(x => x["collection"].AsString == "activity_log")
+                .Select(x => x["name"].AsString).ToArray();
+            Assert.Contains("AtUtc", indexes);
+            Assert.DoesNotContain("Kind", indexes);
+            Assert.DoesNotContain("IsNotification", indexes);
+            Assert.DoesNotContain("Mac", indexes);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
     public async Task LegacyRows_RenderWithoutMigration_AndParticipateInStructuredFilters()
     {
         _db.GetCollection<ActivityLogDocument>("activity_log").Insert(new ActivityLogDocument { Type = "QuotaDryRun", AtUtc = DateTimeOffset.UtcNow, Message = "Would throttle" });

@@ -18,9 +18,15 @@ public class LiteActivityLogStore : IActivityLogStore, IActivityFeed
         _collection = db.GetCollection<ActivityLogDocument>("activity_log");
         _deduplication = db.GetCollection<BsonDocument>("activity_keys");
         _collection.EnsureIndex(a => a.AtUtc);
-        _collection.EnsureIndex(a => a.Kind);
-        _collection.EnsureIndex(a => a.IsNotification);
-        _collection.EnsureIndex(a => a.Mac);
+        // Existing installations may have millions of legacy rows without these fields.
+        // Indexing them synchronously blocks both services on their first startup.
+        // Fresh collections can create the indexes before they accumulate any data.
+        if (!_collection.Exists(Query.All()))
+        {
+            _collection.EnsureIndex(a => a.Kind);
+            _collection.EnsureIndex(a => a.IsNotification);
+            _collection.EnsureIndex(a => a.Mac);
+        }
     }
 
     public Task AppendAsync(ActivityLogEntry entry, CancellationToken ct)
