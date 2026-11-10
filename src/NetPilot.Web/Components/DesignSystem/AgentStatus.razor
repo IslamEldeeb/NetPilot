@@ -1,0 +1,38 @@
+@implements IDisposable
+@using NetPilot.Core.Health
+@using NetPilot.Core.Usage
+@inject IAgentHeartbeatStore Heartbeats
+@inject UsagePeriodClock Clock
+@inject ILogger<AgentStatus> Logger
+<MudTooltip Text="@HeartbeatText">
+    <a class="np-agent-status" href="/settings/health" aria-label="@($"Agent: {Health}. {HeartbeatText} Open network health.")">
+        <StatusPill Kind="@(Health == AgentHealthStatus.Healthy ? "ok" : Health == AgentHealthStatus.Unknown ? "info" : "warning")">Agent: @Health</StatusPill>
+    </a>
+</MudTooltip>
+@code {
+    private AgentHeartbeat? _heartbeat;
+    private AgentHealthStatus Health => AgentHealth.EvaluateOperational(_heartbeat, Clock.GetUtcNow());
+    private string HeartbeatText => _heartbeat?.LastTickCompletedUtc is { } tick
+        ? $"Last completed tick: {TimeZoneInfo.ConvertTime(tick, Clock.TimeZone):g} · {Clock.TimeZone.Id}"
+        : _heartbeat is { } heartbeat ? $"Last tick started: {TimeZoneInfo.ConvertTime(heartbeat.LastTickStartedUtc, Clock.TimeZone):g} · no completed tick recorded"
+        : "No Agent tick recorded.";
+    private readonly CancellationTokenSource _lifetime = new();
+    protected override async Task OnInitializedAsync() { await RefreshHealthAsync(); _ = WatchAsync(); }
+    private async Task RefreshHealthAsync()
+    {
+        try { _heartbeat = await Heartbeats.GetAsync(_lifetime.Token); }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        catch (Exception ex) { Logger.LogWarning(ex, "Cannot read Agent heartbeat"); _heartbeat = null; }
+    }
+    private async Task WatchAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(_lifetime.Token))
+                await InvokeAsync(async () => { await RefreshHealthAsync(); StateHasChanged(); });
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+    }
+    public void Dispose() { _lifetime.Cancel(); _lifetime.Dispose(); }
+}

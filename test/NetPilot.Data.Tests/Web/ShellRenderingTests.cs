@@ -28,6 +28,29 @@ namespace NetPilot.Data.Tests.Web;
 
 public sealed class ShellRenderingTests
 {
+    [Fact]
+    public async Task AgentStatus_DoesNotShowHealthyWhenRouterReadsFail()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"netpilot-agent-status-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            await using var provider = Services(directory);
+            var now = DateTimeOffset.UtcNow;
+            await provider.GetRequiredService<IAgentHeartbeatStore>().SaveAsync(new AgentHeartbeat
+            {
+                LastTickStartedUtc = now.AddSeconds(-1), LastTickCompletedUtc = now,
+                TickIntervalSeconds = 180, ConsecutiveFailedTicks = 54
+            }, CancellationToken.None);
+            await using var renderer = new HtmlRenderer(provider, provider.GetRequiredService<ILoggerFactory>());
+            var html = await renderer.Dispatcher.InvokeAsync(async () =>
+                (await renderer.RenderComponentAsync<AgentStatus>()).ToHtmlString());
+            Assert.Contains("Agent: Down", html);
+            Assert.DoesNotContain("Agent: Healthy", html);
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
     [Theory]
     [InlineData(typeof(Home), "Home network")]
     [InlineData(typeof(Devices), "Devices")]
@@ -54,7 +77,8 @@ public sealed class ShellRenderingTests
             });
             Assert.Contains(content, html);
             Assert.Contains("Home network / Cairo", html);
-            Assert.Contains("Rules: Forced dry-run", html);
+            Assert.Contains("Agent: Unknown", html);
+            Assert.DoesNotContain("np-mode-strip", html);
             Assert.Contains("aria-current=\"page\"", html);
             Assert.Contains("id=\"blazor-error-ui\"", html);
             Assert.DoesNotContain("Could not load", html);
@@ -95,7 +119,6 @@ public sealed class ShellRenderingTests
             Assert.Contains(expected, html);
             Assert.Contains("Devices", html);
             Assert.Contains("Home network / Cairo", html);
-            Assert.Contains("Quotas: Not set", html);
             Assert.Contains("Agent: Unknown", html);
             Assert.DoesNotContain("Could not load", html);
             if (seed)
@@ -123,10 +146,17 @@ public sealed class ShellRenderingTests
                 Connection = new(NetPilot.Abstractions.ConnectionMedium.Wifi5Ghz, true),
                 FirstSeenAtUtc = DateTimeOffset.UtcNow.AddDays(-2)
             }, CancellationToken.None);
+            await provider.GetRequiredService<IDeviceStore>().UpsertAsync(new Device
+            {
+                Mac = new("AA-BB-CC-DD-EE-02"), FriendlyName = "Offline tablet", CategoryKey = "tablet",
+                Connection = new(NetPilot.Abstractions.ConnectionMedium.Wifi5Ghz, false),
+                FirstSeenAtUtc = DateTimeOffset.UtcNow.AddDays(-2)
+            }, CancellationToken.None);
             await provider.GetRequiredService<IAgentHeartbeatStore>().SaveAsync(new AgentHeartbeat
             {
                 LastTickStartedUtc = DateTimeOffset.UtcNow.AddSeconds(-10),
-                LastTickCompletedUtc = DateTimeOffset.UtcNow.AddSeconds(-5), TickIntervalSeconds = 180
+                LastTickCompletedUtc = DateTimeOffset.UtcNow.AddSeconds(-5),
+                LastSuccessfulRouterReadUtc = DateTimeOffset.UtcNow.AddSeconds(-5), TickIntervalSeconds = 180
             }, CancellationToken.None);
             await using var renderer = new HtmlRenderer(provider, provider.GetRequiredService<ILoggerFactory>());
             var html = await renderer.Dispatcher.InvokeAsync(async () =>
@@ -136,12 +166,13 @@ public sealed class ShellRenderingTests
                     new Dictionary<string, object?> { [nameof(AppShell.Body)] = body }));
                 return shell.ToHtmlString();
             });
-            Assert.Contains("1 known devices", html);
+            Assert.Contains("2 known devices", html);
             Assert.Contains("1 online now", html);
             Assert.Contains("/devices/AA-BB-CC-DD-EE-01", html);
-            Assert.Contains("device-table", html);
-            Assert.Contains("device-cards", html);
+            Assert.Contains("np-device-card", html);
+            Assert.Contains("Quick filters", html);
             Assert.Contains("Select My phone", html);
+            Assert.DoesNotContain("Select Offline tablet", html);
             Assert.Contains("No restriction", html);
             Assert.Contains("Agent: Healthy", html);
             Assert.Contains("method=\"post\" action=\"/logout\"", html);

@@ -28,9 +28,11 @@ public partial class HomeDashboard : IDisposable
     private string? _error;
     private string _quotaMode = "Unknown", _rulesMode = "Unknown", _temporaryMode = "Unknown";
     private bool _configured, _quickActions;
-    private AgentHealthStatus Health => AgentHealth.Evaluate(_overview?.Heartbeat, Clock.GetUtcNow());
-    private string RouterStatus => !_configured ? "Not configured" : _overview?.Heartbeat?.LastSuccessfulRouterReadUtc is null
-        ? "Not observed" : Health != AgentHealthStatus.Healthy ? "Observation stale" : _overview.Heartbeat.ConsecutiveFailedTicks > 0 ? "Read or tick failed" : "Last read succeeded";
+    private AgentHealthStatus Health => AgentHealth.EvaluateOperational(_overview?.Heartbeat, Clock.GetUtcNow());
+    private string RouterStatus => !_configured ? "Not configured"
+        : _overview?.Heartbeat is { } heartbeat && (heartbeat.ConsecutiveFailedTicks > 0 || heartbeat.LastErrorSummary is not null) ? "Read or tick failed"
+        : _overview?.Heartbeat?.LastSuccessfulRouterReadUtc is null ? "Not observed"
+        : Health != AgentHealthStatus.Healthy ? "Observation stale" : "Last read succeeded";
 
     protected override async Task OnInitializedAsync() { await LoadAsync(); _ = WatchAsync(); }
     private async Task LoadAsync()

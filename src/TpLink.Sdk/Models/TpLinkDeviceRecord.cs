@@ -93,4 +93,5 @@ public class TpLinkLoginResponse
 {
     [JsonPropertyName("success")] public bool Success { get; set; }
     [JsonPropertyName("data")] public TpLinkLoginData? Data { get; set; }
+    [JsonPropertyName("errorcode")] public System.Text.Json.JsonElement ErrorCode { get; set; }
 }

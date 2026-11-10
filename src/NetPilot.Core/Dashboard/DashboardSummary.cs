@@ -17,7 +17,7 @@ public static class DashboardSummary
     public static IReadOnlyList<DashboardNotice> Attention(DashboardInputs snapshot)
     {
         var notices = new List<DashboardNotice>();
-        var health = AgentHealth.Evaluate(snapshot.Heartbeat, snapshot.Now);
+        var health = AgentHealth.EvaluateOperational(snapshot.Heartbeat, snapshot.Now);
         if (health != AgentHealthStatus.Healthy)
             notices.Add(new($"Agent {health}: actions and totals may be delayed.", "/#network-health"));
         foreach (var device in snapshot.Usage.Devices)

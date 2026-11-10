@@ -87,6 +87,13 @@ else
         </label>
     </div>
 
+    <div class="np-device-filters" role="group" aria-label="Quick filters">
+        <button type="button" class="np-filter-chip" aria-pressed="@(_connectionFilter == "all" && !_restrictedOnly && !_newOnly ? "true" : "false")" @onclick="@(() => SetQuickFilter("all"))">All</button>
+        <button type="button" class="np-filter-chip" aria-pressed="@(_connectionFilter == "online" && !_restrictedOnly && !_newOnly ? "true" : "false")" @onclick="@(() => SetQuickFilter("online"))">Online</button>
+        <button type="button" class="np-filter-chip" aria-pressed="@(_restrictedOnly ? "true" : "false")" @onclick="@(() => SetQuickFilter("limited"))">Limited</button>
+        <button type="button" class="np-filter-chip" aria-pressed="@(_newOnly ? "true" : "false")" @onclick="@(() => SetQuickFilter("new"))">New</button>
+    </div>
+
     @if (_selected.Count > 0)
     {
         <div class="selection-bar">
@@ -111,62 +118,18 @@ else
     }
     else
     {
-        <div class="card table-scroll" style="padding:8px 16px">
-            <table class="device-table">
-                <caption class="screen-reader-only">Known devices, @(_groupByCategory ? "grouped by category" : "ungrouped")</caption>
-                <thead>
-                    <tr>
-                        <th>Select</th>
-                        <th>Device / category</th>
-                        <th>Connection</th>
-                        <th>Internet today</th>
-                        <th>Restriction</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var row in VisibleRows)
-                    {
-                        <tr>
-                            <td>
-                                <label class="select-box">
-                                    <input type="checkbox" checked="@_selected.Contains((string)row.Device.Mac)"
-                                           @onchange="e => ToggleSelect(row.Device.Mac, e.Value is true)"
-                                           aria-label="@($"Select {row.DisplayName}")" />
-                                </label>
-                            </td>
-                            <td>
-                                <div class="device-identity">
-                                    <span class="symbol-tile">@((MarkupString)Icon(IconFor(row)))</span>
-                                    <div>
-                                        <a href="@($"/devices/{row.Device.Mac}")">@row.DisplayName</a>
-                                        <small>@row.Device.CategoryKey.Replace('_', ' ') · <bdi>@row.Device.IpAddress</bdi></small>
-                                    </div>
-                                </div>
-                            </td>
-                            <td>
-                                <span class="chip @(row.Device.Connection.IsOnline ? "ok" : "")">@(row.Device.Connection.IsOnline ? "Online" : "Offline")</span>
-                                <small>@DeviceList.DescribeMedium(row.Device.Connection.Medium)</small>
-                            </td>
-                            <td>
-                                <strong>@DataSize.ToGb(row.InternetTodayBytes).ToString("0.#") GB</strong>
-                                <small>Internet only</small>
-                            </td>
-                            <td>@RestrictionChip(row)</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        </div>
-
-        <div class="device-cards">
+        <div class="np-device-grid">
             @foreach (var row in VisibleRows)
             {
-                <article class="card device-card">
-                    <div class="identity">
-                        <span class="symbol-tile">@((MarkupString)Icon(IconFor(row)))</span>
-                        <div style="flex:1">
+                <article class="card np-device-card @(row.IsBlocked ? "is-blocked" : "")">
+                    <div class="np-device-card-head">
+                        <span class="symbol-tile np-device-icon">
+                            @((MarkupString)Icon(IconFor(row)))
+                            <span class="np-device-presence @(row.Device.Connection.IsOnline ? "online" : "")" aria-hidden="true"></span>
+                        </span>
+                        <div class="np-device-heading">
                             <a href="@($"/devices/{row.Device.Mac}")">@row.DisplayName</a>
-                            <p class="hint" style="margin:4px 0 0">@row.Device.CategoryKey.Replace('_', ' ') · @(row.Device.Connection.IsOnline ? "Online now" : $"Last seen {DeviceList.DescribeLastSeen(row.Device.LastSeenAtUtc, Clock.GetUtcNow())}")</p>
+                            <small>@row.Device.CategoryKey.Replace('_', ' ') · @(row.Device.Connection.IsOnline ? DeviceList.DescribeMedium(row.Device.Connection.Medium) : "Offline")</small>
                         </div>
                         <label class="select-box">
                             <input type="checkbox" checked="@_selected.Contains((string)row.Device.Mac)"
@@ -174,11 +137,17 @@ else
                                    aria-label="@($"Select {row.DisplayName}")" />
                         </label>
                     </div>
-                    <div class="stats">
-                        <span><strong>@DataSize.ToGb(row.InternetTodayBytes).ToString("0.#") GB</strong><small> Internet today</small></span>
-                        @RestrictionChip(row)
-                    </div>
-                    <small><bdi>@row.Device.IpAddress</bdi> · @DeviceList.DescribeMedium(row.Device.Connection.Medium)</small>
+                    <div class="np-device-card-status">@RestrictionChip(row)</div>
+                    <div class="np-device-addresses"><span><b>IP</b> <bdi>@row.Device.IpAddress</bdi></span><span><b>MAC</b> <bdi>@row.Device.Mac</bdi></span></div>
+                    <div class="np-device-usage"><span>Today</span><span><strong>@DataSize.ToGb(row.InternetTodayBytes).ToString("0.##")</strong> GB</span></div>
+                    @if (row.QuotaDailyBytes is > 0)
+                    {
+                        <div class="np-device-quota">
+                            <div class="np-device-quota-label"><span>Daily allowance</span><span>@DataSize.ToGb(row.InternetTodayBytes).ToString("0.##") / @DataSize.ToGb(row.QuotaDailyBytes.Value).ToString("0.##") GB</span></div>
+                            <div class="np-device-meter" role="progressbar" aria-label="Daily allowance used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="@Math.Round(row.QuotaPercent)"><span style="width:@(row.QuotaPercent.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture))%"></span></div>
+                        </div>
+                    }
+                    else { <small class="np-device-no-quota">No daily cap</small> }
                 </article>
             }
         </div>
@@ -222,9 +191,9 @@ else
     private static MarkupString RestrictionChip(DeviceListRow row)
     {
         var kbps = row.Device.QuotaThrottle?.DownloadKbps;
+        if (row.IsBlocked) return new MarkupString("<span class=\"chip blocked\">Blocked · recorded</span>");
         if (row.IsThrottled)
             return new MarkupString($"<span class=\"chip throttled\">{(kbps is { } value ? $"{value} Kbps · quota" : "Throttled")}</span>");
-        if (row.IsBlocked) return new MarkupString("<span class=\"chip blocked\">Blocked · recorded</span>");
         if (row.IsProtected) return new MarkupString("<span class=\"chip ok\">Protected</span>");
         return new MarkupString("<span class=\"chip\">No restriction</span>");
     }

@@ -25,9 +25,9 @@ public partial class Devices : IDisposable
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
     [Inject] private ILogger<Devices> Logger { get; set; } = default!;
 
-    private bool _loaded, _refreshing, _bulkBusy, _bulkPause, _restrictedOnly;
+    private bool _loaded, _refreshing, _bulkBusy, _bulkPause, _restrictedOnly, _newOnly;
     private string? _error;
-    private string _search = "", _category = "", _connectionFilter = "all", _groupBy = "category";
+    private string _search = "", _category = "", _connectionFilter = "online", _groupBy = "category";
     private DeviceSortKey _sort = DeviceSortKey.UsageTodayDesc;
     private RouterConnection? _connection;
     private IReadOnlyList<Device> _devices = [];
@@ -44,9 +44,8 @@ public partial class Devices : IDisposable
         {
             var filtered = DeviceList.Apply(_rows,
                 new(_search, _category, _connectionFilter == "online", _restrictedOnly, _sort, _groupByCategory));
-            return _connectionFilter == "offline"
-                ? filtered.Where(row => !row.Device.Connection.IsOnline).ToList()
-                : filtered;
+            if (_connectionFilter == "offline") filtered = filtered.Where(row => !row.Device.Connection.IsOnline).ToList();
+            return _newOnly ? filtered.Where(row => row.IsNew).ToList() : filtered;
         }
     }
     private IEnumerable<string> Categories => _devices.Select(d => d.CategoryKey).Distinct().Order(StringComparer.OrdinalIgnoreCase);
@@ -122,6 +121,12 @@ public partial class Devices : IDisposable
     }
 
     private void ToggleSelect(string mac, bool selected) { if (selected) _selected.Add(mac); else _selected.Remove(mac); }
-    private void ClearFilters() { _search = ""; _category = ""; _connectionFilter = "all"; _restrictedOnly = false; }
+    private void SetQuickFilter(string filter)
+    {
+        _connectionFilter = filter == "online" ? "online" : "all";
+        _restrictedOnly = filter == "limited";
+        _newOnly = filter == "new";
+    }
+    private void ClearFilters() { _search = ""; _category = ""; _connectionFilter = "all"; _restrictedOnly = false; _newOnly = false; }
     public void Dispose() { _lifetime.Cancel(); _lifetime.Dispose(); }
 }

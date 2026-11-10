@@ -53,67 +53,47 @@ else if (_device is null && _error is null)
 }
 else if (_device is { } device)
 {
-    <div class="identity-header">
+    <div class="card np-detail-hero">
         <span class="symbol-tile large">@((MarkupString)Icon(IconFor(device)))</span>
-        <div>
-            <div class="eyebrow">@device.CategoryKey.Replace('_', ' ')</div>
+        <div class="np-detail-identity">
             <h1>@DeviceList.DisplayName(device)</h1>
-            <p class="muted"><bdi class="code">@device.Mac</bdi> · @device.IpAddress</p>
+            <div class="np-device-addresses"><span><b>IP</b> <bdi>@device.IpAddress</bdi></span><span><b>MAC</b> <bdi>@device.Mac</bdi></span></div>
+            <div class="pills">
+                <span class="chip @(device.Connection.IsOnline ? "ok" : "")">@(device.Connection.IsOnline ? $"Online · read {LocalTime(device.LastSeenAtUtc)}" : $"Offline · seen {LocalTime(device.LastSeenAtUtc)}")</span>
+                <span class="chip">@device.CategoryKey.Replace('_', ' ')</span>
+                @RestrictionChip(device)
+            </div>
         </div>
-        <div class="actions">
-            <button class="button" @onclick="@(() => _quickActions = true)">@((MarkupString)Icon("pause")) Pause</button>
-            <button class="outline" @onclick="BeginEdit" disabled="@_busy">@((MarkupString)Icon("tune")) Edit identity</button>
+        <div class="actions np-detail-actions">
+            <button class="button" @onclick="@(() => _quickActions = true)">@((MarkupString)Icon("pause")) Quick action</button>
+            <DeviceBlockActions Device="device" Changed="LoadAsync" Disabled="@(!_hasRouter || _busy)" />
+            <button class="outline" @onclick="BeginEdit" disabled="@_busy">@((MarkupString)Icon("tune")) Edit</button>
         </div>
-    </div>
-
-    <div class="pills" style="margin-block-end:24px">
-        <span class="chip @(_device.Connection.IsOnline ? "ok" : "")">@(_device.Connection.IsOnline ? $"Online · read {LocalTime(device.LastSeenAtUtc)}" : $"Offline · seen {LocalTime(device.LastSeenAtUtc)}")</span>
-        <span class="chip">@DeviceList.DescribeMedium(device.Connection.Medium)</span>
-        @RestrictionChip(device)
     </div>
 
     <div class="grid">
         <!-- Internet usage -->
-        <section class="card span-8 tablet-full">
-            <div class="section-head"><h2>Internet usage</h2></div>
-            <div class="stat-grid">
-                <div>
-                    <small>Today</small>
-                    <div class="metric">@DataSize.ToGb(_todayBytes).ToString("0.#") GB</div>
-                </div>
-                <div>
-                    <small>This month</small>
-                    <div class="metric">@DataSize.ToGb(_monthBytes).ToString("0.#") GB</div>
-                </div>
-                <div>
-                    <small>LAN today</small>
-                    <div class="metric">@DataSize.ToGb(_todayLan).ToString("0.#") GB</div>
-                </div>
-            </div>
+        <section class="card span-6 tablet-full np-detail-usage">
+            <div class="section-head"><h2>Internet use</h2><div class="np-period-switch" role="group" aria-label="Usage period"><button type="button" aria-pressed="@(!_month ? "true" : "false")" @onclick="@(() => _month = false)">Today</button><button type="button" aria-pressed="@(_month ? "true" : "false")" @onclick="@(() => _month = true)">This month</button></div></div>
+            <div class="np-detail-usage-value">@DataSize.ToGb(_month ? _monthBytes : _todayBytes).ToString("0.##") <small>GB</small></div>
+            <p class="hint">@(_month ? "This month" : "Today") · @DataSize.ToGb(_month ? _monthLan : _todayLan).ToString("0.##") GB LAN excluded</p>
             @((MarkupString)BuildChart())
             <p class="hint">Last 30 days · usage is estimated. No hourly samples are available today.</p>
         </section>
 
         <!-- Daily quota -->
-        <section class="card span-4 tablet-full">
-            <div class="section-head"><h2>Daily quota</h2></div>
+        <section class="card span-6 tablet-full np-detail-allowance">
+            <div class="section-head"><h2>Allowance</h2></div>
             @if (_quota.MatchedPolicy is { } policy)
             {
-                var capBytes = policy.DailyBytes ?? 0;
-                var usedPercent = capBytes > 0 ? (int)Math.Clamp(_todayBytes * 100 / capBytes, 0, 100) : 0;
-                <div class="row">
-                    <div class="ring" style="--ring-fill:@usedPercent" role="img" aria-label="@usedPercent% of daily quota">
-                        <svg viewBox="0 0 120 120" aria-hidden="true">
-                            <circle class="track" cx="60" cy="60" r="49" pathLength="100" />
-                            <circle class="value" cx="60" cy="60" r="49" pathLength="100" />
-                        </svg>
-                        <div class="ring-label">@usedPercent%<small>of daily quota</small></div>
-                    </div>
-                    <div>
-                        <strong>@DataSize.ToGb(_todayBytes).ToString("0.#") of @DataSize.ToGb(capBytes).ToString("0.#") GB</strong>
-                        <p class="hint">@(policy.DryRun ? "Dry-run · observing" : "Enforcing")</p>
-                    </div>
-                </div>
+                @if (policy.DailyBytes is { } capBytes && capBytes > 0)
+                {
+                    var usedPercent = (int)Math.Clamp((decimal)_todayBytes * 100 / capBytes, 0, 100);
+                    <div class="np-device-quota-label"><span>Daily allowance</span><strong>@DataSize.ToGb(_todayBytes).ToString("0.##") / @DataSize.ToGb(capBytes).ToString("0.##") GB</strong></div>
+                    <div class="np-device-meter" role="progressbar" aria-label="Daily allowance used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="@usedPercent"><span style="width:@(usedPercent)%"></span></div>
+                }
+                else { <p class="hint">No daily cap for this device.</p> }
+                <p class="hint">@(policy.DryRun ? "Dry-run · observing" : "Enforcing")</p>
                 <div class="policy-trail">
                     <span>@DeviceList.DisplayName(device) → @device.CategoryKey.Replace('_', ' ')</span>
                     <span>@(policy.Scope == QuotaScope.Default ? "Global default" : policy.Scope == QuotaScope.Category ? $"Category {policy.CategoryKey}" : "Device override") → @(policy.DailyBytes is { } daily ? $"{DataSize.ToGb(daily).ToString("0.#")} GB/day" : "no daily cap")</span>
@@ -129,6 +109,19 @@ else if (_device is { } device)
             {
                 <p class="hint">@state.PeriodKind @state.PeriodKey: @DataSize.Format(state.ExtraAllowanceBytes) extra allowance; effective cap @(DataSize.ToGb(state.EffectiveCapBytes).ToString("0.###")) GB</p>
             }
+            <div class="np-detail-settings">
+                <div class="section-head"><h2>Device settings</h2></div>
+                <label class="check-row">
+                    <input type="checkbox" checked="@_protected" @onchange="e => ChangeProtectionAsync(e.Value is true)" disabled="@_busy" />
+                    <span>Protected device<small>Skip automatic throttle and block. Wireless changes can still affect it.</small></span>
+                </label>
+                <label class="check-row">
+                    <input type="checkbox" checked="@device.UsageLanOnly" @onchange="e => ChangeLanOnlyAsync(e.Value is true)" disabled="@_busy" />
+                    <span>LAN-only device<small>All future traffic counts as LAN, including real Internet use.</small></span>
+                </label>
+                <p class="hint">Manual block is a direct router operation. The current product’s protected guard applies to automatic actions.</p>
+            </div>
+
         </section>
 
         <!-- Why restricted -->
@@ -196,23 +189,6 @@ else if (_device is { } device)
             </div>
         </section>
 
-        <!-- Device settings -->
-        <section class="card span-4 tablet-full">
-            <div class="section-head"><h2>Device settings</h2></div>
-            <label class="check-row">
-                <input type="checkbox" checked="@_protected" @onchange="e => ChangeProtectionAsync(e.Value is true)" disabled="@_busy" />
-                <span>Protected device<small>Skip automatic throttle and block. Wireless changes can still affect it.</small></span>
-            </label>
-            <label class="check-row">
-                <input type="checkbox" checked="@device.UsageLanOnly" @onchange="e => ChangeLanOnlyAsync(e.Value is true)" disabled="@_busy" />
-                <span>LAN-only device<small>All future traffic counts as LAN, including real Internet use.</small></span>
-            </label>
-            <div class="actions">
-                <DeviceBlockActions Device="device" Changed="LoadAsync" Disabled="@(!_hasRouter || _busy)" />
-            </div>
-            <p class="hint">Manual block is a direct router operation. The current product’s protected guard applies to automatic actions.</p>
-        </section>
-
         <!-- Rules & bedtime -->
         <section class="card span-6 tablet-full" id="applicable-rules">
             <div class="section-head"><h2>Rules & bedtime</h2><a href="/automations/rules" class="text-button">@((MarkupString)Icon("arrow")) Open rules editor</a></div>
@@ -257,7 +233,7 @@ else if (_device is { } device)
     </div>
 }
 
-<NetPilot.Web.Components.Actions.QuickActionsSheet @bind-Open="_quickActions" DeviceMac="Mac" Saved="LoadAsync" />
+<NetPilot.Web.Components.Actions.QuickActionsSheet @bind-Open="_quickActions" DeviceMac="@Mac" Saved="LoadAsync" />
 <AppSheet @bind-Open="_quotaEdit" Title="Quota policies">
     <MudStack Spacing="3">
         <MudText>The matched policy supplies both periods. A blank cap means no cap. Protection skips automatic throttle and block, while tracking and notifications still apply.</MudText>

@@ -49,7 +49,7 @@
         <div class="section-head"><h2>Effective modes</h2></div>
         <div class="row between">
             <div>
-                <div class="metric">Agent: @AgentHealth.Evaluate(_heartbeat, Clock.GetUtcNow())</div>
+                <div class="metric">Agent: @AgentHealth.EvaluateOperational(_heartbeat, Clock.GetUtcNow())</div>
                 <p class="hint">@(_heartbeat is null ? "Runtime mode unknown" : $"Reported rules {(_heartbeat.EffectiveModes.RulesForceDryRun ? "forced dry-run" : "per-policy")}; {(_heartbeat.EffectiveModes.RulesEnabled ? "enabled" : "disabled")}")</p>
             </div>
             <span class="chip @(Rules.ForceDryRun ? "dry" : "live")">@(Rules.ForceDryRun ? "Forced dry-run" : "Per-policy dry-run")</span>

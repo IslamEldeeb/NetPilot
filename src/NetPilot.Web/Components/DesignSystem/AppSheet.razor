@@ -1,5 +1,5 @@
 <MudBreakpointProvider OnBreakpointChanged="BreakpointChanged">
-    <MudDialog Visible="Open" VisibleChanged="OpenChanged" Options="@Options" Class="np-mud-dialog" AriaLabel="@Title">
+    <MudDialog Visible="Open" VisibleChanged="OpenChanged" Options="@Options" Class="@DialogClass" AriaLabel="@Title">
         <TitleContent><MudText Typo="Typo.h2">@Title</MudText></TitleContent>
         <DialogContent>@ViewportOptions@ChildContent</DialogContent>
         <DialogActions>@Footer</DialogActions>
@@ -11,14 +11,16 @@
     [Parameter, EditorRequired] public string Title { get; set; } = "";
     [Parameter] public RenderFragment? ChildContent { get; set; }
     [Parameter] public RenderFragment? Footer { get; set; }
+    [Parameter] public bool BottomSheetOnMobile { get; set; }
+    private string DialogClass => BottomSheetOnMobile ? "np-mud-dialog np-quick-actions-dialog" : "np-mud-dialog";
     private Breakpoint _breakpoint = Breakpoint.Xs;
-    private DialogOptions Options => new() { FullScreen = _breakpoint == Breakpoint.Xs, FullWidth = true,
+    private DialogOptions Options => new() { FullScreen = _breakpoint == Breakpoint.Xs && !BottomSheetOnMobile, FullWidth = true,
         MaxWidth = MaxWidth.Small, CloseButton = true, CloseOnEscapeKey = true };
     private void BreakpointChanged(Breakpoint breakpoint) => _breakpoint = breakpoint;
     private RenderFragment ViewportOptions => builder =>
     {
         builder.OpenComponent<SheetViewport>(0);
-        builder.AddAttribute(1, nameof(SheetViewport.FullScreen), _breakpoint == Breakpoint.Xs);
+        builder.AddAttribute(1, nameof(SheetViewport.FullScreen), _breakpoint == Breakpoint.Xs && !BottomSheetOnMobile);
         builder.CloseComponent();
     };
 

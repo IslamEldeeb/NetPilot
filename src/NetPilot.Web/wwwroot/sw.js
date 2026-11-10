@@ -14,7 +14,7 @@ self.addEventListener('push', event => {
     event.waitUntil(self.registration.showNotification(typeof payload.title === 'string' ? payload.title : 'NetPilot', {
         body: typeof payload.body === 'string' ? payload.body : 'Open NetPilot for details.',
         tag: typeof payload.tag === 'string' ? payload.tag : 'netpilot',
-        icon: '/icons/icon-192.png',
+        icon: '/icons/icon-192.png?v=2',
         data: { url: localUrl(payload.url), tokens }, actions
     }));
 });
@@ -46,7 +46,7 @@ async function applyAction(event) {
         } catch { message = 'Cannot reach NetPilot. Check your connection and try again from the original notification.'; }
     }
     await self.registration.showNotification('NetPilot', {
-        body: message, tag: 'netpilot:action-result', icon: '/icons/icon-192.png', data: { url: '/' }
+        body: message, tag: 'netpilot:action-result', icon: '/icons/icon-192.png?v=2', data: { url: '/' }
     });
 }
 

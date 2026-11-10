@@ -11,148 +11,106 @@
 @inject UsagePeriodClock Clock
 @inject ILogger<Usage> Logger
 <PageTitle>Usage · NetPilot</PageTitle>
-<div class="page-head">
+<div class="page-head np-usage-head">
     <div>
-        <div class="eyebrow">Understand your data</div>
         <h1>Usage</h1>
-        <p>Internet usage, with local traffic separated.</p>
+        @if (_report is { } rangeReport)
+        {
+            <p>@rangeReport.Range.Start.ToString("dd MMM yyyy")@(_period == ReportPeriod.Day ? "" : $" – {rangeReport.Range.EndExclusive.AddDays(-1):dd MMM yyyy}") · @Clock.TimeZone.Id</p>
+        }
     </div>
     <div class="actions">
-        <a class="button outline" href="@CsvHref" download="netpilot-usage.csv">@((MarkupString)Icon("download")) Export period CSV</a>
-        <button class="button outline" @onclick="async () => await LoadAsync()">@((MarkupString)Icon("refresh")) Refresh saved usage</button>
+        <div class="np-period-switch" role="group" aria-label="Usage period">
+            @foreach (var period in new[] { ReportPeriod.Day, ReportPeriod.Week, ReportPeriod.Month })
+            {
+                <button type="button" aria-pressed="@(_period == period ? "true" : "false")" @onclick="() => ChangePeriod(period)">@(period == ReportPeriod.Month ? "Month" : period.ToString())</button>
+            }
+        </div>
+        <button class="outline" @onclick="LoadAsync">@((MarkupString)Icon("refresh")) Refresh</button>
     </div>
 </div>
 
 @if (_error is not null)
 {
-    <div class="banner error">@((MarkupString)Icon("warning")) @_error</div>
+    <div class="banner error" role="alert">@((MarkupString)Icon("warning")) @_error <button class="text-button" @onclick="LoadAsync">Retry</button></div>
 }
-
-@if (_error is null && _overview == null)
+else if (_overview is null || _report is null)
 {
-    <div class="skeleton"></div>
+    <div class="skeleton" aria-busy="true"></div>
     <div class="skeleton line"></div>
 }
-
-@if (_error is null && _overview is { } ov && _report is { } r)
+else
 {
-    <div class="toolbar">
-        <div class="segmented" aria-label="Usage period">
-            @foreach (var p in new[] { ReportPeriod.Day, ReportPeriod.Week, ReportPeriod.Month })
-            {
-                var periodName = p == ReportPeriod.Day ? "Day" : p == ReportPeriod.Week ? "Week" : "Month";
-                <button data-period="@p" class="@(_period == p ? "active" : "")" aria-pressed="@(_period == p)"
-                        @onclick="() => ChangePeriod(p)">@periodName</button>
-            }
-        </div>
-        <span
-            class="muted">@(_period == ReportPeriod.Day ? Clock.TodayKey() : _period == ReportPeriod.Week ? "This week" : Clock.ThisMonthKey()) 2026 · @Clock.TimeZone.Id</span>
-        <div class="field search-field">
-            <label>Find a device</label>
-            <input id="usage-device-search" type="search" @bind="_mac" placeholder="Name, MAC or IP address"/>
-        </div>
+    var ov = _overview;
+    var r = _report;
+    <div class="np-usage-toolbar">
+        <label class="field">Device
+            <select value="@_mac" @onchange="e => ChangeDevice(e.Value?.ToString() ?? string.Empty)">
+                <option value="">All devices</option>
+                @foreach (var choice in DeviceChoices) { <option value="@choice.Mac">@choice.Name</option> }
+            </select>
+        </label>
+        <p class="hint" id="usage-confidence">@ov.Confidence Historical bytes are not reclassified. LAN totals count both endpoints.</p>
     </div>
+    <p class="hint">Last successful router read: @LocalTime(ov.Heartbeat?.LastSuccessfulRouterReadUtc). LAN source last read: @LocalTime(ov.LanStatus.LastReadAtUtc).</p>
+    <div class="grid np-usage-grid">
+        <section class="card span-4 np-usage-stat">
+            <div class="eyebrow">Internet</div>
+            @if (r.HasObservation) { <div class="np-usage-number">@DataSize.ToGb(r.InternetBytes).ToString("0.##") <small>GB</small></div> }
+            else { <div class="np-usage-number">— <small>GB</small></div> }
+            <p class="hint">Recorded Internet usage</p>
+        </section>
+        <section class="card span-4 np-usage-stat">
+            <div class="eyebrow">Inside your home</div>
+            @if (r.HasObservation && (r.LanBytes > 0 || (ov.LanStatus.IsConfigured && ov.LanStatus.LastReadAtUtc is not null))) { <div class="np-usage-number np-usage-lan">@DataSize.ToGb(r.LanBytes).ToString("0.##") <small>GB</small></div> }
+            else { <div class="np-usage-number">— <small>GB</small></div> }
+            <p class="hint">LAN traffic excluded where measured</p>
+        </section>
+        <section class="card span-4 np-usage-budget" id="household-budget">
+            <div class="section-head"><h2>Household ISP budget</h2></div>
+            <BudgetCard Overview="@ov" TimeZone="@Clock.TimeZone.Id" />
+            <button class="outline" @onclick="OpenBudget">@((MarkupString)Icon("tune")) Edit ISP budget</button>
+        </section>
 
-    <div class="banner info">@((MarkupString)Icon("leaf")) LAN source responds, but counters are not live-verified. Keep
-        enforcement in dry-run. LAN totals count both endpoints.
-    </div>
-    <p class="muted">Last successful router read: @LocalTime(ov.Heartbeat?.LastSuccessfulRouterReadUtc). LAN source last
-        read: @LocalTime(ov.LanStatus.LastReadAtUtc). Unavailable
-        since: @LocalTime(ov.LanStatus.UnavailableSinceUtc).</p>
-
-    <div class="grid">
-        @if (r.Rows.Count > 0)
+        @if (r.HasObservation)
         {
-            <section class="card span-8 tablet-full">
-                <div class="section-head"><h2>Internet & local traffic</h2></div>
-                <div class="stat-grid">
-                    <div>
-                        <small>Internet @(_period == ReportPeriod.Day ? "today" : _period == ReportPeriod.Week ? "this week" : "this month")</small>
-                        <div class="metric">@DataSize.ToGb(r.InternetBytes).ToString("0.#") GB</div>
+            <section class="card span-12 np-usage-chart-card">
+                <DeviceUsageChart Days="_days" />
+                <p class="hint">1 GB = 1,000,000,000 bytes. Historical periods may contain unclassified LAN traffic; hourly detail is not available.</p>
+            </section>
+            <section class="card span-6">
+                <div class="section-head"><h2>By category</h2></div>
+                @foreach (var category in r.Rows.GroupBy(row => row.Category).OrderByDescending(group => group.Sum(row => row.InternetBytes)))
+                {
+                    var catBytes = category.Sum(row => row.InternetBytes);
+                    var maxBytes = r.Rows.GroupBy(row => row.Category).Max(group => group.Sum(row => row.InternetBytes));
+                    <div class="np-usage-row">
+                        <div class="np-usage-row-main"><strong>@category.Key.Replace('_', ' ')</strong><div class="np-device-meter"><span style="width:@Percent(catBytes, maxBytes)%"></span></div></div>
+                        <strong>@DataSize.ToGb(catBytes).ToString("0.##") GB</strong>
                     </div>
-                    <div>
-                        <small>LAN excluded</small>
-                        <div class="metric">@DataSize.ToGb(r.LanBytes).ToString("0.#") GB</div>
+                }
+            </section>
+            <section class="card span-6">
+                <div class="section-head"><h2>By device</h2><a class="outline" href="@CsvHref" download="netpilot-usage.csv">@((MarkupString)Icon("download")) CSV</a></div>
+                @foreach (var device in r.Rows)
+                {
+                    <div class="np-usage-row">
+                        <span class="symbol-tile">@((MarkupString)Icon("devices"))</span>
+                        <div class="np-usage-row-main"><a href="@($"/devices/{device.Mac}")"><strong>@device.Name</strong></a><small>@device.Category.Replace('_', ' ')</small></div>
+                        <strong>@DataSize.ToGb(device.InternetBytes).ToString("0.##") GB</strong>
                     </div>
-                    <div>
-                        <small>Devices online</small>
-                        <div
-                            class="metric">@ov.Readings.Devices.Count(d => d.Connection.IsOnline) <small>of @ov.Readings.Devices.Count devices</small>
-                        </div>
-                    </div>
-                </div>
-                @((MarkupString)BuildChart(r))
-                <p class="hint">1 GB = 1,000,000,000 bytes. Historical periods may contain unclassified LAN traffic. Day
-                    view shows totals; hourly detail is not available.</p>
+                }
             </section>
         }
         else
         {
-            <section class="card span-8 tablet-full empty-state">
+            <section class="card span-12 empty-state">
                 <span class="symbol-tile">@((MarkupString)Icon("wifi"))</span>
                 <h2>No saved usage for this period</h2>
                 <p>Usage appears after the next successful tick. Missing observations are not zero.</p>
                 <a href="/devices" class="button">See devices</a>
             </section>
         }
-
-        <section class="card span-4 forecast" id="household-budget">
-            <div class="section-head">
-                <h2>Household ISP budget</h2>
-            </div>
-            <BudgetCard Overview="@(_error is null ? ov : ov with { Forecast = null })" TimeZone="@Clock.TimeZone.Id" />
-            <div class="actions" style="margin-block-start:16px">
-                <button class="outline" @onclick="OpenBudget">@((MarkupString)Icon("tune")) Edit ISP budget</button>
-            </div>
-        </section>
-
-        @if (r.Rows.Count > 0)
-        {
-            <section class="card span-6">
-                <div class="section-head"><h2>Top talkers today</h2></div>
-                @foreach (var device in r.Rows.Take(6))
-                {
-                    <div class="consumer">
-                        <span class="symbol-tile">@((MarkupString)Icon("devices"))</span>
-                        <div>
-                            <a href="@($"/devices/{device.Mac}")"><strong>@device.Name</strong></a>
-                            <div class="meter"><span
-                                    style="--fill:@(device.InternetBytes / Math.Max(r.InternetBytes, 1) * 100)%"></span></div>
-                        </div>
-                        <div class="number">@DataSize.ToGb(device.InternetBytes).ToString("0.#") <small>GB Internet</small>
-                        </div>
-                    </div>
-                }
-            </section>
-
-            <section class="card span-6">
-                <div class="section-head"><h2>By category · today</h2></div>
-                @foreach (var category in r.Rows.GroupBy(row => row.Category).OrderByDescending(group => group.Sum(row => row.InternetBytes)))
-                {
-                    var catBytes = category.Sum(row => row.InternetBytes);
-                    var maxBytes = r.Rows.GroupBy(g => g.Category).Max(g => g.Sum(x => x.InternetBytes));
-                    <div class="consumer" style="grid-template-columns:40px 1fr auto;">
-                        <span class="symbol-tile">@((MarkupString)Icon("devices"))</span>
-                        <div>
-                            <strong>@category.Key.Replace('_', ' ')</strong>
-                            <div class="meter"><span style="--fill:@(catBytes / Math.Max(maxBytes, 1) * 100)%"></span></div>
-                        </div>
-                        <div class="number">@DataSize.ToGb(catBytes).ToString("0.#") <small>GB Internet</small></div>
-                    </div>
-                }
-                <p class="hint">Other categories: 0.7 GB Internet. LAN-only server: 0 GB Internet.</p>
-            </section>
-        }
-    </div>
-}
-
-@if (_error is null && (_overview == null || _report == null))
-{
-    <div class="card empty-state">
-        <span class="symbol-tile">@((MarkupString)Icon("wifi"))</span>
-        <h2>No saved usage for this period</h2>
-        <p>Usage appears after the next successful tick. Missing observations are not zero.</p>
-        <a href="/devices" class="button">See devices</a>
     </div>
 }
 
@@ -182,55 +140,11 @@
         "refresh" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M20 7v5h-5M4 17v-5h5M5 7a8 8 0 0 1 14-1M5 18a8 8 0 0 0 14-1\"/></svg>",
         "download" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5\"/></svg>",
         "arrow" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M4 12h16m-6-6 6 6-6 6\"/></svg>",
-        "tune" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M9 3-1 3-3 1 1 4-2 2 2 3 3-1 2 3h3l1-3 3-1 1-3-2-2 1-3-3-1-1-3Z\"/><circle cx=\"12\" cy=\"11\" r=\"3\"/></svg>",
+        "tune" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M3 6h18M3 12h18M3 18h18M7 3v6m10 0v6M9 15v6\"/></svg>",
         "leaf" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 2L2 7l10 10 10-10L12 2Z\"/><path d=\"M2 17l10 -10 10 10\"/></svg>",
         "devices" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"6\" y=\"2\" width=\"12\" height=\"20\" rx=\"3\"/><path d=\"M10 18h4\"/></svg>",
         "wifi" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M2 8a16 16 0 0 1 20 0M5 12a11 11 0 0 1 14 0m-11 4a6 6 0 0 1 8 0\"/><circle cx=\"12\" cy=\"20\" r=\"1\"/></svg>",
         _ => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"10\"/></svg>"
     };
-
-    private string BuildChart(UsageReport report)
-    {
-        var days = _days;
-        if (days.Count == 0)
-        {
-            return "<p class=\"hint\">No chart data available for this period.</p>";
-        }
-
-        var max = days.Select(d => (d.InternetBytes ?? 0) + (d.LanBytes ?? 0)).DefaultIfEmpty(0).Max();
-        if (max == 0) max = 1;
-
-        var chart = new System.Text.StringBuilder();
-        chart.Append("<div class=\"usage-chart\">");
-        foreach (var day in days)
-        {
-            var internetPct = day.InternetBytes is { } internet ? internet / (double)max * 140 : 0;
-            var lanPct = day.LanBytes is { } lan ? lan / (double)max * 140 : 0;
-            chart.Append("<div class=\"chart-column\">");
-            chart.Append("<div class=\"bar-pair\">");
-            chart.Append($"<div class=\"bar\" style=\"--height:{internetPct}px\"></div>");
-            chart.Append($"<div class=\"bar lan\" style=\"--height:{lanPct}px\"></div>");
-            chart.Append("</div>");
-            chart.Append($"<small>{DayLabel(day)}</small>");
-            chart.Append("</div>");
-        }
-
-        chart.Append("</div>");
-        chart.Append("<div class=\"legend\"><span><i class=\"swatch\"></i>Internet</span><span><i class=\"swatch lan\"></i>LAN excluded · both endpoints</span></div>");
-        chart.Append("<details><summary>View chart data</summary><table><caption>Usage · decimal GB · sample data</caption><thead><tr><th>Period</th><th>Internet GB</th><th>LAN GB</th></tr></thead><tbody>");
-        foreach (var day in days)
-        {
-            chart.Append($"<tr><td>{DayLabel(day)}</td><td>{DataSize.ToGb(day.InternetBytes ?? 0).ToString("0.#")}</td><td>{day.InternetBytes ?? 0:N0}</td></tr>");
-        }
-
-        chart.Append("</tbody></table></details>");
-        return chart.ToString();
-    }
-
-    private static string DayLabel(NetPilot.Core.Devices.DeviceUsageDay day) =>
-        DateTime.TryParseExact(day.DayKey, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture,
-            System.Globalization.DateTimeStyles.None, out var date)
-            ? date.ToString("ddd dd")
-            : day.DayKey;
 
 }

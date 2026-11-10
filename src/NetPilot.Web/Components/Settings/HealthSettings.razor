@@ -20,7 +20,8 @@
     <MudGrid>
         <MudItem xs="12" sm="6"><MudPaper Outlined="true" Class="pa-4">
             <MudText Typo="Typo.h3">Agent</MudText>
-            <MudText>Heartbeat: @AgentHealth.Evaluate(_heartbeat, Clock.GetUtcNow())</MudText>
+            <MudText>Agent status: @AgentHealth.EvaluateOperational(_heartbeat, Clock.GetUtcNow())</MudText>
+            <MudText>Heartbeat: @AgentHealth.Evaluate(_heartbeat, Clock.GetUtcNow()) (worker timing only)</MudText>
             <MudText>Started: @Local(_heartbeat?.LastTickStartedUtc) · Completed: @Local(_heartbeat?.LastTickCompletedUtc)</MudText>
             <MudText>Duration: @(_heartbeat?.LastTickDurationMs?.ToString("0") ?? "Unknown") ms · Failed ticks: @(_heartbeat?.ConsecutiveFailedTicks.ToString() ?? "Unknown")</MudText>
             <MudText>Router last successful read: @Local(_heartbeat?.LastSuccessfulRouterReadUtc)</MudText>

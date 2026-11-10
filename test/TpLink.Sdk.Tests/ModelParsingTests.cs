@@ -126,6 +126,14 @@ public class ModelParsingTests
         Assert.Equal(32, result.Data!.Stok.Length);
     }
 
+    [Fact]
+    public void LoginResponse_ParsesRouterSessionConflict()
+    {
+        var result = JsonSerializer.Deserialize<TpLinkLoginResponse>("""{"success":false,"errorcode":"user conflict"}""")!;
+        Assert.False(result.Success);
+        Assert.Equal("user conflict", result.ErrorCode.GetString());
+    }
+
     /// <summary>
     /// Matches the `new` JSON blob captured live in a user curl against
     /// `admin/access_control?form=black_list` (`operation=insert`) — see

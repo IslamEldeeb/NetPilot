@@ -51,6 +51,28 @@ public class AgentHealthTests
         Assert.Equal(AgentHealthStatus.Stale, AgentHealth.Evaluate(heartbeat, Tick.AddSeconds(361), 0));
     }
 
+    [Fact]
+    public void OperationalHealthRequiresFreshSuccessfulRouterRead()
+    {
+        var now = Tick.AddSeconds(10);
+        Assert.Equal(AgentHealthStatus.Unknown, AgentHealth.EvaluateOperational(Heartbeat, now));
+        Assert.Equal(AgentHealthStatus.Down, AgentHealth.EvaluateOperational(Heartbeat with { ConsecutiveFailedTicks = 54 }, now));
+        Assert.Equal(AgentHealthStatus.Healthy, AgentHealth.EvaluateOperational(Heartbeat with { LastSuccessfulRouterReadUtc = Tick }, now));
+        Assert.Equal(AgentHealthStatus.Down, AgentHealth.EvaluateOperational(Heartbeat with { LastSuccessfulRouterReadUtc = Tick, ConsecutiveFailedTicks = 1 }, now));
+        Assert.Equal(AgentHealthStatus.Down, AgentHealth.EvaluateOperational(Heartbeat with { LastSuccessfulRouterReadUtc = Tick, LastErrorSummary = "Router operation failed" }, now));
+        Assert.Equal(AgentHealthStatus.Unknown, AgentHealth.EvaluateOperational(Heartbeat with { LastSuccessfulRouterReadUtc = now.AddSeconds(1) }, now));
+    }
+
+    [Fact]
+    public void OperationalHealthRecognizesStaleOrDownRouterReadWithFreshHeartbeat()
+    {
+        var now = Tick.AddSeconds(300);
+        var fresh = Heartbeat with { LastTickStartedUtc = now, LastTickCompletedUtc = now };
+        Assert.Equal(AgentHealthStatus.Stale, AgentHealth.EvaluateOperational(fresh with { LastSuccessfulRouterReadUtc = now.AddSeconds(-121) }, now));
+        Assert.Equal(AgentHealthStatus.Down, AgentHealth.EvaluateOperational(fresh with { LastSuccessfulRouterReadUtc = now.AddSeconds(-211) }, now));
+        Assert.Equal(AgentHealthStatus.Healthy, AgentHealth.EvaluateOperational(fresh with { LastSuccessfulRouterReadUtc = now.AddSeconds(-120) }, now));
+    }
+
     [Theory]
     [InlineData(-1, 1, 0, null, ApplyState.Applied)]
     [InlineData(0, 1, 0, null, ApplyState.Applied)]

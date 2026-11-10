@@ -60,6 +60,8 @@ public partial class Usage : IDisposable
     private void ChangePeriod(ReportPeriod period) { _period = period; Rebuild(); }
     private void ChangeDate(DateTime? date) { if (date is null || date.Value.Year < 2 || date.Value.Year > 9998) return; _date = date; Rebuild(); }
     private void ChangeDevice(string mac) { _mac = mac; Rebuild(); }
+    private static string Percent(long value, long maximum) =>
+        (maximum > 0 ? Math.Clamp((decimal)value * 100 / maximum, 0, 100) : 0).ToString("0.#", CultureInfo.InvariantCulture);
     private void OpenBudget()
     {
         _budgetGb = _overview?.Budget is { } budget ? DataSize.ToGb(budget.MonthlyBytes) : null;

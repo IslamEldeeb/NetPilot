@@ -11,37 +11,50 @@
 @inject UsagePeriodClock Clock
 @inject IConfiguration Configuration
 @inject ILogger<QuickActionsSheet> Logger
-<AppSheet Open="Open" OpenChanged="OpenChanged" Title="Quick actions">
-    <MudStack Spacing="3">
-        <MudSelect T="string" @bind-Value="_action" Label="Action"><MudSelectItem T="string" Value="@("pause")">Pause Internet</MudSelectItem><MudSelectItem T="string" Value="@("throttle")">Temporary throttle</MudSelectItem><MudSelectItem T="string" Value="@("bonus")">Quota bonus</MudSelectItem></MudSelect>
-        <MudSelect T="string" @bind-Value="_target" Label="Target">
+<AppSheet Open="Open" OpenChanged="OpenChanged" Title="Quick action" BottomSheetOnMobile="true">
+    <ChildContent>
+    <div class="np-quick-sheet">
+        <div class="np-quick-choices" role="group" aria-label="Action">
+            <button type="button" class="np-quick-choice" aria-pressed="@(_action == "pause" ? "true" : "false")" disabled="@(_busy || _accepted)" @onclick="@(() => SelectAction("pause"))">
+                <MudIcon Icon="@Icons.Material.Outlined.Pause" /><span>Pause</span>
+            </button>
+            <button type="button" class="np-quick-choice" aria-pressed="@(_action == "throttle" ? "true" : "false")" disabled="@(_busy || _accepted)" @onclick="@(() => SelectAction("throttle"))">
+                <MudIcon Icon="@Icons.Material.Outlined.Speed" /><span>Slow down</span>
+            </button>
+            <button type="button" class="np-quick-choice" aria-pressed="@(_action == "bonus" ? "true" : "false")" disabled="@(_busy || _accepted)" @onclick="@(() => SelectAction("bonus"))">
+                <MudIcon Icon="@Icons.Material.Outlined.CardGiftcard" /><span>Extra GB</span>
+            </button>
+        </div>
+        <MudSelect T="string" @bind-Value="_target" Label="Device or category" Variant="Variant.Outlined" Margin="Margin.Dense">
             @foreach (var device in _devices) { <MudSelectItem T="string" Value="@($"device:{device.Mac}")">@HouseholdUsage.DeviceName(device)</MudSelectItem> }
             @if (_action != "bonus") { @foreach (var category in _devices.Select(device => device.CategoryKey).Distinct().Order()) { <MudSelectItem T="string" Value="@($"category:{category}")">Category: @category</MudSelectItem> } }
         </MudSelect>
         @if (_action == "bonus")
         {
-            <MudSelect T="QuotaPeriodKind" @bind-Value="_period" Label="Named quota period"><MudSelectItem Value="QuotaPeriodKind.Day">Day</MudSelectItem><MudSelectItem Value="QuotaPeriodKind.Month">Month</MudSelectItem></MudSelect>
-            <MudNumericField T="decimal" @bind-Value="_bonusGb" Label="Bonus (decimal GB)" Min="0.000000001m" />
-            <MudText>Grant @_bonusGb GB to @TargetName for @_period · @PeriodKey. Other quota periods, rules, manual blocks and base policies still apply. This is an allowance, not a timed exemption.</MudText>
+            <MudSelect T="QuotaPeriodKind" @bind-Value="_period" Label="Named quota period" Variant="Variant.Outlined" Margin="Margin.Dense"><MudSelectItem Value="QuotaPeriodKind.Day">Day</MudSelectItem><MudSelectItem Value="QuotaPeriodKind.Month">Month</MudSelectItem></MudSelect>
+            <MudNumericField T="decimal" @bind-Value="_bonusGb" Label="Bonus (decimal GB)" Min="0.000000001m" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudText Typo="Typo.body2">Grant @_bonusGb GB to @TargetName for @_period · @PeriodKey. Other quota periods, rules, manual blocks and base policies still apply. This is an allowance, not a timed exemption.</MudText>
         }
         else
         {
-            <MudSelect T="int" @bind-Value="_minutes" Label="Duration"><MudSelectItem Value="15">15 minutes</MudSelectItem><MudSelectItem Value="30">30 minutes</MudSelectItem><MudSelectItem Value="60">60 minutes</MudSelectItem><MudSelectItem Value="0">Custom duration</MudSelectItem></MudSelect>
-            @if (_minutes == 0) { <MudNumericField T="int" @bind-Value="_customMinutes" Label="Custom minutes (1–1440)" Min="1" Max="1440" /> }
-            @if (_action == "throttle") { <MudNumericField T="int" @bind-Value="_kbps" Label="Symmetric throttle (Kbps)" Min="1" /> }
-            <MudText>Server mode: @(_dryRun ? "Dry-run preview (no router changes)" : "Enforcing"). Mode is configured on the server, not changed by this sheet.</MudText>
-            <MudText>Preview: @TargetName · @Targets.Length selected · @Targets.Count(mac => _protected.Contains(mac)) protected targets skipped · @Duration minutes.</MudText>
+            <MudSelect T="int" @bind-Value="_minutes" Label="For how long" Variant="Variant.Outlined" Margin="Margin.Dense"><MudSelectItem Value="15">15 minutes</MudSelectItem><MudSelectItem Value="30">30 minutes</MudSelectItem><MudSelectItem Value="60">1 hour</MudSelectItem><MudSelectItem Value="0">Custom duration</MudSelectItem></MudSelect>
+            @if (_minutes == 0) { <MudNumericField T="int" @bind-Value="_customMinutes" Label="Custom minutes (1–1440)" Min="1" Max="1440" Variant="Variant.Outlined" Margin="Margin.Dense" /> }
+            @if (_action == "throttle") { <MudNumericField T="int" @bind-Value="_kbps" Label="Symmetric throttle (Kbps)" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" /> }
+            <MudText Typo="Typo.body2">@TargetName · @Targets.Length selected · @Targets.Count(mac => _protected.Contains(mac)) protected targets skipped · @Duration minutes.</MudText>
             <MudAlert Severity="@(_dryRun ? Severity.Info : Severity.Warning)">
-                @(_dryRun ? "Next tick: preview only; no router restriction." : _action == "pause" ? "Next tick: pause Internet through an expiring block claim." : $"Next tick: throttle to {_kbps} Kbps through an expiring claim.")
-                Expiry is measured from save; the Agent releases on the first successful tick after expiry. Other holds remain. Base policies are preserved. Protected devices are checked again by the Agent.
+                @(_dryRun ? "Dry-run preview only; no router restriction." : _action == "pause" ? "The Agent will pause Internet through an expiring block claim." : $"The Agent will throttle to {_kbps} Kbps through an expiring claim.")
+                Expiry is measured from save; release happens on the first successful tick after expiry. Other holds and base policies remain. Protected devices are checked again by the Agent.
             </MudAlert>
         }
         <MudText Typo="Typo.caption">Takes effect on the Agent’s next tick (about @IntervalSeconds seconds). Retries or an offline Agent can take longer. No router command is sent by this sheet.</MudText>
         @if (_message is not null) { <MudAlert Severity="Severity.Success" role="status">@_message</MudAlert> }
         @if (_error is not null) { <MudAlert Severity="Severity.Error" role="alert">@_error</MudAlert> }
-        <MudButton OnClick="SaveAsync" Disabled="@(_busy || _devices.Count == 0 || _accepted)" Variant="Variant.Filled" Color="Color.Primary">Save for next tick</MudButton>
-        <MudButton OnClick="@(() => OpenChanged.InvokeAsync(false))">Close</MudButton>
-    </MudStack>
+    </div>
+    </ChildContent>
+    <Footer>
+        <MudButton OnClick="@(() => OpenChanged.InvokeAsync(false))" Variant="Variant.Outlined">Cancel</MudButton>
+        <MudButton OnClick="SaveAsync" Disabled="@(_busy || Targets.Length == 0 || _accepted)" Variant="Variant.Filled" Color="Color.Primary">Apply</MudButton>
+    </Footer>
 </AppSheet>
 @code {
     [Parameter] public bool Open { get; set; }
@@ -52,7 +65,7 @@
     private IReadOnlyList<MacAddress> _protected = [];
     private string _action = "pause", _target = "";
     private string? _error, _message;
-    private int _minutes = 30, _customMinutes = 45, _kbps = 512;
+    private int _minutes = 60, _customMinutes = 45, _kbps = 512;
     private decimal _bonusGb = 1;
     private QuotaPeriodKind _period;
     private bool _dryRun = true, _busy, _wasOpen, _accepted;
@@ -82,6 +95,12 @@
             catch (Exception ex) { Logger.LogWarning(ex, "Cannot load action targets"); _error = "Could not load targets. Close and retry."; _devices = []; }
         }
         _wasOpen = Open;
+    }
+    private void SelectAction(string action)
+    {
+        _action = action;
+        if (action == "bonus" && _target.StartsWith("category:", StringComparison.Ordinal))
+            _target = _devices.FirstOrDefault() is { } first ? $"device:{first.Mac}" : "";
     }
     private async Task SaveAsync()
     {

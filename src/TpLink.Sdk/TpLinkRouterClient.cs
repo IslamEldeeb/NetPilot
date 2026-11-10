@@ -52,6 +52,10 @@ public sealed class TpLinkRouterClient : IDisposable
         var loginResponse = await _transport.PostFormAsync<TpLinkLoginResponse>(
             stok: "", path: LoginPath, formBody: $"operation=login&password={encryptedPassword}", ct);
 
+        if (!loginResponse.Success && loginResponse.ErrorCode.ValueKind == JsonValueKind.String &&
+            string.Equals(loginResponse.ErrorCode.GetString(), "user conflict", StringComparison.OrdinalIgnoreCase))
+            throw new TpLinkProtocolException("Router reports another management session. Close other router sessions or wait for the session to expire, then retry.");
+
         if (!loginResponse.Success || loginResponse.Data is null || string.IsNullOrEmpty(loginResponse.Data.Stok))
             throw new TpLinkProtocolException("Login rejected — check password, or another session may hold the router's single login slot.");
 

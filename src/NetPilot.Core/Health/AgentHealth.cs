@@ -15,6 +15,19 @@ public static class AgentHealth
         if (age > 2d * heartbeat.TickIntervalSeconds + graceSeconds) return AgentHealthStatus.Stale;
         return heartbeat.LastTickCompletedUtc is null ? AgentHealthStatus.Unknown : AgentHealthStatus.Healthy;
     }
+
+    /// <summary>Overall health requires a fresh heartbeat and a recent successful router read.</summary>
+    public static AgentHealthStatus EvaluateOperational(AgentHeartbeat? heartbeat, DateTimeOffset nowUtc, int graceSeconds = 60)
+    {
+        var heartbeatHealth = Evaluate(heartbeat, nowUtc, graceSeconds);
+        if (heartbeatHealth != AgentHealthStatus.Healthy) return heartbeatHealth;
+        if (heartbeat!.ConsecutiveFailedTicks > 0 || heartbeat.LastErrorSummary is not null) return AgentHealthStatus.Down;
+        if (heartbeat.LastSuccessfulRouterReadUtc is not { } read || read > nowUtc) return AgentHealthStatus.Unknown;
+        var age = (nowUtc - read).TotalSeconds;
+        if (age > 5d * heartbeat.TickIntervalSeconds + graceSeconds) return AgentHealthStatus.Down;
+        if (age > 2d * heartbeat.TickIntervalSeconds + graceSeconds) return AgentHealthStatus.Stale;
+        return AgentHealthStatus.Healthy;
+    }
 }
 
 public enum ApplyState { Saved, Pending, Applied, AgentDown }

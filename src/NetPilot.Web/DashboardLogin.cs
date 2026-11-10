@@ -151,7 +151,7 @@ public static class DashboardLogin
                 """;
         var html = $"""
             <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-            <title>{title} · NetPilot</title><link rel="icon" href="/favicon.png">
+            <title>{title} · NetPilot</title><link rel="icon" href="/favicon.png?v=2">
             <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f6faf7">
             <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0e1512">
             <style>{LoginCss}</style></head>
