@@ -6,11 +6,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <base href="/" />
     <ResourcePreloader />
-    <link rel="stylesheet" href="@Assets["lib/bootstrap/dist/css/bootstrap.min.css"]" />
     @* Classic links reload the document so the Mud reset/utilities never enter its CSS cascade. *@
     @if (UseMud)
     {
         <link rel="stylesheet" href="@Assets["_content/MudBlazor/MudBlazor.min.css"]" />
+    }
+    else
+    {
+        @* Bootstrap only for the classic view: its .row/.card rules collide with the design prototype classes. *@
+        <link rel="stylesheet" href="@Assets["lib/bootstrap/dist/css/bootstrap.min.css"]" />
     }
     <link rel="stylesheet" href="@Assets["css/app-shell.css"]" />
     <link rel="stylesheet" href="@Assets["app.css"]" />

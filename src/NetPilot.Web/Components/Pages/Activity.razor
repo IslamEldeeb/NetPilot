@@ -16,58 +16,183 @@
 @inject ActivityInboxState InboxState
 @inject ILogger<Activity> Logger
 <PageTitle>Activity · NetPilot</PageTitle>
-<MudStack Spacing="3">
-    <MudText Typo="Typo.h1" HtmlTag="h1">Activity</MudText>
-    <MudStack Row Wrap="Wrap.Wrap" role="navigation" aria-label="Activity sections">
-        <MudButton Href="/activity" Color="Color.Primary" Variant="@(!Inbox ? Variant.Filled : Variant.Outlined)">Timeline</MudButton>
-        <MudButton Href="/activity/inbox" Color="Color.Primary" Variant="@(Inbox ? Variant.Filled : Variant.Outlined)">Inbox · @_unread unread</MudButton>
-        <MudButton OnClick="Refresh">Refresh</MudButton>
-    </MudStack>
-    @if (_error is not null) { <MudAlert Severity="Severity.Error" role="alert">@_error</MudAlert> }
-    <MudGrid>
-        <MudItem xs="12" sm="4"><MudSelect T="string" Label="Kind" @bind-Value="_kind">
-            @foreach (var kind in new[] { "all", "rule", "quota", "system", "notification" }) { <MudSelectItem Value="kind">@kind</MudSelectItem> }
-        </MudSelect></MudItem>
-        <MudItem xs="12" sm="4"><MudSelect T="string" Label="Mode" @bind-Value="_mode"><MudSelectItem Value='@("all")'>All / unknown</MudSelectItem><MudSelectItem Value='@("dry-run")'>Dry-run</MudSelectItem><MudSelectItem Value='@("live")'>Live / not marked dry-run</MudSelectItem></MudSelect></MudItem>
-        <MudItem xs="12" sm="4"><MudTextField T="string" Label="Device MAC (optional)" @bind-Value="_mac" /></MudItem>
-    </MudGrid>
-    <MudCheckBox T="bool" @bind-Value="_failed" Label="Failed only" />
-    <MudButton OnClick="ApplyFilters" Disabled="_busy" Variant="Variant.Outlined">Apply filters</MudButton>
-    <MudText Typo="Typo.caption">@Clock.TimeZone.Id · Saved events, newest appended first. Older events retain unknown actor/mode. Inbox contains notification events; delivery attempts are shown separately.</MudText>
-    @if (_detailMissing) { <MudAlert Severity="Severity.Info">Event not found or removed by retention. <MudLink Href="/activity">View timeline</MudLink></MudAlert> }
-    @foreach (var entry in _entries)
-    {
-        <MudPaper Outlined Class="pa-4" @key="entry.EventId" aria-label="@($"Event {entry.EventId}")">
-            <MudText Typo="Typo.h3">@entry.Type @(entry.IsNotification && entry.ReadAtUtc is null ? "· Unread" : "")</MudText>
-            <MudText Typo="Typo.caption">@TimeZoneInfo.ConvertTime(entry.AtUtc, Clock.TimeZone).ToString("ddd, dd MMM yyyy HH:mm:ss") · @entry.Source · @entry.Actor · Event #@entry.EventId</MudText>
-            <MudText>@entry.Message</MudText>
-            <MudText Typo="Typo.caption">@(entry.DryRun == true ? "Dry-run" : entry.DryRun == false ? "Live" : "Mode not recorded") @(entry.Failed ? "· Failed" : "")</MudText>
-            <MudStack Row Wrap="Wrap.Wrap">
-                <MudLink Href="@($"/activity/events/{entry.EventId}")">Event details</MudLink>
-                @if (entry.Mac is {} mac) { <MudLink Href="@($"/devices/{mac}")">@mac · Why</MudLink> }
-                @if (entry.Kind == "rule") { <MudLink Href="@RuleWhy(entry)">Rule history / Why</MudLink> }
-                @if (entry.Kind == "quota") { <MudLink Href="/automations/quotas">Quota policy / Why</MudLink> }
-                @if (entry.IsNotification && entry.ReadAtUtc is null) { <MudButton OnClick="() => MarkRead(entry.EventId)">Mark read</MudButton> }
-                @if (entry.ChangeId is {} changeId && entry.Type == ActivityEventType.ConfigurationChanged && Clock.GetUtcNow() < entry.AtUtc.AddSeconds(10))
-                { <MudButton OnClick="() => Undo(changeId)">Undo configuration change</MudButton> }
-            </MudStack>
-            @if (EventId is not null && entry.CorrelationId is {} correlation) { <MudText Typo="Typo.caption">Correlation: @ActivityPrivacy.Redact(correlation)</MudText> }
-        </MudPaper>
-    }
-    @if (_entries.Count == 0 && !_detailMissing) { <MudText>@(Inbox ? "You're all caught up." : "Nothing to report yet.")</MudText> }
-    @if (_nextId is not null) { <MudButton OnClick="More" Disabled="_busy">Load older events</MudButton> }
-    <MudExpansionPanels><MudExpansionPanel Text="Notification delivery attempts (latest 20)">
-        <MudText>Sent means accepted by the push service, not delivered to a phone. Quiet-hours suppression, duplicate suppression and failed attempts remain distinct. Credentials and action URLs are never included here.</MudText>
-        @foreach (var attempt in _attempts)
+<div class="page-head">
+    <div>
+        <div class="eyebrow">Know what happened</div>
+        <h1>@(Inbox ? "Notification inbox" : "Activity")</h1>
+        <p>@(Inbox ? "A durable inbox, distinct from push delivery attempts." : $"A clear timeline of your network. Times in {Clock.TimeZone.Id}.")</p>
+    </div>
+    <div class="actions">
+        <button class="outline" @onclick="Refresh" disabled="@_busy">@((MarkupString)Icon("refresh")) Refresh</button>
+    </div>
+</div>
+
+<nav class="section-tabs" aria-label="Activity views">
+    <a href="/activity" class="@(Inbox ? "text-button" : "active")">Timeline</a>
+    <a href="/activity/inbox" class="@(Inbox ? "active" : "text-button")">Inbox · @_unread unread</a>
+</nav>
+
+@if (_error is not null)
+{
+    <div class="banner error" role="alert">
+        <span class="icon">@((MarkupString)Icon("warning"))</span>
+        <div>
+            <strong>Couldn’t load activity</strong>
+            <p>@_error</p>
+        </div>
+    </div>
+}
+@if (_detailMissing)
+{
+    <div class="banner info">
+        <span class="icon">@((MarkupString)Icon("usage"))</span>
+        <p>Event not found or removed by retention. <a href="/activity">View timeline</a></p>
+    </div>
+}
+
+@if (Inbox)
+{
+    <div class="banner info">
+        <span class="icon">@((MarkupString)Icon("bell"))</span>
+        <p>Unread state and in-app action buttons need new backend work. Existing push actions use scoped, expiring single-use tokens.</p>
+    </div>
+    <div class="card">
+        @foreach (var entry in _entries)
         {
-            <MudPaper Outlined Class="pa-3 my-2"><MudText>@ActivityPrivacy.Redact(attempt.Title)</MudText>
-                <MudText Typo="Typo.caption">@TimeZoneInfo.ConvertTime(attempt.AtUtc, Clock.TimeZone).ToString("yyyy-MM-dd HH:mm:ss") · @attempt.ChannelId · @(attempt.Outcome == NotificationOutcome.Sent ? "Sent to push service" : attempt.Outcome.ToString()) · @ActivityPrivacy.Redact(attempt.Error ?? "")</MudText>
-            </MudPaper>
+            <div class="list-row">
+                <span class="symbol-tile">@((MarkupString)Icon(IconFor(entry)))</span>
+                <div class="grow">
+                    <h3>@Title(entry)@(entry.IsNotification && entry.ReadAtUtc is null ? " · Unread" : "")</h3>
+                    <p>@entry.Message</p>
+                    <small>@TimeZoneInfo.ConvertTime(entry.AtUtc, Clock.TimeZone).ToString("ddd, dd MMM yyyy HH:mm:ss") · @entry.Source · @entry.Actor · Event #@entry.EventId</small>
+                    <div class="actions">
+                        <a href="@($"/activity/events/{entry.EventId}")" class="text-button">Event details</a>
+                        @if (entry.Mac is { } mac)
+                        {
+                            <a href="@($"/devices/{mac}")" class="text-button">Why</a>
+                        }
+                        @if (entry.IsNotification && entry.ReadAtUtc is null)
+                        {
+                            <button class="text-button" @onclick="() => MarkRead(entry.EventId)">Mark read</button>
+                        }
+                    </div>
+                </div>
+            </div>
         }
-        <MudLink Href="/settings/notifications">Notification settings</MudLink>
-    </MudExpansionPanel></MudExpansionPanels>
-    <MudLink Href="/legacy#activity" Target="_top">Classic activity log</MudLink>
-</MudStack>
+        @if (_entries.Count == 0)
+        {
+            <div class="empty-state">
+                <span class="symbol-tile">@((MarkupString)Icon("bell"))</span>
+                <h2>You’re all caught up</h2>
+                <p>No unread notification events.</p>
+                <a href="/activity" class="button">View activity</a>
+            </div>
+        }
+    </div>
+}
+else
+{
+    <div class="toolbar">
+        <label class="field">Show events
+            <select id="activity-filter" @bind="_kind">
+                <option value="all">Everything</option>
+                <option value="quota">Quotas</option>
+                <option value="rule">Rules</option>
+                <option value="system">System</option>
+                <option value="notification">Notifications</option>
+            </select>
+        </label>
+        <label class="field">Mode
+            <select id="activity-mode" @bind="_mode">
+                <option value="all">All / unknown</option>
+                <option value="dry-run">Dry-run</option>
+                <option value="live">Live / not marked dry-run</option>
+            </select>
+        </label>
+        <label class="field">Device MAC
+            <input id="activity-mac" type="search" value="@_mac" @oninput="e => _mac = e.Value?.ToString() ?? string.Empty" placeholder="Optional" />
+        </label>
+        <label class="check-row">
+            <input type="checkbox" checked="@_failed" @onchange="e => _failed = e.Value is true" />
+            <span>Failed only</span>
+        </label>
+        <button class="outline" @onclick="ApplyFilters" disabled="@_busy">Apply filters</button>
+        <span class="muted">@Clock.TimeZone.Id</span>
+    </div>
+
+    <div class="card">
+        <ol class="timeline">
+            @foreach (var entry in _entries)
+            {
+                <li @key="entry.EventId">
+                    <time datetime="@entry.AtUtc.ToString("o")">@TimeZoneInfo.ConvertTime(entry.AtUtc, Clock.TimeZone).ToString("HH:mm")</time>
+                    <span class="symbol-tile">@((MarkupString)Icon(IconFor(entry)))</span>
+                    <div>
+                        <div class="row between">
+                            <h3>@Title(entry)</h3>
+                            <span class="chip @ChipKind(entry)">@ChipLabel(entry)</span>
+                        </div>
+                        <p>@entry.Message</p>
+                        <div class="actions">
+                            <a href="@($"/activity/events/{entry.EventId}")" class="text-button">Event details</a>
+                            @if (entry.Mac is { } mac)
+                            {
+                                <a href="@($"/devices/{mac}")" class="text-button">View device</a>
+                            }
+                            @if (entry.Kind == "rule")
+                            {
+                                <a href="@RuleWhy(entry)" class="text-button">Rule history / Why</a>
+                            }
+                            @if (entry.Kind == "quota")
+                            {
+                                <a href="/automations/quotas" class="text-button">Quota policy / Why</a>
+                            }
+                            @if (entry.ChangeId is { } changeId && entry.Type == ActivityEventType.ConfigurationChanged && Clock.GetUtcNow() < entry.AtUtc.AddSeconds(10))
+                            {
+                                <button class="text-button" @onclick="() => Undo(changeId)">Undo configuration change</button>
+                            }
+                        </div>
+                        <small>@TimeZoneInfo.ConvertTime(entry.AtUtc, Clock.TimeZone).ToString("ddd, dd MMM yyyy HH:mm:ss") · @entry.Source · @entry.Actor · Event #@entry.EventId</small>
+                    </div>
+                </li>
+            }
+        </ol>
+        @if (_entries.Count == 0 && !_detailMissing)
+        {
+            <div class="empty-state">
+                <span class="symbol-tile">@((MarkupString)Icon("activity"))</span>
+                <h2>Nothing to report yet</h2>
+                <p>Saved events appear after the next Agent tick.</p>
+                <a href="/devices" class="button">See devices</a>
+            </div>
+        }
+    </div>
+}
+
+@if (_nextId is not null)
+{
+    <button class="outline" @onclick="More" disabled="@_busy">Load older events</button>
+}
+
+<section class="card" style="margin-block-start:20px">
+    <div class="section-head"><h2>Notification delivery attempts</h2><span class="chip">Transport log</span></div>
+    <p class="hint" style="margin-block-start:0">Sent means accepted by the push service, not delivered to a phone. Quiet-hours suppression, duplicate suppression and failed attempts remain distinct. Credentials and action URLs are never included here.</p>
+    @foreach (var attempt in _attempts)
+    {
+        <div class="list-row">
+            <div class="grow">
+                <h3>@ActivityPrivacy.Redact(attempt.Title)</h3>
+                <p>@TimeZoneInfo.ConvertTime(attempt.AtUtc, Clock.TimeZone).ToString("yyyy-MM-dd HH:mm:ss") · @attempt.ChannelId · @(attempt.Outcome == NotificationOutcome.Sent ? "Sent to push service" : attempt.Outcome.ToString()) · @ActivityPrivacy.Redact(attempt.Error ?? "")</p>
+            </div>
+        </div>
+    }
+    @if (_attempts.Count == 0)
+    {
+        <p class="hint">No delivery attempts recorded yet.</p>
+    }
+    <a href="/settings/notifications" class="text-button">@((MarkupString)Icon("arrow")) Notification settings</a>
+</section>
+
 @code {
     [Parameter] public int? EventId { get; set; }
     [SupplyParameterFromQuery(Name = "kind")] public string? Kind { get; set; }
@@ -82,6 +207,80 @@
     private bool _failed, _busy, _detailMissing;
     private string? _error;
     private bool Inbox => new Uri(Navigation.Uri).AbsolutePath == "/activity/inbox";
+
+    private string Icon(string name) => name switch
+    {
+        "refresh" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M20 7v5h-5M4 17v-5h5M5 7a8 8 0 0 1 14-1M5 18a8 8 0 0 0 14-1\"/></svg>",
+        "warning" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m12 3 10 18H2Z\"/><path d=\"M12 9v5m0 3h.1\"/></svg>",
+        "bell" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M5 17h14l-2-4V8a5 5 0 0 0-10 0v5Zm5 3h4\"/></svg>",
+        "usage" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M4 20V10m8 10V4m8 16v-7\"/></svg>",
+        "activity" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M4 5h2m4 0h10M4 12h2m4 0h10M4 19h2m4 0h10\"/></svg>",
+        "devices" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"6\" y=\"2\" width=\"12\" height=\"20\" rx=\"3\"/><path d=\"M10 18h4\"/></svg>",
+        "arrow" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M4 12h16m-6-6 6 6-6 6\"/></svg>",
+        "clock" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 6v6l4 2\"/></svg>",
+        _ => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"10\"/></svg>"
+    };
+
+    private static string IconFor(ActivityLogEntry entry) => entry.Kind switch
+    {
+        "rule" => "clock",
+        "quota" => "usage",
+        "notification" => "bell",
+        "system" => "activity",
+        _ => "devices"
+    };
+
+    /// <summary>Friendly title per event type; the stored enum names read like code.</summary>
+    private static string Title(ActivityLogEntry entry) => entry.Type switch
+    {
+        ActivityEventType.DeviceDiscovered => "Device discovered",
+        ActivityEventType.DeviceWentOffline => "Device went offline",
+        ActivityEventType.DeviceCameBackOnline => "Device came back online",
+        ActivityEventType.PolicyApplied => "Speed policy applied",
+        ActivityEventType.PolicySkippedAlreadyCorrect => "Policy already correct",
+        ActivityEventType.WriteFailed => "Write failed",
+        ActivityEventType.NewCategorySeen => "New category seen",
+        ActivityEventType.UsageCounterReset => "Usage counter reset",
+        ActivityEventType.RouterRebooted => "Router rebooted",
+        ActivityEventType.DeviceBlocked => "Device blocked",
+        ActivityEventType.DeviceUnblocked => "Device unblocked",
+        ActivityEventType.QuotaWarning => "Quota warning",
+        ActivityEventType.QuotaExceeded => "Quota exceeded",
+        ActivityEventType.QuotaActionApplied => "Quota action applied",
+        ActivityEventType.QuotaReverted => "Quota reverted",
+        ActivityEventType.QuotaDryRun => "Quota dry-run",
+        ActivityEventType.QuotaActionSkippedProtected => "Quota skipped (protected)",
+        ActivityEventType.QuotaAllowanceGranted => "Quota allowance granted",
+        ActivityEventType.QuotaRestoreRequested => "Quota restore requested",
+        ActivityEventType.LanCounterReset => "LAN counter reset",
+        ActivityEventType.LanSourceUnavailable => "LAN source unavailable",
+        ActivityEventType.RuleFired => "Rule fired",
+        ActivityEventType.RuleDryRun => "Rule dry-run",
+        ActivityEventType.RuleReverted => "Rule reverted",
+        ActivityEventType.RuleActionSkippedProtected => "Rule skipped (protected)",
+        ActivityEventType.RuleFailed => "Rule failed",
+        ActivityEventType.ConfigurationChanged => "Configuration changed",
+        ActivityEventType.ConfigurationRestored => "Configuration restored",
+        ActivityEventType.NotificationCreated => "Notification created",
+        _ => entry.Type.ToString()
+    };
+
+    private static string ChipKind(ActivityLogEntry entry) => entry.DryRun == true ? "dry"
+        : entry.Failed == true ? "blocked"
+        : entry.Kind == "device" ? "ok" : "";
+
+    private static string ChipLabel(ActivityLogEntry entry) => entry.DryRun == true ? "Dry-run"
+        : entry.Failed == true ? "Failed"
+        : entry.Kind switch
+        {
+            "rule" => "Rule",
+            "quota" => "Quota",
+            "notification" => "Notification",
+            "system" => "System",
+            "device" => "Device",
+            _ => "Event"
+        };
+
     protected override async Task OnParametersSetAsync()
     {
         _kind = Kind ?? "all"; _mode = Mode ?? "all"; _mac = Mac ?? ""; _failed = Failed ?? false;
@@ -94,7 +293,7 @@
     {
         await Feed.PruneAsync(Clock.GetUtcNow().AddDays(-62), default);
         _entries = []; _nextId = null; _detailMissing = false;
-        if (EventId is {} id)
+        if (EventId is { } id)
         {
             var entry = await Feed.FindAsync(id, default);
             if (entry is not null) _entries.Add(entry); else _detailMissing = true;

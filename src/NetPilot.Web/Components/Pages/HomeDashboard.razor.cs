@@ -51,13 +51,14 @@ public partial class HomeDashboard : IDisposable
             var snapshot = new DashboardInputs(overview.Readings, overview.Heartbeat, Clock.GetUtcNow(),
                 await Protected.GetAllAsync(ct), claims, quotaStates, await Firings.GetAllAsync(ct));
             _attention = DashboardSummary.Attention(snapshot);
-            _restrictions = DashboardSummary.Restrictions(snapshot, Clock);
+            _restrictions = RestrictionRows(snapshot, claims, Clock);
             _configured = await Connections.GetAsync(ct) is not null;
             _quotaMode = Mode(policies.Where(policy => !policy.Exempt).Select(policy => policy.DryRun));
             _rulesMode = !RulesOptions.Enabled ? "Off" : RulesOptions.ForceDryRun ? "Forced dry-run" : Mode((await Rules.GetAllAsync(ct)).Where(rule => rule.Enabled).Select(rule => rule.DryRun));
             _temporaryMode = Mode(claims.Where(claim => claim.Source.StartsWith("temporary:", StringComparison.Ordinal)).Select(claim => claim.DryRun));
             _today = HouseholdUsage.Report(overview.Readings, UsageRange.For(ReportPeriod.Day, DateOnly.ParseExact(overview.Readings.Today, "yyyy-MM-dd", CultureInfo.InvariantCulture)));
             _overview = overview;
+            ComputeCycle(overview);
             _error = null;
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
@@ -67,6 +68,36 @@ public partial class HomeDashboard : IDisposable
     {
         var modes = dryRuns.Distinct().ToArray();
         return modes.Length == 0 ? "Not set" : modes.Length > 1 ? "Mixed" : modes[0] ? "Dry-run" : "Enforcing";
+    }
+
+    /// <summary>
+    /// Restrictions and previews for the home card: only devices that really carry a restriction,
+    /// plus the active claims. The core summary also reports router-observed limits, which would
+    /// otherwise list every device on the household.
+    /// </summary>
+    private IReadOnlyList<DashboardNotice> RestrictionRows(DashboardInputs snapshot,
+        IReadOnlyList<NetPilot.Core.Enforcement.Claims.ActionClaim> claims, UsagePeriodClock clock)
+    {
+        var rows = new List<DashboardNotice>();
+        foreach (var device in snapshot.Usage.Devices)
+        {
+            var link = $"/devices/{device.Mac}";
+            var name = HouseholdUsage.DeviceName(device);
+            if (device.IsBlocked) rows.Add(new($"{name}: recorded block.", link + "#restrictions"));
+            else if (device.QuotaThrottle is { } throttle)
+                rows.Add(new($"{name}: {throttle.DownloadKbps?.ToString() ?? "auto"} Kbps automatic throttle.", link + "#restrictions"));
+            else if (device.Override is { Enabled: true } manual)
+                rows.Add(new($"{name}: manual speed limit {manual.DownloadKbps?.ToString() ?? "auto"} Kbps.", link + "#restrictions"));
+        }
+        foreach (var claim in claims)
+        {
+            var state = claim.DryRun ? "dry-run preview" : claim.Pending ? "pending next tick" : "active claim";
+            var expiry = claim.ExpiresAtUtc is { } ends
+                ? $" · expires {TimeZoneInfo.ConvertTime(ends, clock.TimeZone):g}"
+                : "";
+            rows.Add(new($"{claim.Mac}: {claim.Kind} · {claim.Source} · {state}{expiry}", $"/devices/{claim.Mac}#restrictions"));
+        }
+        return rows;
     }
     private string LocalTime(DateTimeOffset? instant) => instant is { } timestamp ? $"{TimeZoneInfo.ConvertTime(timestamp, Clock.TimeZone):g} · {Clock.TimeZone.Id}" : "Unknown";
     private async Task WatchAsync()

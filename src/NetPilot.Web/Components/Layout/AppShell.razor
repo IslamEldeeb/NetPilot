@@ -27,7 +27,7 @@ else
                 <MudSpacer />
                 <MudIconButton Icon="@Icons.Material.Outlined.Search" data-np-search="true" title="Search (Ctrl/⌘ K)" aria-label="Search devices and pages" OnClick="@(() => _searchOpen = true)" />
                 <ThemeToggle Preference="_preference" PreferenceChanged="ChangeThemeAsync" />
-                <MudButton Href="/settings" StartIcon="@Icons.Material.Outlined.Settings" Color="Color.Inherit">Settings</MudButton>
+                <MudButton Href="/settings" StartIcon="@Icons.Material.Outlined.Settings" Color="Color.Inherit" Class="settings-link">Settings</MudButton>
                 @if (Login.Enabled)
                 {
                     <form method="post" action="/logout" data-enhance="false">
@@ -40,7 +40,6 @@ else
             <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-6">
                 <main id="main-content" tabindex="-1"><CascadingValue Value="this" IsFixed="true">@Body</CascadingValue></main>
                 <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2" Class="mt-6">
-                    <MudLink Href="/legacy" Target="_top">Classic view</MudLink>
                     <MudText Typo="Typo.caption">@Clock.TimeZone.Id · Web configuration shown in Safety Center</MudText>
                 </MudStack>
             </MudContainer>

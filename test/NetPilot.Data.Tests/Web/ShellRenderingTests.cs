@@ -29,15 +29,15 @@ namespace NetPilot.Data.Tests.Web;
 public sealed class ShellRenderingTests
 {
     [Theory]
-    [InlineData(typeof(Home), "Home network", "/legacy")]
-    [InlineData(typeof(Devices), "Devices", "/legacy#devices")]
-    [InlineData(typeof(Usage), "Usage", "/legacy#usage")]
-    [InlineData(typeof(Automations), "Quotas", "/legacy#policies")]
-    [InlineData(typeof(Activity), "Activity", "/legacy#activity")]
-    [InlineData(typeof(Settings), "Open Router", "/legacy#notifications")]
-    [InlineData(typeof(Safety), "Evidence checklist", "/settings")]
-    [InlineData(typeof(Setup), "Step 1 of 6", "/settings")]
-    public async Task PlaceholderInMudShell_RendersContentAndClassicEscape(Type page, string content, string classicPath)
+    [InlineData(typeof(Home), "Home network")]
+    [InlineData(typeof(Devices), "Devices")]
+    [InlineData(typeof(Usage), "Usage")]
+    [InlineData(typeof(Automations), "Quotas")]
+    [InlineData(typeof(Activity), "Activity")]
+    [InlineData(typeof(Settings), "Router")]
+    [InlineData(typeof(Safety), "Evidence checklist")]
+    [InlineData(typeof(Setup), "Step 1 of 6")]
+    public async Task PlaceholderInMudShell_RendersContent(Type page, string content)
     {
         var directory = Path.Combine(Path.GetTempPath(), $"netpilot-mud-render-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
@@ -53,7 +53,6 @@ public sealed class ShellRenderingTests
                 return shell.ToHtmlString();
             });
             Assert.Contains(content, html);
-            Assert.Contains(classicPath, html);
             Assert.Contains("Home network / Cairo", html);
             Assert.Contains("Rules: Forced dry-run", html);
             Assert.Contains("aria-current=\"page\"", html);
@@ -94,17 +93,17 @@ public sealed class ShellRenderingTests
                 return shell.ToHtmlString();
             });
             Assert.Contains(expected, html);
-            Assert.Contains("All devices", html);
+            Assert.Contains("Devices", html);
             Assert.Contains("Home network / Cairo", html);
             Assert.Contains("Quotas: Not set", html);
             Assert.Contains("Agent: Unknown", html);
             Assert.DoesNotContain("Could not load", html);
             if (seed)
             {
-                Assert.Contains("Who is holding this limit?", html);
+                Assert.Contains("Why is this device restricted?", html);
                 Assert.Contains("Last 30 days", html);
                 Assert.Contains("LAN-only device", html);
-                Assert.Contains("No automatic restriction claims", html);
+                Assert.Contains("No automatic claims active", html);
             }
         }
         finally { Directory.Delete(directory, recursive: true); }
@@ -137,12 +136,13 @@ public sealed class ShellRenderingTests
                     new Dictionary<string, object?> { [nameof(AppShell.Body)] = body }));
                 return shell.ToHtmlString();
             });
-            Assert.Contains("1 online of 1", html);
+            Assert.Contains("1 known devices", html);
+            Assert.Contains("1 online now", html);
             Assert.Contains("/devices/AA-BB-CC-DD-EE-01", html);
-            Assert.Contains("devices-table", html);
-            Assert.Contains("devices-cards", html);
+            Assert.Contains("device-table", html);
+            Assert.Contains("device-cards", html);
             Assert.Contains("Select My phone", html);
-            Assert.Contains("Router: Not observed", html);
+            Assert.Contains("No restriction", html);
             Assert.Contains("Agent: Healthy", html);
             Assert.Contains("method=\"post\" action=\"/logout\"", html);
             Assert.Contains("name=\"__RequestVerificationToken\"", html);
@@ -216,8 +216,8 @@ public sealed class ShellRenderingTests
                     new Dictionary<string, object?> { [nameof(DevicePage.Mac)] = mac.ToString() }));
                 return page.ToHtmlString();
             });
-            Assert.Contains("Release this quota claim", html);
-            Assert.Contains("Release this rule firing", html);
+            Assert.Contains("Restore quota now", html);
+            Assert.Contains("Release rule claim", html);
             Assert.Contains("Bedtime", html);
             Assert.Contains("A block is active", html);
             Assert.Contains("512 Kbps", html);
@@ -293,10 +293,10 @@ public sealed class ShellRenderingTests
     }
 
     [Theory]
-    [InlineData("quotas", "Today's progress")]
+    [InlineData("quotas", "Effective policy preview")]
     [InlineData("rules", "Guest WiFi off at night")]
     [InlineData("schedules", "same rule IDs")]
-    [InlineData("policies", "Force reapply all")]
+    [InlineData("policies", "Category speed policies")]
     public async Task AutomationSections_RenderMudControlsAndSavedState(string section, string expected)
     {
         var directory = Path.Combine(Path.GetTempPath(), $"netpilot-d1-render-{Guid.NewGuid():N}");
@@ -308,13 +308,15 @@ public sealed class ShellRenderingTests
             await provider.GetRequiredService<IDeviceStore>().UpsertAsync(new Device { Mac = new("AA-BB-CC-DD-EE-01"), Hostname = "My TV", CategoryKey = "television" }, default);
             await using var renderer = new HtmlRenderer(provider, provider.GetRequiredService<ILoggerFactory>());
             var html = await renderer.Dispatcher.InvokeAsync(async () => (await renderer.RenderComponentAsync<Automations>()).ToHtmlString());
-            Assert.Contains(expected, html); Assert.Contains("mud-", html);
+            Assert.Contains(expected, html); Assert.Contains("card", html);
             Assert.DoesNotContain("np-legacy", html); Assert.DoesNotContain("form-control", html);
             if (section == "rules")
             {
                 foreach (var template in TemplateCatalog.All) Assert.Contains(template.Name, html);
                 Assert.Contains("Forced dry-run", html); Assert.Contains("Kill switch", html);
             }
+            if (section == "quotas") Assert.Contains("progress", html);
+            if (section == "policies") Assert.Contains("Sync all", html);
         }
         finally { Directory.Delete(directory, true); }
     }
@@ -388,7 +390,7 @@ public sealed class ShellRenderingTests
         services.AddScoped<SettingsRouterActions>();
         services.AddScoped<NetPilot.Core.Safety.SafetyGraduationService>();
         services.AddDashboardLogin(configuration);
-        if (loginEnabled) services.AddSingleton(new DashboardLoginOptions("test-password"));
+        if (loginEnabled) services.AddSingleton(new DashboardLoginOptions("admin", "test-password"));
         services.AddSingleton<AntiforgeryStateProvider, StaticAntiforgery>();
         services.AddTpLinkProvider();
         services.AddNetPilotWebPush(configuration);

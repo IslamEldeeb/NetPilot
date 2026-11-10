@@ -36,7 +36,7 @@ public partial class DevicePage : IDisposable
     private Device? _device;
     private MacAddress _mac;
     private bool _quickActions;
-    private bool _valid, _loaded, _busy, _editing, _protected, _hasRouter, _month;
+    private bool _valid, _loaded, _busy, _editing, _protected, _hasRouter, _month, _quotaEdit;
     private string? _error;
     private string _name = "", _category = "", _icon = "";
     private long _todayBytes, _monthBytes, _todayLan, _monthLan;

@@ -5,6 +5,14 @@ namespace NetPilot.Core.Security;
 
 public static class DashboardAccess
 {
+    public static bool VerifyUsername(string? expected, string? supplied)
+    {
+        var matches = CryptographicOperations.FixedTimeEquals(
+            SHA256.HashData(Encoding.UTF8.GetBytes(expected ?? "")),
+            SHA256.HashData(Encoding.UTF8.GetBytes(supplied ?? "")));
+        return !string.IsNullOrEmpty(expected) && !string.IsNullOrEmpty(supplied) && matches;
+    }
+
     public static bool VerifyPassword(string? expected, string? supplied)
     {
         var matches = CryptographicOperations.FixedTimeEquals(

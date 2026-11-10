@@ -16,68 +16,198 @@
 @inject AutomationFeedback Feedback
 @inject ILogger<QuotaPanel> Logger
 @inject NavigationManager Navigation
-<MudStack Spacing="3">
-    <MudText Typo="Typo.h2">Quotas</MudText>
-    @if (_error is not null) { <MudAlert Severity="Severity.Error" role="alert">@_error <MudButton OnClick="Reload">Retry</MudButton></MudAlert> }
-    @if (!_loaded) { <MudSkeleton Height="100px" aria-label="Loading quotas" /> }
-    else
-    {
-        <MudAlert Severity="Severity.Info">Device → category → default. A matched policy supplies both periods; blank caps do not inherit. Protected and exempt have different meanings.</MudAlert>
-        <MudButton Href="/automations/quotas/default" Variant="Variant.Outlined">@(_policies.Any(p => p.Id == "default") ? "Edit global default" : "Set global default")</MudButton>
-        <MudGrid>
-            <MudItem xs="12" sm="6">
-                <MudSelect T="string" Label="Category override" @bind-Value="_category">
-                    @foreach (var category in _categories) { <MudSelectItem Value="category">@category</MudSelectItem> }
-                </MudSelect>
-                <MudButton Disabled="@string.IsNullOrEmpty(_category)" Href="@($"/automations/quotas/category/{Uri.EscapeDataString(_category)}")">Add / edit category</MudButton>
-            </MudItem>
-            <MudItem xs="12" sm="6">
-                <MudSelect T="string" Label="Device override" @bind-Value="_mac">
-                    @foreach (var device in _devices) { <MudSelectItem Value="@(device.Mac.ToString())">@DeviceList.DisplayName(device) (@device.Mac)</MudSelectItem> }
-                </MudSelect>
-                <MudButton Disabled="@string.IsNullOrEmpty(_mac)" Href="@($"/automations/quotas/device/{_mac}")">Add / edit device</MudButton>
-            </MudItem>
-        </MudGrid>
-        @if (_policies.Count == 0) { <MudText>No quotas configured. Set a safe dry-run default.</MudText> }
-        @foreach (var policy in _policies.OrderBy(p => p.Scope).ThenBy(p => p.Id))
-        {
-            <MudPaper Outlined Class="pa-4" @key="policy.Id">
-                <MudText Typo="Typo.h3">@(policy.Scope == QuotaScope.Default ? "Global default" : policy.Id)</MudText>
-                <MudText>@(policy.Exempt ? "Exempt" : $"{policy.Action} · {(policy.DryRun ? "Dry-run" : "Enforcing")}") · Daily @(policy.DailyBytes is {} day ? DataSize.Format(day) : "No cap") · Month @(policy.MonthlyBytes is {} month ? DataSize.Format(month) : "No cap")</MudText>
-                <MudText Typo="Typo.caption">Warnings: @(policy.WarnPercents.Length == 0 ? "None" : string.Join(", ", policy.WarnPercents) + "%")</MudText>
-                <MudStack Row Wrap="Wrap.Wrap">
-                    <MudButton Href="@EditorPath(policy)">Edit</MudButton>
-                    <MudButton Color="Color.Error" Disabled="_busy" OnClick="() => Remove(policy)">Remove</MudButton>
-                </MudStack>
-            </MudPaper>
-        }
-        <MudText Typo="Typo.h3">Today's progress · @Clock.TodayKey() · @Clock.TimeZone.Id</MudText>
+@if (_error is not null)
+{
+    <div class="banner error" role="alert">
+        <span class="icon">@((MarkupString)Icon("warning"))</span>
+        <div>
+            <strong>Couldn’t load quotas</strong>
+            <p>@_error</p>
+            <button class="outline" @onclick="Reload">Retry</button>
+        </div>
+    </div>
+}
+@if (!_loaded)
+{
+    <div class="skeleton-wrap" aria-busy="true">
+        <div class="skeleton"></div>
+        <div class="skeleton"></div>
+    </div>
+}
+else
+{
+    <div class="banner info">
+        <span class="icon">@((MarkupString)Icon("shield"))</span>
+        <p>These are per-device quotas. A household ISP budget is separate. Blank cap means no cap; remove an override to inherit.</p>
+    </div>
+
+    <div class="grid">
+        <!-- Global default -->
+        <section class="card span-6 tablet-full">
+            <div class="section-head"><h2>Global default</h2></div>
+            @if (DefaultPolicy is { } global)
+            {
+                <div class="row between">
+                    <div>
+                        <div class="metric">@(global.DailyBytes is { } daily ? $"{DataSize.ToGb(daily).ToString("0.#")} GB" : "No cap") <small>/ day per device</small></div>
+                        <p class="hint">@global.Action@(global.MonthlyBytes is { } monthly ? $" · monthly {DataSize.ToGb(monthly).ToString("0.#")} GB" : " · no monthly cap")</p>
+                    </div>
+                    <span class="chip @(global.DryRun ? "dry" : "live")">@(global.DryRun ? "Dry-run" : "Enforcing example")</span>
+                </div>
+            }
+            else
+            {
+                <p class="hint">No global default is saved. Devices without an override have no cap.</p>
+            }
+            <div class="actions">
+                <a class="outline" href="/automations/quotas/default">@(DefaultPolicy is null ? "Set default" : "Edit default")</a>
+                @if (DefaultPolicy is not null)
+                {
+                    <button class="text-button" @onclick="() => Remove(DefaultPolicy)" disabled="@_busy">Remove</button>
+                }
+            </div>
+        </section>
+
+        <!-- Category overrides -->
+        <section class="card span-6 tablet-full">
+            <div class="section-head"><h2>Category overrides</h2></div>
+            @foreach (var policy in CategoryPolicies)
+            {
+                <div class="list-row">
+                    <div class="grow">
+                        <h3>@(policy.CategoryKey?.Replace('_', ' '))</h3>
+                        <p>@(policy.DailyBytes is { } daily ? $"{DataSize.ToGb(daily).ToString("0.#")} GB / day" : "No daily cap") · @policy.Action</p>
+                    </div>
+                    <span class="chip @(policy.DryRun ? "dry" : "live")">@(policy.DryRun ? "Dry-run" : "Enforcing")</span>
+                    <a class="text-button" href="@EditorPath(policy)">Edit</a>
+                </div>
+            }
+            @if (CategoryPolicies.Count == 0)
+            {
+                <p class="hint">No category overrides are saved.</p>
+            }
+            <div class="actions">
+                <label class="field">Category
+                    <select @bind="_category">
+                        <option value="">Choose a category</option>
+                        @foreach (var category in _categories)
+                        {
+                            <option value="@category">@category.Replace('_', ' ')</option>
+                        }
+                    </select>
+                </label>
+                <a class="text-button" href="@(string.IsNullOrEmpty(_category) ? "/automations/quotas" : $"/automations/quotas/category/{Uri.EscapeDataString(_category)}")">Add category override</a>
+            </div>
+        </section>
+
+        <!-- Effective policy preview -->
+        <section class="card span-8 tablet-full">
+            <div class="section-head"><h2>Effective policy preview</h2></div>
+            <label class="field">Device
+                <select @bind="_mac">
+                    <option value="">Choose a device</option>
+                    @foreach (var device in _devices)
+                    {
+                        <option value="@device.Mac.ToString()">@DeviceList.DisplayName(device)</option>
+                    }
+                </select>
+            </label>
+            @if (PreviewDevice is { } preview)
+            {
+                <div class="policy-trail" style="margin-block-start:20px">
+                    <span>@DeviceList.DisplayName(preview) → @(preview.CategoryKey.Replace('_', ' '))</span>
+                    <span>@QuotaPolicyText.EffectivePolicy(preview, QuotaResolver.Resolve(preview, _policies))</span>
+                    <span>@(QuotaResolver.Resolve(preview, _policies).MatchedPolicy?.DryRun == true ? "Dry-run" : "Enforcing example")</span>
+                </div>
+            }
+            <p class="hint">A device override replaces the whole matched policy. Explicit no-cap does not inherit a lower scope’s cap.</p>
+            <a class="text-button" href="@(string.IsNullOrEmpty(_mac) ? "/automations/quotas" : $"/automations/quotas/device/{_mac}")">@((MarkupString)Icon("add")) Add device override</a>
+        </section>
+
+        <!-- Safety controls -->
+        <section class="card span-4 tablet-full">
+            <div class="section-head"><h2>Safety controls</h2></div>
+            <div class="list-row">
+                <span class="symbol-tile">@((MarkupString)Icon("shield"))</span>
+                <div class="grow">
+                    <h3>@_protected.Count protected device@(_protected.Count == 1 ? "" : "s")</h3>
+                    <p>@(string.Join(" · ", _protected.Select(mac => _devices.FirstOrDefault(d => d.Mac == mac) is { } device ? DeviceList.DisplayName(device) : mac.ToString())))</p>
+                </div>
+            </div>
+            <div class="list-row">
+                <span class="symbol-tile">@((MarkupString)Icon("leaf"))</span>
+                <div class="grow">
+                    <h3>@_devices.Count(d => d.UsageLanOnly) LAN-only device@(_devices.Count(d => d.UsageLanOnly) == 1 ? "" : "s")</h3>
+                    <p>@(string.Join(" · ", _devices.Where(d => d.UsageLanOnly).Select(DeviceList.DisplayName)))</p>
+                </div>
+            </div>
+            <a href="/settings/safety" class="text-button">@((MarkupString)Icon("arrow")) Review safety</a>
+        </section>
+    </div>
+
+    <!-- Today's progress -->
+    <section class="card" style="margin-block-start:20px">
+        <div class="section-head"><h2>Today’s progress · @Clock.TodayKey() · @Clock.TimeZone.Id</h2></div>
         @foreach (var device in _devices)
         {
             var resolved = QuotaResolver.Resolve(device, _policies);
             var state = _usage.FirstOrDefault(u => u.Mac == device.Mac);
-            <MudPaper Outlined Class="pa-4" @key="device.Mac">
-                <MudLink Href="@($"/devices/{device.Mac}")">@DeviceList.DisplayName(device)</MudLink>
-                <MudText>@QuotaPolicyText.EffectivePolicy(device, resolved)</MudText>
-                <MudText Typo="Typo.caption">@(state?.CurrentDayKey == Clock.TodayKey() ? DataSize.Format(state.CurrentDayBytes) : "0 B") Internet today</MudText>
-                <DeviceQuotaMeter Resolution="resolved" TodayBytes="@(state?.CurrentDayKey == Clock.TodayKey() ? state.CurrentDayBytes : 0)" MonthBytes="@(state?.CurrentMonthKey == Clock.ThisMonthKey() ? state.CurrentMonthBytes : 0)" />
-                <MudCheckBox T="bool" Value="@_protected.Contains(device.Mac)" ValueChanged="enabled => Protect(device, enabled)" Disabled="_busy" Label="Protected: skip automatic throttle/block; usage and notifications continue" />
-                <MudCheckBox T="bool" Value="device.UsageLanOnly" ValueChanged="enabled => Exclude(device, enabled)" Disabled="_busy" Label="LAN-only device" />
-            </MudPaper>
+            <div class="list-row">
+                <div class="grow">
+                    <a href="@($"/devices/{device.Mac}")"><strong>@DeviceList.DisplayName(device)</strong></a>
+                    <p>@QuotaPolicyText.EffectivePolicy(device, resolved)</p>
+                    <div class="meter"><span style="--fill:@(resolved.MatchedPolicy?.DailyBytes is { } cap && cap > 0 ? Math.Clamp((state?.CurrentDayKey == Clock.TodayKey() ? state.CurrentDayBytes : 0) * 100 / cap, 0, 100) : 0)%"></span></div>
+                </div>
+                <div class="number">@DataSize.Format(state?.CurrentDayKey == Clock.TodayKey() ? state?.CurrentDayBytes ?? 0 : 0)</div>
+            </div>
+        }
+        @if (_devices.Count == 0)
+        {
+            <p class="hint">No devices are known yet.</p>
+        }
+    </section>
+
+    <!-- Device flags -->
+    <section class="card" style="margin-block-start:20px">
+        <div class="section-head"><h2>Device flags</h2></div>
+        @foreach (var device in _devices)
+        {
+            <div class="list-row">
+                <div class="grow">
+                    <h3>@DeviceList.DisplayName(device)</h3>
+                    <p>@(device.UsageLanOnly ? "LAN-only · all future traffic counts as LAN" : "Counts Internet and LAN separately")</p>
+                </div>
+                <label class="check-row">
+                    <input type="checkbox" checked="@_protected.Contains(device.Mac)" @onchange="e => Protect(device, e.Value is true)" disabled="@_busy" />
+                    <span>Protected<small>Skip automatic throttle/block; usage and notifications continue.</small></span>
+                </label>
+                <label class="check-row">
+                    <input type="checkbox" checked="@device.UsageLanOnly" @onchange="e => Exclude(device, e.Value is true)" disabled="@_busy" />
+                    <span>LAN-only</span>
+                </label>
+            </div>
         }
         @foreach (var missing in _protected.Except(_devices.Select(d => d.Mac)))
         {
-            <MudPaper Outlined Class="pa-4"><MudText>Protected: @missing (no longer in device list)</MudText><MudButton OnClick="() => Unprotect(missing)">Remove protection</MudButton></MudPaper>
+            <div class="list-row">
+                <div class="grow">
+                    <h3>@missing</h3>
+                    <p>Protected device that is no longer in the device list.</p>
+                </div>
+                <button class="text-button" @onclick="() => Unprotect(missing)">Remove protection</button>
+            </div>
         }
-        <MudText Typo="Typo.caption">LAN-only excludes all future traffic, including remote viewers and Internet traffic, from Internet totals. Existing totals stay unchanged.</MudText>
-        @if (_editing is not null)
-        {
-            <AppSheet Open Title="@($"Quota · {_editing.Id}")" OpenChanged="Close">
-                <QuotaSheet Initial="_editing" Devices="_devices" Policies="_policies" Busy="_busy" Saved="Save" />
-            </AppSheet>
-        }
+        <p class="hint">LAN-only excludes all future traffic, including remote viewers and Internet traffic, from Internet totals. Existing totals stay unchanged.</p>
+    </section>
+
+    @if (_editing is not null)
+    {
+        <AppSheet Open Title="@($"Quota · {_editing.Id}")" OpenChanged="Close">
+            <QuotaSheet Initial="_editing" Devices="_devices" Policies="_policies" Busy="_busy" Saved="Save" />
+        </AppSheet>
     }
-</MudStack>
+}
+
 @code {
     [Parameter] public string? ScopeKey { get; set; }
     [Parameter] public string? Target { get; set; }
@@ -90,6 +220,20 @@
     private string _category = "", _mac = "";
     private string? _error;
     private bool _loaded, _busy;
+    private QuotaPolicy? DefaultPolicy => _policies.FirstOrDefault(p => p.Scope == QuotaScope.Default);
+    private IReadOnlyList<QuotaPolicy> CategoryPolicies => _policies.Where(p => p.Scope == QuotaScope.Category).OrderBy(p => p.CategoryKey).ToArray();
+    private Device? PreviewDevice => _devices.FirstOrDefault(d => d.Mac.ToString() == _mac);
+
+    private string Icon(string name) => name switch
+    {
+        "warning" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m12 3 10 18H2Z\"/><path d=\"M12 9v5m0 3h.1\"/></svg>",
+        "shield" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m12 2 8 4v6c0 5-8 10-8 10S4 17 4 12V6Z\"/><path d=\"m8 12 3 3 5-6\"/></svg>",
+        "leaf" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M20 3C6 2 1 10 6 17s16 0 14-14ZM5 20 16 8\"/></svg>",
+        "add" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 4v16M4 12h16\"/></svg>",
+        "arrow" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M4 12h16m-6-6 6 6-6 6\"/></svg>",
+        _ => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"10\"/></svg>"
+    };
+
     protected override async Task OnInitializedAsync()
     {
         await Reload();

@@ -1,27 +1,35 @@
 @using NetPilot.Core.Usage
 @using NetPilot.Web.Features
-<MudCard Outlined="true"><MudCardContent><MudStack Spacing="2">
-    <MudText Typo="Typo.h2">Household ISP budget</MudText>
+@* Content only: the page owns the card frame and the section title. *@
+<div class="budget-card">
     @if (Overview.Budget is { } budget && Overview.Cycle is { } cycle)
     {
-        <MudText>@cycle.Start.ToString("yyyy-MM-dd") to @cycle.EndExclusive.AddDays(-1).ToString("yyyy-MM-dd") · @TimeZone</MudText>
+        <p class="hint" style="margin-block-start:0">@cycle.Start.ToString("yyyy-MM-dd") to @cycle.EndExclusive.AddDays(-1).ToString("yyyy-MM-dd") · @TimeZone</p>
         @if (Overview.CycleUsage is { HasObservation: true } usage)
         {
-            <MudText>@DataSize.ToGb(usage.InternetBytes).ToString("0.##") of @DataSize.ToGb(budget.MonthlyBytes).ToString("0.##") GB Internet recorded</MudText>
-            <MudText Typo="Typo.caption">Missing days are unobserved, not zero. Billing-cycle totals use available saved history.</MudText>
+            <p>@DataSize.ToGb(usage.InternetBytes).ToString("0.##") of @DataSize.ToGb(budget.MonthlyBytes).ToString("0.##") GB Internet recorded</p>
+            <p class="hint">Missing days are unobserved, not zero. Billing-cycle totals use available saved history.</p>
         }
-        else { <MudText>Usage unknown · budget @DataSize.ToGb(budget.MonthlyBytes).ToString("0.##") GB</MudText> }
+        else
+        {
+            <p>Usage unknown · budget @DataSize.ToGb(budget.MonthlyBytes).ToString("0.##") GB</p>
+        }
         @if (Overview.Forecast is { } estimate)
         {
-            <MudText>Estimated: about @decimal.Ceiling(estimate.DaysRemaining) days left, around @estimate.EstimatedExhaustion.ToString("yyyy-MM-dd").</MudText>
-            <MudText Typo="Typo.caption">@DataSize.ToGb(estimate.AverageBytesPerDay).ToString("0.##") GB/day from @estimate.SampleDays valid completed days in the last seven days.</MudText>
+            <p><strong>Estimated: about @decimal.Ceiling(estimate.DaysRemaining) days left, around @estimate.EstimatedExhaustion.ToString("yyyy-MM-dd").</strong></p>
+            <p class="hint">@DataSize.ToGb(estimate.AverageBytesPerDay).ToString("0.##") GB/day from @estimate.SampleDays valid completed days in the last seven days.</p>
         }
-        else { <MudText>Estimate unavailable: not enough reliable history, incomplete cycle coverage, or a stale read/outage.</MudText> }
-        <MudText Typo="Typo.caption">Method: average Internet bytes across valid completed days in the last seven days (at least three). Divide remaining cycle budget by that daily average. Forecast is an estimate and never triggers enforcement.</MudText>
+        else
+        {
+            <p>Estimate unavailable: not enough reliable history, incomplete cycle coverage, or a stale read/outage.</p>
+        }
+        <p class="hint">Method: average Internet bytes across valid completed days in the last seven days (at least three). Divide remaining cycle budget by that daily average. Forecast is an estimate and never triggers enforcement.</p>
     }
-    else { <MudText>No household budget configured. Device quotas are separate.</MudText> }
-    <MudButton Href="/usage?budget=true">@(Overview.Budget is null ? "Set ISP budget" : "Edit ISP budget")</MudButton>
-</MudStack></MudCardContent></MudCard>
+    else
+    {
+        <p>No household budget configured. Device quotas are separate.</p>
+    }
+</div>
 @code {
     [Parameter, EditorRequired] public UsageOverview Overview { get; set; } = default!;
     [Parameter] public string TimeZone { get; set; } = UsagePeriodClock.DefaultTimeZoneId;

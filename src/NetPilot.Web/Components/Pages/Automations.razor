@@ -10,26 +10,74 @@
 @using NetPilot.Web.Components.Automations
 @inject NavigationManager Navigation
 <PageTitle>Automations · NetPilot</PageTitle>
-<MudStack Spacing="4">
-    <MudText Typo="Typo.h1" HtmlTag="h1">Automations</MudText>
-    <MudText>Choose a quota, rule or schedule. Saves await the Agent; dry-run observes and notifies.</MudText>
-    <MudStack Row Wrap="Wrap.Wrap" Spacing="1" role="navigation" aria-label="Automation sections">
-        @foreach (var destination in Sections)
+<div class="page-head">
+    <div>
+        <div class="eyebrow">Keep it fair</div>
+        <h1>Automations</h1>
+        <p>Simple defaults. Clear causes. You stay in control.</p>
+    </div>
+</div>
+
+<nav class="section-tabs" aria-label="Automations sections">
+    @foreach (var destination in Sections)
+    {
+        var href = destination.Key.Length == 0 ? "/automations" : $"/automations/{destination.Key}";
+        <a href="@href" class="@(Active == destination.Key ? "active" : "text-button")" aria-current="@(Active == destination.Key ? "page" : null)">@destination.Label</a>
+    }
+</nav>
+
+@if (Active == "quotas") { <QuotaPanel @key="Navigation.Uri" ScopeKey="@QuotaScopeKey" Target="@Target" /> }
+else if (Active is "rules" or "schedules") { <RulesPanel @key="Navigation.Uri" Schedules="@(Active == "schedules")" RuleId="RuleId" /> }
+else if (Active == "policies") { <SpeedPolicies /> }
+else if (Active.Length == 0)
+{
+    <div class="grid">
+        @foreach (var hub in Hubs)
         {
-            <MudButton Href="@($"/automations/{destination.Key}")" Variant="@(Active == destination.Key ? Variant.Filled : Variant.Outlined)" Color="Color.Primary" aria-current="@(Active == destination.Key ? "page" : null)">@destination.Label</MudButton>
+            <article class="card automation-card span-6">
+                <span class="symbol-tile">@((MarkupString)Icon(hub.Icon))</span>
+                <div class="eyebrow">@hub.Title</div>
+                <h2>@hub.Tagline</h2>
+                <p class="muted">@hub.Description</p>
+                <a href="@($"/automations/{hub.Route}")" class="outline">@((MarkupString)Icon("arrow")) @hub.Action</a>
+            </article>
         }
-    </MudStack>
-    @if (Active == "quotas") { <QuotaPanel @key="Navigation.Uri" ScopeKey="@QuotaScopeKey" Target="@Target" /> }
-    else if (Active is "rules" or "schedules") { <RulesPanel @key="Navigation.Uri" Schedules="@(Active == "schedules")" RuleId="RuleId" /> }
-    else if (Active == "policies") { <SpeedPolicies /> }
-    else { <MudAlert Severity="Severity.Warning">Unknown automation section. Choose a section above.</MudAlert> }
-    <MudLink Href="/legacy#policies" Target="_top">Classic automation controls</MudLink>
-</MudStack>
+    </div>
+}
+else
+{
+    <div class="banner error" role="alert">
+        <span class="icon">@((MarkupString)Icon("warning"))</span>
+        <p>Unknown automation section. Choose a section above.</p>
+    </div>
+}
+
 @code {
     [Parameter] public string? Section { get; set; }
     [Parameter] public string? QuotaScopeKey { get; set; }
     [Parameter] public string? Target { get; set; }
     [Parameter] public Guid? RuleId { get; set; }
-    private static readonly (string Key, string Label)[] Sections = [("quotas", "Quotas"), ("rules", "Rules"), ("schedules", "Schedules"), ("policies", "Speed policies")];
-    private string Active => new Uri(Navigation.Uri).AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries).ElementAtOrDefault(1) ?? "quotas";
+    private static readonly (string Key, string Label)[] Sections =
+    [
+        ("", "Overview"), ("quotas", "Quotas"), ("rules", "Rules"), ("schedules", "Schedules"), ("policies", "Speed policies")
+    ];
+    private static readonly (string Title, string Icon, string Tagline, string Description, string Route, string Action)[] Hubs =
+    [
+        ("Quotas", "usage", "Daily & monthly limits", "Default, category and device allowances.", "quotas", "Edit quotas"),
+        ("Rules", "automations", "When this, do that", "Five triggers, four actions, clear explanations.", "rules", "Explore rules"),
+        ("Schedules", "clock", "A quieter bedtime", "TimeWindow rules, with a safe return in the morning.", "schedules", "Set bedtime"),
+        ("Speed policies", "tune", "A fair share of bandwidth", "Separate download and upload limits by category.", "policies", "Manage policies")
+    ];
+    private string Active => new Uri(Navigation.Uri).AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries).ElementAtOrDefault(1) ?? "";
+
+    private string Icon(string name) => name switch
+    {
+        "usage" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M4 20V10m8 10V4m8 16v-7\"/></svg>",
+        "automations" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m13 2-9 12h7l-1 8 10-13h-7Z\"/></svg>",
+        "clock" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 6v6l4 2\"/></svg>",
+        "tune" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M3 6h18M3 12h18M3 18h18M7 3v6m10 0v6M9 15v6\"/></svg>",
+        "arrow" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M4 12h16m-6-6 6 6-6 6\"/></svg>",
+        "warning" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m12 3 10 18H2Z\"/><path d=\"M12 9v5m0 3h.1\"/></svg>",
+        _ => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"10\"/></svg>"
+    };
 }

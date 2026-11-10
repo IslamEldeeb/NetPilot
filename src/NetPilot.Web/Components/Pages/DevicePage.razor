@@ -9,126 +9,262 @@
 @using NetPilot.Core.Usage
 @using NetPilot.Web.Components.Devices
 <PageTitle>@(_device is null ? "Device" : DeviceList.DisplayName(_device)) · NetPilot</PageTitle>
-<MudStack Spacing="4" Class="device-detail">
-    <MudLink Href="/devices">← All devices</MudLink>
-    @if (_error is not null) { <MudAlert Severity="Severity.Error">@_error <MudButton OnClick="LoadAsync">Retry</MudButton></MudAlert> }
-    @if (!_loaded) { <MudSkeleton Height="150px" /><MudSkeleton Height="250px" /> }
-    else if (!_valid) { <EmptyState Title="Invalid device address" Body="Use a MAC address such as AA-BB-CC-DD-EE-01." Href="/devices" ActionText="Back to devices" Icon="devices" /> }
-    else if (_device is null && _error is null) { <EmptyState Title="Device not found" Body="This MAC address is not in the saved device list. Refresh the list to discover devices." Href="/devices" ActionText="Back to devices" Icon="devices" /> }
-    else if (_device is not null)
-    {
-        <MudCard Outlined="true"><MudCardContent><MudStack Spacing="3">
-            <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center">
-                <MudIcon Icon="@MaterialIcon.For(_device.LocalIconKey ?? _device.CategoryKey)" Size="Size.Large" Color="Color.Primary" />
-                <MudText Typo="Typo.h1" HtmlTag="h1">@DeviceList.DisplayName(_device)</MudText>
-                <MudButton OnClick="@(() => _quickActions = true)">Quick actions</MudButton>
-                <MudSpacer /><MudButton OnClick="BeginEdit" Variant="Variant.Outlined" Disabled="@_busy">Edit identity</MudButton>
-            </MudStack>
-            <MudStack Row="true" Wrap="Wrap.Wrap"><StatusPill Kind="@(_device.Connection.IsOnline ? "ok" : "info")">@(_device.Connection.IsOnline ? "Online" : "Offline")</StatusPill><MudChip T="string">@_device.CategoryKey.Replace('_', ' ')</MudChip>@if (_row is not null) { <DeviceStatusChips Row="_row" /> }</MudStack>
-            <MudText>MAC: @_device.Mac · IP: @_device.IpAddress</MudText>
-            <MudText>Hostname: @_device.Hostname · @DeviceList.DescribeMedium(_device.Connection.Medium)</MudText>
-            <MudText Typo="Typo.body2">Router category: @(string.IsNullOrEmpty(_device.RouterCategoryKey) ? _device.CategoryKey : _device.RouterCategoryKey) · Local category: @(_device.LocalCategoryKey ?? "Inherit router")</MudText>
-            <MudText Typo="Typo.caption">First seen @LocalTime(_device.FirstSeenAtUtc) · Last seen @LocalTime(_device.LastSeenAtUtc) · @Clock.TimeZone.Id</MudText>
-            @if (_saves.ContainsKey("identity")) { <PendingChip State="@Status("identity", _saves["identity"])" /> }
-            <DeviceLimits Device="_device" Policies="_policies" />
-            <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center">
-                <DeviceBlockActions Device="_device" Changed="LoadAsync" Disabled="@(!_hasRouter || _busy)" />
-                <MudButton Href="#restrictions">Why is this restricted?</MudButton>
-                <MudButton Href="#applicable-rules">Open rules that apply</MudButton>
-            </MudStack>
-            <MudText Typo="Typo.caption">Block state is a NetPilot record; the router cannot verify its block list. Manual actions change the router directly, separately from dry-run. Other active claims may restrict the device again.</MudText>
-        </MudStack></MudCardContent></MudCard>
-        <MudGrid Spacing="4">
-            <MudItem xs="12" md="8"><MudCard Outlined="true"><MudCardContent><MudStack Spacing="3">
-                <MudText Typo="Typo.h2">Internet usage</MudText>
-                <MudSwitch @bind-Value="_month" Label="Show this month (off: today)" Color="Color.Primary" />
-                <MudText Typo="Typo.h3">@DataSize.Format(_month ? _monthBytes : _todayBytes) @(_month ? "this month" : "today")</MudText>
-                <MudText Typo="Typo.body2">Today: @DataSize.Format(_todayBytes) Internet · This month: @DataSize.Format(_monthBytes) Internet</MudText>
-                @if (_todayLan > 0 || _monthLan > 0) { <MudText Typo="Typo.body2">Excluded LAN: @DataSize.Format(_todayLan) today · @DataSize.Format(_monthLan) this month</MudText> }
-                <MudText Typo="Typo.caption">Usage estimates; live LAN exclusion verification remains pending. No hourly samples are stored.</MudText>
-                @if (_days.All(day => day.InternetBytes is null)) { <MudText>No usage observations yet. Wait for the next Agent tick.</MudText> }
-                <DeviceUsageChart Days="_days" />
-            </MudStack></MudCardContent></MudCard></MudItem>
-            <MudItem xs="12" md="4"><MudCard Outlined="true"><MudCardContent><MudStack Spacing="3">
-                <MudText Typo="Typo.h2">Quota</MudText>
-                <MudText Typo="Typo.subtitle2">Effective policy</MudText>
-                <MudText>@QuotaPolicyText.EffectivePolicy(_device, _quota)</MudText>
-                <DeviceQuotaMeter Resolution="_quota" TodayBytes="_todayBytes" MonthBytes="_monthBytes" />
-                @foreach (var state in _quotaStates.Where(s => s.ExtraAllowanceBytes > 0)) { <MudText Typo="Typo.caption">@state.PeriodKind @state.PeriodKey: @DataSize.Format(state.ExtraAllowanceBytes) extra allowance; effective cap @(DataSize.ToGb(state.EffectiveCapBytes).ToString("0.###")) GB</MudText> }
-                <MudLink Href="/automations/quotas">Edit quota policies</MudLink>
-                <MudText Typo="Typo.caption">The matched policy supplies both periods. A blank cap means no cap. Protection skips automatic throttle/block, while tracking and notifications still apply.</MudText>
-            </MudStack></MudCardContent></MudCard></MudItem>
-        </MudGrid>
-        <MudCard Outlined="true" id="restrictions"><MudCardContent><MudStack Spacing="3">
-            <MudText Typo="Typo.h2">Who is holding this limit?</MudText>
-            <MudText>@(_device.IsBlocked ? "A recorded block is active; blocks win over throttles." : RestrictionSummary.Winner(_claims))</MudText>
-            <DeviceLimits Device="_device" Policies="_policies" />
-            <MudText Typo="Typo.caption">Manual/base speed limits are separate from automatic claims. Claims are persisted intent, not a fresh router read. Applied means a successful Agent tick completed after the save, not a per-device acknowledgement. Releasing one owner can leave others active.</MudText>
+<div class="breadcrumbs">
+    <a class="text-button" href="/devices">@((MarkupString)Icon("back")) Devices</a>
+    <span>/ @(_device is null ? "Device" : DeviceList.DisplayName(_device))</span>
+</div>
+
+@if (_error is not null)
+{
+    <div class="banner error" role="alert">
+        <span class="icon">@((MarkupString)Icon("warning"))</span>
+        <div>
+            <strong>Couldn’t load this device</strong>
+            <p>@_error</p>
+            <button class="outline" @onclick="LoadAsync">Retry</button>
+        </div>
+    </div>
+}
+
+@if (!_loaded)
+{
+    <div class="skeleton-wrap" aria-busy="true">
+        <div class="skeleton"></div>
+        <div class="skeleton"></div>
+    </div>
+}
+else if (!_valid)
+{
+    <div class="card empty-state">
+        <span class="symbol-tile">@((MarkupString)Icon("devices"))</span>
+        <h2>Invalid device address</h2>
+        <p>Use a MAC address such as AA-BB-CC-DD-EE-01.</p>
+        <a href="/devices" class="button">Back to devices</a>
+    </div>
+}
+else if (_device is null && _error is null)
+{
+    <div class="card empty-state">
+        <span class="symbol-tile">@((MarkupString)Icon("devices"))</span>
+        <h2>Device not found</h2>
+        <p>This MAC address is not in the saved device list. Refresh the list to discover devices.</p>
+        <a href="/devices" class="button">Back to devices</a>
+    </div>
+}
+else if (_device is { } device)
+{
+    <div class="identity-header">
+        <span class="symbol-tile large">@((MarkupString)Icon(IconFor(device)))</span>
+        <div>
+            <div class="eyebrow">@device.CategoryKey.Replace('_', ' ')</div>
+            <h1>@DeviceList.DisplayName(device)</h1>
+            <p class="muted"><bdi class="code">@device.Mac</bdi> · @device.IpAddress</p>
+        </div>
+        <div class="actions">
+            <button class="button" @onclick="@(() => _quickActions = true)">@((MarkupString)Icon("pause")) Pause</button>
+            <button class="outline" @onclick="BeginEdit" disabled="@_busy">@((MarkupString)Icon("tune")) Edit identity</button>
+        </div>
+    </div>
+
+    <div class="pills" style="margin-block-end:24px">
+        <span class="chip @(_device.Connection.IsOnline ? "ok" : "")">@(_device.Connection.IsOnline ? $"Online · read {LocalTime(device.LastSeenAtUtc)}" : $"Offline · seen {LocalTime(device.LastSeenAtUtc)}")</span>
+        <span class="chip">@DeviceList.DescribeMedium(device.Connection.Medium)</span>
+        @RestrictionChip(device)
+    </div>
+
+    <div class="grid">
+        <!-- Internet usage -->
+        <section class="card span-8 tablet-full">
+            <div class="section-head"><h2>Internet usage</h2></div>
+            <div class="stat-grid">
+                <div>
+                    <small>Today</small>
+                    <div class="metric">@DataSize.ToGb(_todayBytes).ToString("0.#") GB</div>
+                </div>
+                <div>
+                    <small>This month</small>
+                    <div class="metric">@DataSize.ToGb(_monthBytes).ToString("0.#") GB</div>
+                </div>
+                <div>
+                    <small>LAN today</small>
+                    <div class="metric">@DataSize.ToGb(_todayLan).ToString("0.#") GB</div>
+                </div>
+            </div>
+            @((MarkupString)BuildChart())
+            <p class="hint">Last 30 days · usage is estimated. No hourly samples are available today.</p>
+        </section>
+
+        <!-- Daily quota -->
+        <section class="card span-4 tablet-full">
+            <div class="section-head"><h2>Daily quota</h2></div>
+            @if (_quota.MatchedPolicy is { } policy)
+            {
+                var capBytes = policy.DailyBytes ?? 0;
+                var usedPercent = capBytes > 0 ? (int)Math.Clamp(_todayBytes * 100 / capBytes, 0, 100) : 0;
+                <div class="row">
+                    <div class="ring" style="--ring-fill:@usedPercent" role="img" aria-label="@usedPercent% of daily quota">
+                        <svg viewBox="0 0 120 120" aria-hidden="true">
+                            <circle class="track" cx="60" cy="60" r="49" pathLength="100" />
+                            <circle class="value" cx="60" cy="60" r="49" pathLength="100" />
+                        </svg>
+                        <div class="ring-label">@usedPercent%<small>of daily quota</small></div>
+                    </div>
+                    <div>
+                        <strong>@DataSize.ToGb(_todayBytes).ToString("0.#") of @DataSize.ToGb(capBytes).ToString("0.#") GB</strong>
+                        <p class="hint">@(policy.DryRun ? "Dry-run · observing" : "Enforcing")</p>
+                    </div>
+                </div>
+                <div class="policy-trail">
+                    <span>@DeviceList.DisplayName(device) → @device.CategoryKey.Replace('_', ' ')</span>
+                    <span>@(policy.Scope == QuotaScope.Default ? "Global default" : policy.Scope == QuotaScope.Category ? $"Category {policy.CategoryKey}" : "Device override") → @(policy.DailyBytes is { } daily ? $"{DataSize.ToGb(daily).ToString("0.#")} GB/day" : "no daily cap")</span>
+                    <span>Monthly: @(policy.MonthlyBytes is { } monthly ? $"{DataSize.ToGb(monthly).ToString("0.#")} GB" : "no cap") → @policy.Action</span>
+                </div>
+            }
+            else
+            {
+                <p class="hint">No quota policy matches this device.</p>
+            }
+            <button class="text-button" @onclick="@(() => _quotaEdit = true)">@((MarkupString)Icon("tune")) Edit quota</button>
+            @foreach (var state in _quotaStates.Where(s => s.ExtraAllowanceBytes > 0))
+            {
+                <p class="hint">@state.PeriodKind @state.PeriodKey: @DataSize.Format(state.ExtraAllowanceBytes) extra allowance; effective cap @(DataSize.ToGb(state.EffectiveCapBytes).ToString("0.###")) GB</p>
+            }
+        </section>
+
+        <!-- Why restricted -->
+        <section class="card span-8 tablet-full" id="restrictions">
+            <div class="section-head"><h2>Why is this device restricted?</h2></div>
+            <p class="hint" style="margin-block-start:0">Claims are persisted intent. Block wins; otherwise the lowest Kbps cap wins. Router observations may differ.</p>
+            <p>@(_device.IsBlocked ? "A recorded block is active; blocks win over throttles." : RestrictionSummary.Winner(_claims))</p>
             @foreach (var claim in _claims)
             {
-                <MudPaper Outlined="true" Class="pa-3"><MudStack Spacing="1">
-                    <MudText Typo="Typo.subtitle2">@RuleSummary.Claim(claim, _rules)</MudText>
-                    <MudText Typo="Typo.caption">@claim.Reason · Created @LocalTime(claim.CreatedAtUtc)
-                        @if (claim.ExpiresAtUtc is { } expiry) { <span> · Expires @LocalTime(expiry) · @(claim.DryRun ? "Dry-run preview" : claim.Pending ? "Pending next tick" : "Active claim")</span> }</MudText>
+                <div class="detail-claim">
+                    <div class="row between">
+                        <h3>@RuleSummary.Claim(claim, _rules)</h3>
+                        <span class="chip @(claim.DryRun ? "dry" : claim.Pending ? "warning" : "live")">@(claim.DryRun ? "Dry-run" : claim.Pending ? "Pending next tick" : "Active claim")</span>
+                    </div>
+                    <p>@claim.Reason · Created @LocalTime(claim.CreatedAtUtc)</p>
+                    @if (claim.ExpiresAtUtc is { } expiry)
+                    {
+                        <p>Expires @LocalTime(expiry)</p>
+                    }
                     <PendingChip State="@Status(claim.Id, claim.CreatedAtUtc)" />
-                </MudStack></MudPaper>
+                </div>
             }
-            @if (_claims.Count == 0) { <MudText>No automatic restriction claims.</MudText> }
             @foreach (var state in _quotaStates)
             {
-                <MudPaper Outlined="true" Class="pa-3"><MudStack Spacing="2">
-                    <MudText Typo="Typo.h3">@state.PeriodKind quota · @state.PeriodKey</MudText>
-                    <MudText>@state.ActionKind · @DataSize.Format(state.UsedBytes) used of @(DataSize.ToGb(state.EffectiveCapBytes).ToString("0.###")) GB</MudText>
+                <div class="detail-claim">
+                    <div class="row between">
+                        <h3>@state.PeriodKind quota · @state.PeriodKey</h3>
+                        <span class="chip @(state.ReleaseRequested ? "warning" : "live")">@(state.ReleaseRequested ? "Release requested" : "Active")</span>
+                    </div>
+                    <p>@state.ActionKind · @DataSize.Format(state.UsedBytes) used of @(DataSize.ToGb(state.EffectiveCapBytes).ToString("0.###")) GB</p>
                     <PendingChip State="@ReleaseStatus(state.Id, state.ActionAppliedAtUtc ?? Clock.GetUtcNow(), state.ReleaseRequested)" />
-                    @if (state.ReleaseRequested) { <MudText role="status">Release requested; waiting for the Agent.</MudText> }
-                    <MudButton OnClick="@(() => ReleaseQuotaAsync(state))" Disabled="@(_busy || state.ReleaseRequested)">Release this quota claim</MudButton>
-                </MudStack></MudPaper>
+                    <div class="actions">
+                        <button class="outline" @onclick="@(() => ReleaseQuotaAsync(state))" disabled="@(_busy || state.ReleaseRequested)">Restore quota now</button>
+                    </div>
+                </div>
             }
             @foreach (var firing in _firings.Where(f => f.Status == RuleFiringStatus.Active))
             {
-                <MudPaper Outlined="true" Class="pa-3"><MudStack Spacing="2">
-                    <MudText Typo="Typo.h3">@firing.RuleName</MudText>
-                    <MudText>@RuleSummary.FiringReason(firing)</MudText><MudText>@RuleSummary.FiringActions(firing)</MudText>
-                    <MudText Typo="Typo.caption">@firing.Outcome · @firing.Status · @LocalTime(firing.FiredAtUtc) · @(firing.RevertAtUtc is { } revert ? $"Revert {LocalTime(revert)}" : firing.RevertWhenTriggerEnds ? "Revert when trigger ends" : "See captured rule revert policy")</MudText>
-                    @if (firing.Error is not null) { <MudAlert Severity="Severity.Warning">@firing.Error</MudAlert> }
+                <div class="detail-claim">
+                    <h3>@firing.RuleName · release pending</h3>
+                    <p>@RuleSummary.FiringReason(firing)</p>
+                    <p>@RuleSummary.FiringActions(firing)</p>
+                    <p>@firing.Outcome · @firing.Status · @LocalTime(firing.FiredAtUtc)</p>
+                    @if (firing.Error is not null)
+                    {
+                        <p class="error-text">@firing.Error</p>
+                    }
                     <PendingChip State="@ReleaseStatus(firing.Id, firing.FiredAtUtc, firing.ReleaseRequested)" />
-                    @if (firing.ReleaseRequested) { <MudText role="status">Release requested; waiting for the Agent.</MudText> }
-                    <MudButton OnClick="@(() => ReleaseRuleAsync(firing))" Disabled="@(_busy || firing.ReleaseRequested)">Release this rule firing</MudButton>
-                    <MudText Typo="Typo.caption">Release affects this entire firing, including other captured devices or networks.</MudText>
-                </MudStack></MudPaper>
+                    <div class="actions">
+                        <button class="text-button" @onclick="@(() => ReleaseRuleAsync(firing))" disabled="@(_busy || firing.ReleaseRequested)">Release rule claim</button>
+                    </div>
+                </div>
             }
-        </MudStack></MudCardContent></MudCard>
-        <MudCard Outlined="true" id="applicable-rules"><MudCardContent><MudStack Spacing="3">
-            <MudText Typo="Typo.h2">Rules that apply to this device</MudText>
-            <MudText Typo="Typo.caption">Scope match only; triggers, protection and dry-run determine what actually happens.</MudText>
-            @foreach (var rule in DeviceRuleScope.Matching(_rules, _device))
+            @if (_claims.Count == 0 && _quotaStates.Count == 0 && !_firings.Any(f => f.Status == RuleFiringStatus.Active))
             {
-                <MudText Typo="Typo.h3">@rule.Name</MudText><MudText>@RuleSummary.Describe(rule)</MudText>
-                <MudText Typo="Typo.caption">@(rule.Enabled ? "Enabled" : "Disabled") · @(rule.DryRun ? "Dry-run" : "Enforcing unless forced dry-run")</MudText>
+                <div class="detail-claim">
+                    <h3>No automatic claims active</h3>
+                    <p>Automatic quotas and rules observe only while the product stays in dry-run. Manual speed limits stay separate.</p>
+                </div>
             }
-            @if (DeviceRuleScope.Matching(_rules, _device).Count == 0) { <MudText>No rules match this device’s scope.</MudText> }
-            <MudLink Href="/automations/rules">Open rules editor and firing history</MudLink>
-        </MudStack></MudCardContent></MudCard>
-        <MudCard Outlined="true"><MudCardContent><MudStack Spacing="3">
-            <MudText Typo="Typo.h2">Device flags</MudText>
-            <MudSwitch T="bool" Value="_protected" ValueChanged="ChangeProtectionAsync" Label="Protected device" Disabled="@_busy" Color="Color.Primary" />
-            <MudText>Protected devices will be exempt from automatic Throttle and Block actions. Usage tracking and notifications still apply. Manual blocks and wireless changes can still affect this device.</MudText>
-            <PendingChip State="@(_saves.TryGetValue("protection", out var protectedAt) ? Status("protection", protectedAt) : ApplyState.Saved)" />
-            <MudSwitch T="bool" Value="_device.UsageLanOnly" ValueChanged="ChangeLanOnlyAsync" Label="LAN-only device" Disabled="@_busy" Color="Color.Primary" />
-            <MudText>LAN-only devices count all future traffic as LAN. Remote viewers and other Internet traffic from these devices will also be hidden. Existing totals stay unchanged.</MudText>
-            <PendingChip State="@(_saves.TryGetValue("lan", out var lanAt) ? Status("lan", lanAt) : ApplyState.Saved)" />
-        </MudStack></MudCardContent></MudCard>
-        <MudCard Outlined="true"><MudCardContent><MudStack Spacing="3">
-            <MudText Typo="Typo.h2">Recent device activity</MudText>
-            <MudText Typo="Typo.caption">Up to 20 MAC-matched events from the latest 500 network events. Older events and events without a MAC are not included.</MudText>
-            @foreach (var entry in _activity) { <MudText>@LocalTime(entry.AtUtc) · @entry.Message</MudText> }
-            @if (_activity.Count == 0) { <MudText>No MAC-matched events in the recent log.</MudText> }
-            @foreach (var firing in _firings.Take(20)) { <MudText Typo="Typo.body2">@LocalTime(firing.FiredAtUtc) · @firing.RuleName · @firing.Outcome · @firing.Status</MudText> }
-            <MudLink Href="/activity">Network activity</MudLink>
-        </MudStack></MudCardContent></MudCard>
-    }
-</MudStack>
+            <div class="detail-claim">
+                <h3>Manual and router limits</h3>
+                <p>@QuotaPolicyText.EffectivePolicy(device, _quota)</p>
+                <p>Base policy is never overwritten by a temporary action.</p>
+            </div>
+        </section>
+
+        <!-- Device settings -->
+        <section class="card span-4 tablet-full">
+            <div class="section-head"><h2>Device settings</h2></div>
+            <label class="check-row">
+                <input type="checkbox" checked="@_protected" @onchange="e => ChangeProtectionAsync(e.Value is true)" disabled="@_busy" />
+                <span>Protected device<small>Skip automatic throttle and block. Wireless changes can still affect it.</small></span>
+            </label>
+            <label class="check-row">
+                <input type="checkbox" checked="@device.UsageLanOnly" @onchange="e => ChangeLanOnlyAsync(e.Value is true)" disabled="@_busy" />
+                <span>LAN-only device<small>All future traffic counts as LAN, including real Internet use.</small></span>
+            </label>
+            <div class="actions">
+                <DeviceBlockActions Device="device" Changed="LoadAsync" Disabled="@(!_hasRouter || _busy)" />
+            </div>
+            <p class="hint">Manual block is a direct router operation. The current product’s protected guard applies to automatic actions.</p>
+        </section>
+
+        <!-- Rules & bedtime -->
+        <section class="card span-6 tablet-full" id="applicable-rules">
+            <div class="section-head"><h2>Rules & bedtime</h2><a href="/automations/rules" class="text-button">@((MarkupString)Icon("arrow")) Open rules editor</a></div>
+            @foreach (var rule in DeviceRuleScope.Matching(_rules, device))
+            {
+                <div class="list-row">
+                    <span class="symbol-tile">@((MarkupString)Icon("clock"))</span>
+                    <div class="grow">
+                        <h3>@rule.Name</h3>
+                        <p>@RuleSummary.Describe(rule)</p>
+                        <span class="chip @(rule.DryRun ? "dry" : rule.Enabled ? "live" : "")">@(rule.Enabled ? "Enabled" : "Disabled")@(rule.DryRun ? " · Dry-run" : "")</span>
+                    </div>
+                </div>
+            }
+            @if (DeviceRuleScope.Matching(_rules, device).Count == 0)
+            {
+                <p class="hint">No rules match this device’s scope. A device schedule is a TimeWindow rule.</p>
+            }
+        </section>
+
+        <!-- Recent history -->
+        <section class="card span-6 tablet-full">
+            <div class="section-head"><h2>Recent history</h2></div>
+            @if (_activity.Count > 0)
+            {
+                <p>@LocalTime(_activity[0].AtUtc) · @_activity[0].Message</p>
+            }
+            else
+            {
+                <p>No MAC-matched events in the recent log.</p>
+            }
+            @if (_activity.Count > 1)
+            {
+                <p class="hint">@string.Join("<br>", _activity.Skip(1).Take(3).Select(entry => $"{LocalTime(entry.AtUtc)} · {entry.Message}"))</p>
+            }
+            @foreach (var firing in _firings.Take(3))
+            {
+                <p class="hint">@LocalTime(firing.FiredAtUtc) · @firing.RuleName · @firing.Outcome</p>
+            }
+            <a href="/activity" class="text-button">@((MarkupString)Icon("arrow")) View all activity</a>
+        </section>
+    </div>
+}
+
 <NetPilot.Web.Components.Actions.QuickActionsSheet @bind-Open="_quickActions" DeviceMac="Mac" Saved="LoadAsync" />
+<AppSheet @bind-Open="_quotaEdit" Title="Quota policies">
+    <MudStack Spacing="3">
+        <MudText>The matched policy supplies both periods. A blank cap means no cap. Protection skips automatic throttle and block, while tracking and notifications still apply.</MudText>
+        <MudButton Href="/automations/quotas" Variant="Variant.Filled" Color="Color.Primary">Edit quota policies</MudButton>
+        <MudButton OnClick="@(() => _quotaEdit = false)">Close</MudButton>
+    </MudStack>
+</AppSheet>
 <AppSheet @bind-Open="_editing" Title="Edit device identity">
     <MudStack Spacing="3">
         <MudTextField T="string" @bind-Value="_name" Label="Friendly name" MaxLength="80" HelperText="Blank uses the router hostname, then MAC." />
@@ -142,3 +278,76 @@
         <MudButton OnClick="ClearIdentityAsync" Disabled="@_busy">Clear overrides</MudButton>
     </MudStack>
 </AppSheet>
+
+@code {
+    private string Icon(string name) => name switch
+    {
+        "back" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M20 12H4m6-6-6 6 6 6\"/></svg>",
+        "arrow" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M4 12h16m-6-6 6 6-6 6\"/></svg>",
+        "pause" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M8 4v16m8-16v16\"/></svg>",
+        "tune" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M3 6h18M3 12h18M3 18h18M7 3v6m10 0v6M9 15v6\"/></svg>",
+        "clock" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 6v6l4 2\"/></svg>",
+        "warning" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m12 3 10 18H2Z\"/><path d=\"M12 9v5m0 3h.1\"/></svg>",
+        "devices" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"6\" y=\"2\" width=\"12\" height=\"20\" rx=\"3\"/><path d=\"M10 18h4\"/></svg>",
+        "tv" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"2\" y=\"4\" width=\"20\" height=\"13\" rx=\"2\"/><path d=\"M8 21h8m-4-4v4\"/></svg>",
+        "laptop" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"4\" y=\"3\" width=\"16\" height=\"13\" rx=\"2\"/><path d=\"M2 20h20l-2-4H4Z\"/></svg>",
+        "server" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"4\" y=\"3\" width=\"16\" height=\"7\" rx=\"2\"/><rect x=\"4\" y=\"14\" width=\"16\" height=\"7\" rx=\"2\"/><path d=\"M8 6h.1M8 17h.1m5-11h4m-4 11h4\"/></svg>",
+        "game" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M7 7h10c3 0 5 11 3 12s-5-4-6-4h-4c-1 0-4 5-6 4S4 7 7 7Z\"/><path d=\"M8 9v5m-2-2h4m6-2h.1m2 3h.1\"/></svg>",
+        "camera" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M3 7h12v11H3Zm12 4 6-3v10l-6-3M7 7l2-3h4\"/></svg>",
+        _ => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"10\"/></svg>"
+    };
+
+    private string IconFor(Device device) => device.LocalIconKey ?? device.CategoryKey switch
+    {
+        "television" or "tv" => "tv",
+        "computer" or "laptop" or "desktop" => "laptop",
+        "server" or "nas" => "server",
+        "game_console" or "gaming" => "game",
+        "ip_camera" or "camera" => "camera",
+        _ => "devices"
+    };
+
+    private static MarkupString RestrictionChip(Device device)
+    {
+        if (device.QuotaThrottle is { } throttle)
+            return new MarkupString($"<span class=\"chip throttled\">{(throttle.DownloadKbps is { } kbps ? $"{kbps} Kbps" : "Throttled")}</span>");
+        if (device.IsBlocked) return new MarkupString("<span class=\"chip blocked\">Blocked · recorded</span>");
+        return new MarkupString("<span class=\"chip\">No restriction</span>");
+    }
+
+    private string BuildChart()
+    {
+        if (_days.Count == 0) return "<p class=\"hint\">No usage observations yet. Wait for the next Agent tick.</p>";
+        var max = _days.Select(day => (day.InternetBytes ?? 0) + (day.LanBytes ?? 0)).DefaultIfEmpty(0).Max();
+        if (max == 0) max = 1;
+        var chart = new System.Text.StringBuilder();
+        chart.Append("<div class=\"usage-chart\">");
+        foreach (var day in _days)
+        {
+            var internetPct = day.InternetBytes is { } internet ? internet / (double)max * 140 : 0;
+            var lanPct = day.LanBytes is { } lan ? lan / (double)max * 140 : 0;
+            chart.Append("<div class=\"chart-column\">");
+            chart.Append("<div class=\"bar-pair\">");
+            chart.Append($"<div class=\"bar\" style=\"--height:{internetPct}px\"></div>");
+            chart.Append($"<div class=\"bar lan\" style=\"--height:{lanPct}px\"></div>");
+            chart.Append("</div>");
+            chart.Append($"<small>{DayLabel(day)}</small>");
+            chart.Append("</div>");
+        }
+        chart.Append("</div>");
+        chart.Append("<div class=\"legend\"><span><i class=\"swatch\"></i>Internet</span><span><i class=\"swatch lan\"></i>LAN excluded · both endpoints</span></div>");
+        chart.Append("<details><summary>View chart data</summary><table><caption>Device usage · decimal GB</caption><thead><tr><th>Period</th><th>Internet GB</th><th>LAN GB</th></tr></thead><tbody>");
+        foreach (var day in _days)
+        {
+            chart.Append($"<tr><td>{DayLabel(day)}</td><td>{DataSize.ToGb(day.InternetBytes ?? 0).ToString("0.#")}</td><td>{DataSize.ToGb(day.LanBytes ?? 0).ToString("0.#")}</td></tr>");
+        }
+        chart.Append("</tbody></table></details>");
+        return chart.ToString();
+    }
+
+    private static string DayLabel(DeviceUsageDay day) =>
+        DateTime.TryParseExact(day.DayKey, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None, out var date)
+            ? date.ToString("ddd dd")
+            : day.DayKey;
+}

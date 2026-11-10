@@ -1,23 +1,40 @@
 @implements IAsyncDisposable
 @inject NavigationManager Navigation
 @inject ActivityInboxState InboxState
-<div class="np-wide-drawer">
-    <MudDrawer Open="true" Variant="DrawerVariant.Persistent" Width="248px" Elevation="0">
-        <MudDrawerHeader><MudLink Href="/" Typo="Typo.h6">NetPilot</MudLink></MudDrawerHeader>
-        <MudNavMenu aria-label="Primary">
-            @foreach (var destination in ShellNavigation.Primary)
+@inject IJSRuntime JS
+@inject NetPilot.Core.RouterConnection.IRouterConnectionStore RouterConnections
+@inject NetPilot.Core.Usage.UsagePeriodClock Clock
+@if (_wide)
+{
+    <div class="np-wide-drawer">
+        <MudDrawer Open="true" Variant="DrawerVariant.Persistent" Width="248px" Elevation="0">
+            <MudDrawerHeader Class="brand">
+                <MudLink Href="/" Class="brand-link">
+                    <span class="brand-mark">n<span>p</span></span>
+                    <span class="brand-text">NetPilot<small>HOME NETWORK</small></span>
+                </MudLink>
+            </MudDrawerHeader>
+            <MudNavMenu aria-label="Primary">
+                @foreach (var destination in ShellNavigation.Primary)
+                {
+                    <MudNavLink Href="@destination.Path" Icon="@MaterialIcon.For(destination.Icon)" Match="@Match(destination)" aria-current="@Current(destination)">@destination.Label @if (destination.Path == "/activity" && _unread > 0) { <MudChip T="string" Size="Size.Small" Color="Color.Primary" aria-label="@($"{_unread} unread notifications")">@_unread</MudChip> }</MudNavLink>
+                }
+            </MudNavMenu>
+            <MudDivider Class="my-4" />
+            <MudNavMenu aria-label="Utilities">
+                <MudNavLink Href="/settings" Icon="@Icons.Material.Outlined.Settings" aria-current="@Current(ShellNavigation.Settings)">Settings</MudNavLink>
+                <MudNavLink Href="/settings/safety" Icon="@Icons.Material.Outlined.Shield">Safety Center</MudNavLink>
+                <MudNavLink Href="/legacy" Target="_top" Icon="@Icons.Material.Outlined.Router">Classic view</MudNavLink>
+            </MudNavMenu>
+            @if (_connection is not null)
             {
-                <MudNavLink Href="@destination.Path" Icon="@MaterialIcon.For(destination.Icon)" Match="@Match(destination)" aria-current="@Current(destination)">@destination.Label @if (destination.Path == "/activity" && _unread > 0) { <MudChip T="string" Size="Size.Small" Color="Color.Primary" aria-label="@($"{_unread} unread notifications")">@_unread</MudChip> }</MudNavLink>
+                <div class="network-label">
+                    <span class="status-dot"></span> @_connection.Host<small>@Clock.TimeZone.Id · Single household</small>
+                </div>
             }
-        </MudNavMenu>
-        <MudDivider Class="my-4" />
-        <MudNavMenu aria-label="Utilities">
-            <MudNavLink Href="/settings" Icon="@Icons.Material.Outlined.Settings" aria-current="@Current(ShellNavigation.Settings)">Settings</MudNavLink>
-            <MudNavLink Href="/settings/safety" Icon="@Icons.Material.Outlined.Shield">Safety Center</MudNavLink>
-            <MudNavLink Href="/legacy" Target="_top" Icon="@Icons.Material.Outlined.Router">Classic view</MudNavLink>
-        </MudNavMenu>
-    </MudDrawer>
-</div>
+        </MudDrawer>
+    </div>
+}
 <div class="np-rail">
     <MudDrawer Open="false" Variant="DrawerVariant.Mini" Breakpoint="Breakpoint.None" MiniWidth="88px" Elevation="0">
         <nav aria-label="Primary">
@@ -48,8 +65,11 @@
 </MudPaper>
 @code {
     private int _unread => InboxState.Unread;
+    private bool _wide;
+    private DotNetObjectReference<AdaptiveNav>? _self;
     private readonly CancellationTokenSource _stop = new();
     private Task? _poll;
+    private NetPilot.Core.RouterConnection.RouterConnection? _connection;
     private ShellDestination? Selected => ShellNavigation.Owner("/" + Navigation.ToBaseRelativePath(Navigation.Uri));
     private string AccessibleLabel(ShellDestination destination) => destination.Path == "/activity" && _unread > 0 ? $"Activity, {_unread} unread notifications" : destination.Label;
     private string? Current(ShellDestination destination) => Selected == destination ? "page" : null;
@@ -59,13 +79,35 @@
         Navigation.LocationChanged += Changed;
         InboxState.Changed += InboxChanged;
         await InboxState.RefreshAsync();
+        _connection = await RouterConnections.GetAsync(CancellationToken.None);
     }
     private void Changed(object? sender, LocationChangedEventArgs args) => _ = InvokeAsync(InboxState.RefreshAsync);
     private void InboxChanged() => _ = InvokeAsync(StateHasChanged);
-    protected override Task OnAfterRenderAsync(bool firstRender)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender) _poll = PollAsync();
-        return Task.CompletedTask;
+        if (firstRender)
+        {
+            try
+            {
+                _wide = await JS.InvokeAsync<bool>("netpilotShell.isWide");
+                _self = DotNetObjectReference.Create(this);
+                await JS.InvokeVoidAsync("netpilotShell.onWideChange", _self);
+            }
+            catch (JSException) { /* The drawer stays hidden when JS is unavailable. */ }
+            StateHasChanged();
+        }
+        if (_poll is null) _poll = PollAsync();
+        await Task.CompletedTask;
+    }
+
+    [JSInvokable]
+    public void SetWideFromJs(bool wide) => SetWide(wide);
+
+    private void SetWide(bool wide)
+    {
+        if (_wide == wide) return;
+        _wide = wide;
+        InvokeAsync(StateHasChanged);
     }
     private async Task PollAsync()
     {
@@ -77,5 +119,6 @@
     {
         Navigation.LocationChanged -= Changed; InboxState.Changed -= InboxChanged;
         _stop.Cancel(); if (_poll is not null) await _poll; _stop.Dispose();
+        _self?.Dispose();
     }
 }

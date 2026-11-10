@@ -1,54 +1,308 @@
 @using NetPilot.Core.Usage
 @using NetPilot.Core.Health
+@using NetPilot.Core.Rules.Presentation
+@using NetPilot.Web.Features
 @using NetPilot.Web.Components.Usage
 @using NetPilot.Web.Components.Actions
 @inject NetPilot.Web.Features.UsageOverviewQuery UsageQuery
 @inject UsagePeriodClock Clock
 @inject ILogger<HomeDashboard> Logger
 <PageTitle>Home · NetPilot</PageTitle>
-<MudStack Spacing="4">
-    <MudText Typo="Typo.h1" HtmlTag="h1">Home network</MudText>
-    <MudStack Row="true" Wrap="Wrap.Wrap"><MudButton OnClick="LoadAsync">Refresh saved summary</MudButton><MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="@(() => _quickActions = true)">Quick actions</MudButton><MudButton Href="/usage">View usage</MudButton><MudLink Href="/legacy">Classic view</MudLink></MudStack>
-    @if (_error is not null) { <MudAlert Severity="Severity.Error" role="alert">@_error</MudAlert> }
-    @if (_overview is null && _error is null) { <MudProgressCircular Indeterminate="true" aria-label="Loading home summary" /> }
-    @if (_overview is { } overview)
+<div class="page-head">
+    <div>
+        <div class="eyebrow">Home network</div>
+        <h1>Your household at a glance</h1>
+        <p>All times in @Clock.TimeZone.Id.</p>
+    </div>
+    <div class="actions">
+        <button class="button" @onclick="LoadAsync">@((MarkupString)Icon("refresh")) Refresh saved summary</button>
+        <button class="button tonal" @onclick="@(() => _quickActions = true)">Quick actions</button>
+        <a href="/usage" class="text-button">@((MarkupString)Icon("arrow")) View usage</a>
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <div class="banner error">@((MarkupString)Icon("warning")) @_error</div>
+}
+
+@if (_overview is null && _error is null)
+{
+    <div class="skeleton"></div>
+    <div class="skeleton line"></div>
+}
+
+@if (_overview is { } overview)
+{
+    @if (!_configured)
     {
-        <MudPaper Outlined="true" Class="pa-4" id="network-health"><MudStack Spacing="2">
-            <MudText Typo="Typo.h2">Network health</MudText>
-            <StatusPill Kind="@(Health == AgentHealthStatus.Healthy ? "ok" : "warning")">Agent: @Health</StatusPill>
-            <MudText>Last completed tick: @LocalTime(overview.Heartbeat?.LastTickCompletedUtc)</MudText>
-            <MudText>Router: @RouterStatus · last successful read @LocalTime(overview.Heartbeat?.LastSuccessfulRouterReadUtc)</MudText>
-            <MudText>Saved quota mode: @_quotaMode · rules: @_rulesMode · temporary restrictions: @_temporaryMode</MudText>
-            <MudText Typo="Typo.caption">Modes describe saved intent and the last Agent heartbeat. Manual controls can still change the router. Next-tick timing is approximate; retries can take longer.</MudText>
-        </MudStack></MudPaper>
-        @if (!_configured) { <EmptyState Title="Connect your router" Body="No router configuration is saved." Href="/legacy" ActionText="Configure router" /> }
-        @if (overview.Readings.Devices.Count == 0) { <EmptyState Title="Let’s find your devices" Body="Saved devices appear after a successful discovery tick." Href="/devices" ActionText="See devices" /> }
-        <MudGrid>
-            <MudItem xs="12" md="7"><MudCard Outlined="true"><MudCardContent><MudText Typo="Typo.h2">Today’s Internet usage</MudText>
-                @if (_today is { HasObservation: true } today) { <MudText Typo="Typo.h3">@DataSize.ToGb(today.InternetBytes).ToString("0.##") GB</MudText><MudText>@DataSize.ToGb(today.LanBytes).ToString("0.##") GB excluded LAN (both endpoints)</MudText> }
-                else { <MudText>Unknown · no observation for today</MudText> }
-                <MudText>@overview.Readings.Today · @Clock.TimeZone.Id</MudText><MudText Typo="Typo.caption">@overview.Confidence</MudText>
-                <MudLink Href="/usage?period=day">See today in Usage</MudLink>
-            </MudCardContent></MudCard></MudItem>
-            <MudItem xs="12" md="5"><BudgetCard Overview="@(_error is null ? overview : overview with { Forecast = null })" TimeZone="@Clock.TimeZone.Id" /></MudItem>
-        </MudGrid>
-        <MudGrid>
-            <MudItem xs="12" md="6"><MudCard Outlined="true"><MudCardContent><MudStack Spacing="2"><MudText Typo="Typo.h2">Needs attention</MudText>
-                @foreach (var notice in _attention) { <MudLink Href="@notice.Href">@notice.Text</MudLink> }
-                <MudLink Href="/usage#usage-confidence">@overview.Confidence</MudLink>
-                @if (_attention.Count == 0) { <MudText>No device or Agent alerts in saved data.</MudText> }
-            </MudStack></MudCardContent></MudCard></MudItem>
-            <MudItem xs="12" md="6"><MudCard Outlined="true"><MudCardContent><MudStack Spacing="2"><MudText Typo="Typo.h2">Top consumers today</MudText>
-                @foreach (var row in _today?.Rows.Take(5) ?? []) { <MudLink Href="@($"/devices/{row.Mac}")">@row.Name · @DataSize.ToGb(row.InternetBytes).ToString("0.##") GB</MudLink> }
-                @if (_today is not { HasObservation: true }) { <MudText>No saved observations for today.</MudText> }
-                <MudLink Href="/devices">@overview.Readings.Devices.Count(device => device.Connection.IsOnline) online of @overview.Readings.Devices.Count devices</MudLink>
-            </MudStack></MudCardContent></MudCard></MudItem>
-        </MudGrid>
-        <MudCard Outlined="true" id="restrictions"><MudCardContent><MudStack Spacing="2"><MudText Typo="Typo.h2">Restrictions and previews</MudText>
-            <MudText Typo="Typo.caption">Block wins; otherwise the lowest automatic Kbps cap wins. Releasing one owner can leave others active. Base policy is never overwritten by a temporary action.</MudText>
-            @foreach (var restriction in _restrictions) { <MudLink Href="@restriction.Href">@restriction.Text</MudLink> }
-            @if (_restrictions.Count == 0) { <MudText>No recorded restrictions or previews.</MudText> }
-        </MudStack></MudCardContent></MudCard>
+        <div class="card empty-state">
+            <span class="symbol-tile">@((MarkupString)Icon("router"))</span>
+            <h2>Connect your router</h2>
+            <p>No router configuration is saved.</p>
+            <a href="/legacy" class="button">Configure router</a>
+        </div>
     }
-</MudStack>
+    @if (overview.Readings.Devices.Count == 0)
+    {
+        <div class="card empty-state">
+            <span class="symbol-tile">@((MarkupString)Icon("devices"))</span>
+            <h2>Let’s find your devices</h2>
+            <p>Saved devices appear after a successful discovery tick.</p>
+            <a href="/devices" class="button">See devices</a>
+        </div>
+    }
+
+    <!-- Household card -->
+    <div class="household">
+        <div class="summary">
+            <span class="symbol-tile">@((MarkupString)Icon("router"))</span>
+            <div>
+                <h3>Archer AX53 <span class="chip @(Health == AgentHealthStatus.Healthy ? "ok" : "warning")">@(Health == AgentHealthStatus.Healthy ? "Last read succeeded" : "Observation stale")</span></h3>
+                <p>@overview.Readings.Devices.Count(d => d.Connection.IsOnline) online of @overview.Readings.Devices.Count devices · Agent completed a tick @TickAgo</p>
+            </div>
+        </div>
+        <a href="/settings/health" class="text-button">@((MarkupString)Icon("arrow")) Network health</a>
+    </div>
+
+    <div class="grid">
+        <!-- Usage hero -->
+        <section class="card hero span-8 tablet-full">
+            <div class="section-head">
+                <span class="eyebrow">Internet today</span>
+                @if (overview.Budget is not null)
+                {
+                    <span class="chip dry">Household ISP budget</span>
+                }
+            </div>
+            <div class="hero-body">
+                <div>
+                    @if (_today is { HasObservation: true } today)
+                    {
+                        <div class="big-number">@DataSize.ToGb(today.InternetBytes).ToString("0.#") <span>GB</span></div>
+                        @if (overview.Budget is { } budget)
+                        {
+                            <p style="margin-block-start:12px">of a @DataSize.ToGb(budget.MonthlyBytes).ToString("0.#") GB monthly budget</p>
+                            <small>@DataSize.ToGb(Math.Max(budget.MonthlyBytes - _cycleBytes, 0)).ToString("0.#") GB left this cycle · @DataSize.ToGb(today.LanBytes).ToString("0.#") GB LAN excluded</small>
+                        }
+                        else
+                        {
+                            <p style="margin-block-start:12px">No household budget configured</p>
+                            <small>@DataSize.ToGb(today.LanBytes).ToString("0.#") GB LAN excluded</small>
+                        }
+                    }
+                    else
+                    {
+                        <div class="big-number"><span class="none">—</span> <span>GB</span></div>
+                        <p style="margin-block-start:12px">No observation for today</p>
+                        <small>@Clock.TimeZone.Id</small>
+                    }
+                </div>
+                @if (_cycleOk && overview.Budget is { } cycleBudget)
+                {
+                    <div class="ring" style="--ring-fill:@_cycleFillPct" role="img" aria-label="@_cycleFillPct% of monthly budget">
+                        <svg viewBox="0 0 120 120" aria-hidden="true">
+                            <circle class="track" cx="60" cy="60" r="49" pathLength="100" />
+                            <circle class="value" cx="60" cy="60" r="49" pathLength="100" />
+                        </svg>
+                        <div class="ring-label">@_cycleFillPct%<small>of monthly budget</small></div>
+                    </div>
+                }
+            </div>
+            <div class="meter"><span style="--fill:@_cycleFillPct%"></span></div>
+            <div class="row between" style="margin-block-start:16px">
+                <small>@(_cycleOk && overview.Budget is { } rowBudget ? $"Month · {DataSize.ToGb(_cycleBytes).ToString("0.#")} of {DataSize.ToGb(rowBudget.MonthlyBytes).ToString("0.#")} GB" : "Month · cycle progress unavailable")</small>
+                <a href="/usage" class="text-button">@((MarkupString)Icon("arrow")) Explore usage</a>
+            </div>
+        </section>
+
+        <!-- Needs attention -->
+        <section class="card span-4 tablet-full">
+            <div class="section-head"><h2>Needs your attention</h2></div>
+            @foreach (var notice in _attention)
+            {
+                <div class="notice">
+                    <span class="icon">@((MarkupString)Icon(NoticeIcon(notice.Text)))</span>
+                    <div>
+                        <h3>@NoticeTitle(notice.Text)</h3>
+                        @if (notice.Href is not null)
+                        {
+                            <p><a href="@notice.Href">Review</a></p>
+                        }
+                    </div>
+                </div>
+            }
+            @if (_attention.Count == 0)
+            {
+                <div class="notice">
+                    <span class="icon">@((MarkupString)Icon("check"))</span>
+                    <div>
+                        <h3>No device or Agent alerts</h3>
+                        <p>in saved data.</p>
+                    </div>
+                </div>
+            }
+            <div class="notice">
+                <span class="icon">@((MarkupString)Icon("leaf"))</span>
+                <div>
+                    <h3>Usage confidence</h3>
+                    <p>@overview.Confidence</p>
+                </div>
+                <a href="/usage#usage-confidence" class="text-button">@((MarkupString)Icon("arrow"))</a>
+            </div>
+            <div class="notice">
+                <span class="icon">@((MarkupString)Icon("bell"))</span>
+                <div>
+                    <h3>Bring alerts to your phone</h3>
+                    <p>Notification setup lives in Settings.</p>
+                </div>
+                <a href="/settings/notifications" class="text-button">@((MarkupString)Icon("arrow"))</a>
+            </div>
+        </section>
+
+        <!-- Top consumers -->
+        <section class="card span-8 tablet-full">
+            <div class="section-head"><h2>Top Internet consumers today</h2><a href="/devices" class="text-button">@((MarkupString)Icon("arrow")) All devices</a></div>
+            @foreach (var row in _today?.Rows.Take(4) ?? [])
+            {
+                <div class="consumer">
+                    <span class="symbol-tile">@((MarkupString)Icon("devices"))</span>
+                    <div>
+                        <a href="@($"/devices/{row.Mac}")"><strong>@row.Name</strong></a>
+                        <div class="meter"><span style="--fill:@(row.InternetBytes / 5_200_000_000L * 100)%"></span></div>
+                    </div>
+                    <div class="number">@DataSize.ToGb(row.InternetBytes).ToString("0.#") <small>GB</small></div>
+                </div>
+            }
+            @if (_today is not { HasObservation: true })
+            {
+                <p class="hint">No saved observations for today.</p>
+            }
+        </section>
+
+        <!-- Restrictions -->
+        <section class="card span-4 tablet-full" id="restrictions">
+            <div class="section-head"><h2>Restrictions & previews</h2></div>
+            @foreach (var restriction in _restrictions.Take(5))
+            {
+                <div class="list-row">
+                    <div class="grow">
+                        <h3>@RestrictionTitle(restriction.Text)</h3>
+                        <p>@RestrictionBody(restriction.Text)</p>
+                        <span class="chip throttled">Restricted</span>
+                    </div>
+                    <a href="@restriction.Href" class="text-button">@((MarkupString)Icon("arrow"))</a>
+                </div>
+            }
+            @if (_restrictions.Count > 5)
+            {
+                <a href="/devices" class="text-button">@((MarkupString)Icon("arrow")) @(_restrictions.Count - 5) more</a>
+            }
+            @if (_restrictions.Count == 0)
+            {
+                <div class="notice">
+                    <span class="icon">@((MarkupString)Icon("check"))</span>
+                    <div>
+                        <h3>No active restrictions</h3>
+                        <p>Protected devices and newly discovered devices skip automatic actions.</p>
+                    </div>
+                </div>
+            }
+        </section>
+    </div>
+
+    <!-- Household ISP budget -->
+    <section class="card span-12" id="household-budget">
+        <div class="section-head"><h2>Household ISP budget</h2><a href="/usage?budget=true" class="text-button">@((MarkupString)Icon("arrow")) @(overview.Budget is null ? "Set ISP budget" : "Edit ISP budget")</a></div>
+        <BudgetCard Overview="@(_error is null ? overview : overview with { Forecast = null })" TimeZone="@Clock.TimeZone.Id" />
+    </section>
+
+    <!-- Quick actions -->
+    <section class="card span-12">
+        <div class="section-head"><h2>Make a quick adjustment</h2></div>
+        <div class="quick-grid">
+            <button class="quick-action" @onclick="@(() => _quickActions = true)">
+                @((MarkupString)Icon("pause"))
+                <strong>Pause internet</strong>
+                <small>For a little while · protected targets skipped</small>
+            </button>
+            <button class="quick-action" @onclick="@(() => _quickActions = true)">
+                @((MarkupString)Icon("add"))
+                <strong>Add bonus data</strong>
+                <small>Choose device & period</small>
+            </button>
+            <button class="quick-action">
+                @((MarkupString)Icon("block"))
+                <strong>Block a device</strong>
+                <small>Direct router command</small>
+            </button>
+            <button class="quick-action">
+                @((MarkupString)Icon("wifi"))
+                <strong>Guest WiFi · On</strong>
+                <small>Review before changing</small>
+            </button>
+        </div>
+        <p class="hint">Pause and bonus-data controls save expiring claims for the Agent’s next tick. Manual block operates directly on the router.</p>
+    </section>
+}
+
 <QuickActionsSheet @bind-Open="_quickActions" Saved="LoadAsync" />
+
+@code {
+    private string Icon(string name) => name switch
+    {
+        "refresh" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M20 7v5h-5M4 17v-5h5M5 7a8 8 0 0 1 14-1M5 18a8 8 0 0 0 14-1\"/></svg>",
+        "arrow" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M4 12h16m-6-6 6 6-6 6\"/></svg>",
+        "pause" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M8 4v16m8-16v16\"/></svg>",
+        "add" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 4v16M4 12h16\"/></svg>",
+        "block" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"m6 6 12 12\"/></svg>",
+        "wifi" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M2 8a16 16 0 0 1 20 0M5 12a11 11 0 0 1 14 0m-11 4a6 6 0 0 1 8 0\"/><circle cx=\"12\" cy=\"20\" r=\"1\"/></svg>",
+        "devices" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"6\" y=\"2\" width=\"12\" height=\"20\" rx=\"3\"/><path d=\"M10 18h4\"/></svg>",
+        "router" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"3\" y=\"12\" width=\"18\" height=\"8\" rx=\"2\"/><path d=\"M6 12V4m12 8V4M7 16h1m4 0h1m4 0h1\"/></svg>",
+        "warning" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m12 3 10 18H2Z\"/><path d=\"M12 9v5m0 3h.1\"/></svg>",
+        "shield" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m12 2 8 4v6c0 5-8 10-8 10S4 17 4 12V6Z\"/><path d=\"m8 12 3 3 5-6\"/></svg>",
+        "check" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m5 12 4 4L20 5\"/></svg>",
+        "usage" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M4 20V10m8 10V4m8 16v-7\"/></svg>",
+        "leaf" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M20 3C6 2 1 10 6 17s16 0 14-14ZM5 20 16 8\"/></svg>",
+        "bell" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M5 17h14l-2-4V8a5 5 0 0 0-10 0v5Zm5 3h4\"/></svg>",
+        _ => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"10\"/></svg>"
+    };
+
+    private string NoticeIcon(string text) => text.Contains("newly discovered", StringComparison.Ordinal) ? "devices"
+        : text.Contains("throttle", StringComparison.OrdinalIgnoreCase) ? "shield"
+        : text.Contains("quota", StringComparison.OrdinalIgnoreCase) ? "usage"
+        : "warning";
+
+    /// <summary>Turns "newly discovered" notices into the design's "New device: name" heading.</summary>
+    private static string NoticeTitle(string text) => text.Contains("newly discovered", StringComparison.Ordinal)
+        && text.IndexOf(':') is { } cut && cut > 0 ? $"New device: {text[..cut]}" : text;
+
+    /// <summary>Replaces raw "rule:{templateId}" claim sources with the catalog's rule names.</summary>
+    private static string Friendly(string text) =>
+        TemplateCatalog.All.Aggregate(text, (acc, t) => acc.Replace("rule:" + t.Id, t.Name, StringComparison.Ordinal));
+
+    /// <summary>Splits "Device: detail" into a title and a body line.</summary>
+    private static string RestrictionTitle(string text) => text.Contains(':') && text.IndexOf(':') is { } cut && cut > 0
+        ? Friendly(text[..cut]) : Friendly(text);
+
+    private static string RestrictionBody(string text) => text.Contains(':') && text.IndexOf(':') is { } cut && cut > 0
+        ? Friendly(text[(cut + 1)..].Trim()) : "";
+
+    private long _cycleBytes;
+    private int _cycleFillPct;
+    private bool _cycleOk;
+    private string TickAgo => _overview?.Heartbeat?.LastTickCompletedUtc is { } tick
+        ? $"{Math.Max((int)(Clock.GetUtcNow() - tick).TotalMinutes, 0)} min ago"
+        : "not recorded yet";
+
+    private void ComputeCycle(UsageOverview overview)
+    {
+        if (overview.Budget is not null && overview.CycleUsage is { HasObservation: true } cycle)
+        {
+            _cycleBytes = cycle.InternetBytes;
+            _cycleFillPct = (int)Math.Clamp(cycle.InternetBytes * 100 / Math.Max(overview.Budget.MonthlyBytes, 1), 0, 100);
+            _cycleOk = true;
+        }
+        else { _cycleFillPct = 0; _cycleBytes = 0; _cycleOk = false; }
+    }
+}

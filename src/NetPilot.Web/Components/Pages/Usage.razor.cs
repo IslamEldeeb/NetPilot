@@ -17,7 +17,7 @@ public partial class Usage : IDisposable
     private UsageOverview? _overview;
     private UsageReport? _report;
     private IReadOnlyList<DeviceUsageDay> _days = [];
-    private ReportPeriod _period = ReportPeriod.Day;
+    private ReportPeriod _period = ReportPeriod.Month;
     private DateTime? _date;
     private string _mac = "";
     private string? _error, _budgetError;
@@ -31,8 +31,8 @@ public partial class Usage : IDisposable
         .Concat(_overview.Readings.Daily.Select(day => (Mac: day.Mac.ToString(), Name: day.Mac.ToString())))
         .Concat(_overview.Readings.Monthly.Select(month => (Mac: month.Mac.ToString(), Name: month.Mac.ToString())))
         .DistinctBy(choice => choice.Mac).OrderBy(choice => choice.Name);
-    private string CsvHref => "data:text/csv;charset=utf-8;base64," + Convert.ToBase64String(Encoding.UTF8.GetBytes(
-        HouseholdUsage.Csv(_report!, Clock.TimeZone.Id, (_error is null ? "" : "Stale snapshot. ") + _overview!.Confidence)));
+    private string CsvHref => _report is null ? "#" : "data:text/csv;charset=utf-8;base64," + Convert.ToBase64String(Encoding.UTF8.GetBytes(
+        HouseholdUsage.Csv(_report, Clock.TimeZone.Id, (_error is null ? "" : "Stale snapshot. ") + _overview!.Confidence)));
 
     protected override async Task OnParametersSetAsync()
     {

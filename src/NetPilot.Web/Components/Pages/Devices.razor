@@ -4,103 +4,228 @@
 @using NetPilot.Core.Quota
 @using NetPilot.Core.Usage
 @using NetPilot.Web.Components.Devices
+@using NetPilot.Web.Components.DesignSystem
 <PageTitle>Devices · NetPilot</PageTitle>
-<MudStack Spacing="4">
-    <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center">
-        <div><MudText Typo="Typo.h1" HtmlTag="h1">Devices</MudText><MudText>@CountText</MudText></div>
-        <MudSpacer />
-        <MudButton OnClick="RefreshFromRouterAsync" Disabled="@(_connection is null || _refreshing || _bulkBusy)" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Refresh">@(_refreshing ? "Refreshing…" : "Refresh from router")</MudButton>
-    </MudStack>
-    <MudText Typo="Typo.caption">Router refresh may also apply configured speed policies. Saved data updates every 30 seconds without contacting the router.</MudText>
-    @if (_lastRefresh is { } refreshed) { <MudText Typo="Typo.caption">Last manual refresh: @TimeZoneInfo.ConvertTime(refreshed, Clock.TimeZone).ToString("g") · @Clock.TimeZone.Id</MudText> }
-    <MudLink Href="/legacy#devices" Target="_top">Classic device controls</MudLink>
-    @if (_error is not null)
+<div class="page-head">
+    <div>
+        <div class="eyebrow">Your network</div>
+        <h1>Devices</h1>
+        <p>@CountText</p>
+    </div>
+    <div class="actions">
+        <button class="outline" @onclick="RefreshFromRouterAsync" disabled="@(_connection is null || _refreshing || _bulkBusy)">@((MarkupString)Icon("refresh")) @(_refreshing ? "Refreshing…" : "Refresh from router")</button>
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <div class="banner error" role="alert">
+        <span class="icon">@((MarkupString)Icon("warning"))</span>
+        <div>
+            <strong>Couldn’t load devices</strong>
+            <p>@_error</p>
+            <button class="outline" @onclick="LoadAsync">Retry saved data</button>
+        </div>
+    </div>
+}
+@if (_lastRefresh is { } refreshed)
+{
+    <p class="hint">Last manual refresh: @TimeZoneInfo.ConvertTime(refreshed, Clock.TimeZone).ToString("g") · @Clock.TimeZone.Id</p>
+}
+
+@if (!_loaded)
+{
+    <div class="skeleton-wrap" aria-busy="true">
+        <div class="skeleton"></div>
+        <div class="skeleton"></div>
+    </div>
+}
+else if (_devices.Count == 0)
+{
+    <div class="card empty-state">
+        <span class="symbol-tile">@((MarkupString)Icon("devices"))</span>
+        <h2>No devices discovered yet</h2>
+        <p>Connect a router, discover devices and start in dry-run.</p>
+        <a href="/setup/1" class="button">Start setup</a>
+    </div>
+}
+else
+{
+    @if (_connection is null)
     {
-        <MudAlert Severity="Severity.Error">@_error <MudButton OnClick="LoadAsync">Retry saved data</MudButton></MudAlert>
+        <div class="banner info">
+            <span class="icon">@((MarkupString)Icon("router"))</span>
+            <p>No router connection is saved. Saved device data stays readable; router actions are unavailable.</p>
+        </div>
     }
-    @if (!_loaded)
+    <div class="toolbar">
+        <label class="field search-field">Find a device
+            <input id="device-search" type="search" value="@_search" @oninput="e => _search = e.Value?.ToString() ?? string.Empty" placeholder="Name, MAC or IP address" />
+        </label>
+        <label class="field">Category
+            <select id="category-filter" @bind="_category">
+                <option value="">All categories</option>
+                @foreach (var category in Categories)
+                {
+                    <option value="@category">@category.Replace('_', ' ')</option>
+                }
+            </select>
+        </label>
+        <label class="field">Connection
+            <select id="online-filter" @bind="_connectionFilter">
+                <option value="all">All devices</option>
+                <option value="online">Online only</option>
+                <option value="offline">Offline only</option>
+            </select>
+        </label>
+        <label class="field">Group by
+            <select id="group-filter" @bind="_groupBy">
+                <option value="category">Category</option>
+                <option value="none">None</option>
+                <option disabled>Person · needs backend</option>
+            </select>
+        </label>
+    </div>
+
+    @if (_selected.Count > 0)
     {
-        <MudSkeleton Height="100px" /><MudSkeleton Height="100px" /><MudSkeleton Height="100px" />
+        <div class="selection-bar">
+            <strong>@_selected.Count selected</strong>
+            <div class="actions">
+                <button class="tonal" @onclick="@(() => _bulkPause = true)">@((MarkupString)Icon("pause")) Pause selected</button>
+                <button class="outline" @onclick="@(() => BulkSetBlockAsync(true))" disabled="@(_bulkBusy || _connection is null)">Block selected</button>
+                <button class="outline" @onclick="@(() => BulkSetBlockAsync(false))" disabled="@(_bulkBusy || _connection is null)">Unblock selected</button>
+                <button class="text-button" @onclick="@(() => _selected.Clear())">Clear</button>
+            </div>
+        </div>
+    }
+
+    @if (VisibleRows.Count == 0)
+    {
+        <div class="card empty-state">
+            <span class="symbol-tile">@((MarkupString)Icon("devices"))</span>
+            <h2>No matching devices</h2>
+            <p>Try a name, MAC address or a different filter.</p>
+            <button class="button" @onclick="ClearFilters">Clear filters</button>
+        </div>
     }
     else
     {
-        @if (_connection is null)
-        {
-            <EmptyState Title="Router not configured" Body="Connect a router in Classic view to discover and manage devices." Href="/legacy" ActionText="Configure router" />
-        }
-        @if (_devices.Count == 0 && _error is null)
-        {
-            <EmptyState Title="No devices discovered yet" Body="Refresh from the router, or wait for the Agent’s next tick." Icon="devices" />
-            <MudButton OnClick="RefreshFromRouterAsync" Disabled="@(_connection is null || _refreshing)" Color="Color.Primary">Refresh from router</MudButton>
-        }
-        else if (_devices.Count > 0)
-        {
-            <MudGrid Spacing="3">
-                <MudItem xs="12" sm="6"><MudTextField T="string" Label="Search devices" Placeholder="Name, hostname, MAC or IP" @bind-Value="_search" Immediate="true" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search" /></MudItem>
-                <MudItem xs="12" sm="3"><MudSelect T="string" Label="Category" @bind-Value="_category"><MudSelectItem T="string" Value="@(string.Empty)">All categories</MudSelectItem>@foreach (var category in Categories) { <MudSelectItem T="string" Value="@category">@category.Replace('_', ' ')</MudSelectItem> }</MudSelect></MudItem>
-                <MudItem xs="12" sm="3"><MudSelect T="DeviceSortKey" Label="Sort devices" @bind-Value="_sort"><MudSelectItem Value="DeviceSortKey.UsageTodayDesc">Usage today</MudSelectItem><MudSelectItem Value="DeviceSortKey.Name">Name</MudSelectItem><MudSelectItem Value="DeviceSortKey.LastSeen">Last seen</MudSelectItem></MudSelect></MudItem>
-            </MudGrid>
-            <MudStack Row="true" Wrap="Wrap.Wrap">
-                <MudSwitch @bind-Value="_onlineOnly" Label="Online only" Color="Color.Primary" />
-                <MudSwitch @bind-Value="_restrictedOnly" Label="Restricted only" Color="Color.Primary" />
-                <MudSwitch @bind-Value="_groupByCategory" Label="Group by category" Color="Color.Primary" />
-            </MudStack>
-            <MudCheckBox T="bool" Value="@(VisibleRows.Count > 0 && VisibleRows.All(r => _selected.Contains(r.Device.Mac)))" ValueChanged="SelectAll" Label="@($"Select all {VisibleRows.Count} filtered devices")" Disabled="@_bulkBusy" />
-            @if (_selected.Count > 0)
+        <div class="card table-scroll" style="padding:8px 16px">
+            <table class="device-table">
+                <caption class="screen-reader-only">Known devices, @(_groupByCategory ? "grouped by category" : "ungrouped")</caption>
+                <thead>
+                    <tr>
+                        <th>Select</th>
+                        <th>Device / category</th>
+                        <th>Connection</th>
+                        <th>Internet today</th>
+                        <th>Restriction</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in VisibleRows)
+                    {
+                        <tr>
+                            <td>
+                                <label class="select-box">
+                                    <input type="checkbox" checked="@_selected.Contains((string)row.Device.Mac)"
+                                           @onchange="e => ToggleSelect(row.Device.Mac, e.Value is true)"
+                                           aria-label="@($"Select {row.DisplayName}")" />
+                                </label>
+                            </td>
+                            <td>
+                                <div class="device-identity">
+                                    <span class="symbol-tile">@((MarkupString)Icon(IconFor(row)))</span>
+                                    <div>
+                                        <a href="@($"/devices/{row.Device.Mac}")">@row.DisplayName</a>
+                                        <small>@row.Device.CategoryKey.Replace('_', ' ') · <bdi>@row.Device.IpAddress</bdi></small>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <span class="chip @(row.Device.Connection.IsOnline ? "ok" : "")">@(row.Device.Connection.IsOnline ? "Online" : "Offline")</span>
+                                <small>@DeviceList.DescribeMedium(row.Device.Connection.Medium)</small>
+                            </td>
+                            <td>
+                                <strong>@DataSize.ToGb(row.InternetTodayBytes).ToString("0.#") GB</strong>
+                                <small>Internet only</small>
+                            </td>
+                            <td>@RestrictionChip(row)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <div class="device-cards">
+            @foreach (var row in VisibleRows)
             {
-                <MudPaper Class="pa-3" Outlined="true" role="region" aria-label="Selected devices">
-                    <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center">
-                        <MudText>@_selected.Count selected (includes hidden selections)</MudText>
-                        <MudButton Color="Color.Error" OnClick="@(() => BulkSetBlockAsync(true))" Disabled="@(_bulkBusy || _connection is null)">Block selected</MudButton>
-                        <MudButton OnClick="@(() => BulkSetBlockAsync(false))" Disabled="@(_bulkBusy || _connection is null)">Unblock selected</MudButton>
-                        <MudButton OnClick="@(() => _selected.Clear())" Disabled="@_bulkBusy">Clear selection</MudButton>
-                    </MudStack>
-                    <MudText Typo="Typo.caption">Protected devices are not exempt from manual blocks today.</MudText>
-                </MudPaper>
+                <article class="card device-card">
+                    <div class="identity">
+                        <span class="symbol-tile">@((MarkupString)Icon(IconFor(row)))</span>
+                        <div style="flex:1">
+                            <a href="@($"/devices/{row.Device.Mac}")">@row.DisplayName</a>
+                            <p class="hint" style="margin:4px 0 0">@row.Device.CategoryKey.Replace('_', ' ') · @(row.Device.Connection.IsOnline ? "Online now" : $"Last seen {DeviceList.DescribeLastSeen(row.Device.LastSeenAtUtc, Clock.GetUtcNow())}")</p>
+                        </div>
+                        <label class="select-box">
+                            <input type="checkbox" checked="@_selected.Contains((string)row.Device.Mac)"
+                                   @onchange="e => ToggleSelect(row.Device.Mac, e.Value is true)"
+                                   aria-label="@($"Select {row.DisplayName}")" />
+                        </label>
+                    </div>
+                    <div class="stats">
+                        <span><strong>@DataSize.ToGb(row.InternetTodayBytes).ToString("0.#") GB</strong><small> Internet today</small></span>
+                        @RestrictionChip(row)
+                    </div>
+                    <small><bdi>@row.Device.IpAddress</bdi> · @DeviceList.DescribeMedium(row.Device.Connection.Medium)</small>
+                </article>
             }
-            @if (VisibleRows.Count == 0)
-            {
-                <EmptyState Title="No matching devices" Body="Try another search or clear the filters." Icon="devices" />
-                <MudButton OnClick="ClearFilters">Clear filters</MudButton>
-            }
-            @foreach (var section in Sections)
-            {
-                @if (section.Category is { } category) { <MudText Typo="Typo.h2">@category.Replace('_', ' ')</MudText> }
-                <div class="devices-table">
-                    <MudTable T="DeviceListRow" Items="section.Rows" Breakpoint="Breakpoint.None" Elevation="0" Hover="true">
-                        <HeaderContent><MudTh>Select</MudTh><MudTh>Device</MudTh><MudTh>Connection</MudTh><MudTh>Internet usage / quota</MudTh><MudTh>Limits / status</MudTh><MudTh>Actions</MudTh></HeaderContent>
-                        <RowTemplate Context="row">
-                            <MudTd><MudCheckBox T="bool" Value="@_selected.Contains(row.Device.Mac)" ValueChanged="@(selected => ToggleSelect(row.Device.Mac, selected))" aria-label="@($"Select {row.DisplayName}")" Disabled="@_bulkBusy" /></MudTd>
-                            <MudTd><MudIcon Icon="@MaterialIcon.For(row.Device.LocalIconKey ?? row.Device.CategoryKey)" /><MudLink Href="@($"/devices/{row.Device.Mac}")">@row.DisplayName</MudLink><MudText Typo="Typo.caption">@row.Device.Mac · @row.Device.IpAddress</MudText><MudChip T="string" Size="Size.Small">@row.Device.CategoryKey.Replace('_', ' ')</MudChip></MudTd>
-                            <MudTd><StatusPill Kind="@(row.Device.Connection.IsOnline ? "ok" : "info")">@(row.Device.Connection.IsOnline ? "Online" : "Offline")</StatusPill><MudText Typo="Typo.caption">@DeviceList.DescribeMedium(row.Device.Connection.Medium) · @DeviceList.DescribeLastSeen(row.Device.LastSeenAtUtc, Clock.GetUtcNow())</MudText></MudTd>
-                            <MudTd><MudText>@DataSize.Format(row.InternetTodayBytes) today</MudText><MudText Typo="Typo.caption">@DataSize.Format(row.InternetMonthBytes) this month</MudText><DeviceQuotaMeter Resolution="@QuotaResolver.Resolve(row.Device, _quotas)" TodayBytes="row.InternetTodayBytes" MonthBytes="row.InternetMonthBytes" /></MudTd>
-                            <MudTd><DeviceStatusChips Row="row" /><DeviceLimits Device="row.Device" Policies="_policies" /></MudTd>
-                            <MudTd><DeviceBlockActions Device="row.Device" Changed="LoadAsync" Disabled="@(_connection is null || _bulkBusy || _refreshing)" /></MudTd>
-                        </RowTemplate>
-                    </MudTable>
-                </div>
-                <div class="devices-cards">
-                    <MudStack Spacing="3">
-                        @foreach (var row in section.Rows)
-                        {
-                            <MudCard @key="row.Device.Mac" Outlined="true">
-                                <MudCardContent>
-                                    <MudStack Spacing="2">
-                                        <MudStack Row="true" AlignItems="AlignItems.Center"><MudIcon Icon="@MaterialIcon.For(row.Device.LocalIconKey ?? row.Device.CategoryKey)" /><MudLink Href="@($"/devices/{row.Device.Mac}")">@row.DisplayName</MudLink><MudSpacer /><MudCheckBox T="bool" Value="@_selected.Contains(row.Device.Mac)" ValueChanged="@(selected => ToggleSelect(row.Device.Mac, selected))" aria-label="@($"Select {row.DisplayName}")" Disabled="@_bulkBusy" /></MudStack>
-                                        <MudText Typo="Typo.caption">@row.Device.Mac · @row.Device.IpAddress</MudText>
-                                        <MudStack Row="true" Wrap="Wrap.Wrap"><StatusPill Kind="@(row.Device.Connection.IsOnline ? "ok" : "info")">@(row.Device.Connection.IsOnline ? "Online" : "Offline")</StatusPill><MudChip T="string" Size="Size.Small">@row.Device.CategoryKey.Replace('_', ' ')</MudChip></MudStack>
-                                        <MudText Typo="Typo.caption">@DeviceList.DescribeMedium(row.Device.Connection.Medium) · Last seen @DeviceList.DescribeLastSeen(row.Device.LastSeenAtUtc, Clock.GetUtcNow())</MudText>
-                                        <MudText>@DataSize.Format(row.InternetTodayBytes) Internet today · @DataSize.Format(row.InternetMonthBytes) this month</MudText>
-                                        <DeviceQuotaMeter Resolution="@QuotaResolver.Resolve(row.Device, _quotas)" TodayBytes="row.InternetTodayBytes" MonthBytes="row.InternetMonthBytes" />
-                                        <DeviceStatusChips Row="row" /><DeviceLimits Device="row.Device" Policies="_policies" />
-                                        <DeviceBlockActions Device="row.Device" Changed="LoadAsync" Disabled="@(_connection is null || _bulkBusy || _refreshing)" />
-                                    </MudStack>
-                                </MudCardContent>
-                            </MudCard>
-                        }
-                    </MudStack>
-                </div>
-            }
-        }
+        </div>
     }
-</MudStack>
+}
+
+<AppSheet @bind-Open="_bulkPause" Title="Pause selected devices">
+    <MudStack Spacing="3">
+        <MudText>Pause and bonus-data controls save expiring claims for the Agent’s next tick. Protected targets are skipped.</MudText>
+        <MudButton OnClick="@(() => _bulkPause = false)" Variant="Variant.Filled" Color="Color.Primary">Close</MudButton>
+    </MudStack>
+</AppSheet>
+
+@code {
+    private string Icon(string name) => name switch
+    {
+        "refresh" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M20 7v5h-5M4 17v-5h5M5 7a8 8 0 0 1 14-1M5 18a8 8 0 0 0 14-1\"/></svg>",
+        "warning" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m12 3 10 18H2Z\"/><path d=\"M12 9v5m0 3h.1\"/></svg>",
+        "router" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"3\" y=\"12\" width=\"18\" height=\"8\" rx=\"2\"/><path d=\"M6 12V4m12 8V4M7 16h1m4 0h1m4 0h1\"/></svg>",
+        "devices" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"6\" y=\"2\" width=\"12\" height=\"20\" rx=\"3\"/><path d=\"M10 18h4\"/></svg>",
+        "pause" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M8 4v16m8-16v16\"/></svg>",
+        "tv" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"2\" y=\"4\" width=\"20\" height=\"13\" rx=\"2\"/><path d=\"M8 21h8m-4-4v4\"/></svg>",
+        "laptop" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"4\" y=\"3\" width=\"16\" height=\"13\" rx=\"2\"/><path d=\"M2 20h20l-2-4H4Z\"/></svg>",
+        "server" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"4\" y=\"3\" width=\"16\" height=\"7\" rx=\"2\"/><rect x=\"4\" y=\"14\" width=\"16\" height=\"7\" rx=\"2\"/><path d=\"M8 6h.1M8 17h.1m5-11h4m-4 11h4\"/></svg>",
+        "game" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M7 7h10c3 0 5 11 3 12s-5-4-6-4h-4c-1 0-4 5-6 4S4 7 7 7Z\"/><path d=\"M8 9v5m-2-2h4m6-2h.1m2 3h.1\"/></svg>",
+        "camera" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M3 7h12v11H3Zm12 4 6-3v10l-6-3M7 7l2-3h4\"/></svg>",
+        _ => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"10\"/></svg>"
+    };
+
+    private string IconFor(DeviceListRow row) => row.Device.LocalIconKey ?? row.Device.CategoryKey switch
+    {
+        "television" or "tv" => "tv",
+        "computer" or "laptop" or "desktop" => "laptop",
+        "server" or "nas" => "server",
+        "game_console" or "gaming" => "game",
+        "ip_camera" or "camera" => "camera",
+        _ => "devices"
+    };
+
+    /// <summary>Prototype restriction chip: throttle, block, protection, or no restriction.</summary>
+    private static MarkupString RestrictionChip(DeviceListRow row)
+    {
+        var kbps = row.Device.QuotaThrottle?.DownloadKbps;
+        if (row.IsThrottled)
+            return new MarkupString($"<span class=\"chip throttled\">{(kbps is { } value ? $"{value} Kbps · quota" : "Throttled")}</span>");
+        if (row.IsBlocked) return new MarkupString("<span class=\"chip blocked\">Blocked · recorded</span>");
+        if (row.IsProtected) return new MarkupString("<span class=\"chip ok\">Protected</span>");
+        return new MarkupString("<span class=\"chip\">No restriction</span>");
+    }
+}

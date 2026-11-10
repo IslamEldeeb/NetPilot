@@ -53,24 +53,23 @@ public sealed class BatchCRenderingTests
             Assert.DoesNotContain("Could not load", html);
             if (page == typeof(Usage))
             {
-                Assert.Contains("Export shown period CSV", html);
-                Assert.Contains("View exact chart values", html);
+                Assert.Contains("View chart data", html);
                 Assert.Contains("5000000000", html.Replace(",", ""));
-                Assert.Contains("Category ranking", html);
+                Assert.Contains("By category", html);
             }
             else
             {
-                Assert.Contains("protected from automatic restrictions", html);
-                Assert.Contains("newly discovered", html);
-                Assert.Contains("rule:bedtime", html);
-                Assert.Contains("Quick actions", html);
+                Assert.Contains("Restrictions & previews", html);
+                Assert.Contains("New device", html);
+                Assert.Contains("Bedtime throttle", html);
+                Assert.Contains("Make a quick adjustment", html);
             }
         }
         finally { Directory.Delete(directory, true); }
     }
 
     [Theory]
-    [InlineData(typeof(HomeDashboard), "Unknown · no observation for today")]
+    [InlineData(typeof(HomeDashboard), "No observation for today")]
     [InlineData(typeof(Usage), "No saved usage for this period")]
     public async Task EmptyStores_NeverShowUnknownUsageAsZeroOrInventBudget(Type page, string expected)
     {
@@ -89,8 +88,8 @@ public sealed class BatchCRenderingTests
     }
 
     [Theory]
-    [InlineData(typeof(HomeDashboard), "Loading home summary", "Could not load home summary")]
-    [InlineData(typeof(Usage), "Loading usage", "Could not load usage")]
+    [InlineData(typeof(HomeDashboard), "skeleton", "Could not load home summary")]
+    [InlineData(typeof(Usage), "skeleton", "Could not load usage")]
     public async Task PendingAndFailedRead_RenderLoadingThenActionableError(Type page, string loading, string error)
     {
         var directory = Path.Combine(Path.GetTempPath(), $"netpilot-batch-c-failure-{Guid.NewGuid():N}");

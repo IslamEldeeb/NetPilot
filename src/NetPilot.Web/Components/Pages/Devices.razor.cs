@@ -25,10 +25,9 @@ public partial class Devices : IDisposable
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
     [Inject] private ILogger<Devices> Logger { get; set; } = default!;
 
-    private bool _loaded, _refreshing, _bulkBusy, _onlineOnly, _restrictedOnly;
-    private bool _groupByCategory = true;
+    private bool _loaded, _refreshing, _bulkBusy, _bulkPause, _restrictedOnly;
     private string? _error;
-    private string _search = "", _category = "";
+    private string _search = "", _category = "", _connectionFilter = "all", _groupBy = "category";
     private DeviceSortKey _sort = DeviceSortKey.UsageTodayDesc;
     private RouterConnection? _connection;
     private IReadOnlyList<Device> _devices = [];
@@ -38,13 +37,20 @@ public partial class Devices : IDisposable
     private readonly HashSet<string> _selected = [];
     private DateTimeOffset? _lastRefresh;
     private readonly CancellationTokenSource _lifetime = new();
-    private IReadOnlyList<DeviceListRow> VisibleRows => DeviceList.Apply(_rows,
-        new(_search, _category, _onlineOnly, _restrictedOnly, _sort, _groupByCategory));
-    private IEnumerable<(string? Category, IEnumerable<DeviceListRow> Rows)> Sections => _groupByCategory
-        ? DeviceList.Group(VisibleRows).Select(g => ((string?)g.Key, (IEnumerable<DeviceListRow>)g))
-        : [(null, VisibleRows)];
-    private string CountText => $"{DeviceList.Counts(_rows).Online} online of {DeviceList.Counts(_rows).Total}";
+    private bool _groupByCategory => _groupBy != "none";
+    private IReadOnlyList<DeviceListRow> VisibleRows
+    {
+        get
+        {
+            var filtered = DeviceList.Apply(_rows,
+                new(_search, _category, _connectionFilter == "online", _restrictedOnly, _sort, _groupByCategory));
+            return _connectionFilter == "offline"
+                ? filtered.Where(row => !row.Device.Connection.IsOnline).ToList()
+                : filtered;
+        }
+    }
     private IEnumerable<string> Categories => _devices.Select(d => d.CategoryKey).Distinct().Order(StringComparer.OrdinalIgnoreCase);
+    private string CountText => $"{DeviceList.Counts(_rows).Total} known devices · {DeviceList.Counts(_rows).Online} online now";
 
     protected override async Task OnInitializedAsync() { await LoadAsync(); _ = WatchAsync(); }
     private async Task WatchAsync()
@@ -116,10 +122,6 @@ public partial class Devices : IDisposable
     }
 
     private void ToggleSelect(string mac, bool selected) { if (selected) _selected.Add(mac); else _selected.Remove(mac); }
-    private void SelectAll(bool selected)
-    {
-        foreach (var row in VisibleRows) ToggleSelect(row.Device.Mac, selected);
-    }
-    private void ClearFilters() { _search = ""; _category = ""; _onlineOnly = false; _restrictedOnly = false; }
+    private void ClearFilters() { _search = ""; _category = ""; _connectionFilter = "all"; _restrictedOnly = false; }
     public void Dispose() { _lifetime.Cancel(); _lifetime.Dispose(); }
 }

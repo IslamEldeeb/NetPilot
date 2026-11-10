@@ -8,40 +8,95 @@
 @inject Confirm Confirm
 @inject ISnackbar Snackbar
 @inject ILogger<SpeedPolicies> Logger
-<MudStack Spacing="3">
-    <MudText Typo="Typo.h2">Category speed policies</MudText>
-    <MudAlert Severity="Severity.Warning">Dry-run quotas/rules do not protect against base speed policy writes. Save awaits the Agent. Force reapply writes through the existing Web router path immediately.</MudAlert>
-    <MudText>Not configured: existing router limits are left alone. Saving a new category explicitly configures it. Blank direction means unlimited; download and upload are independent.</MudText>
-    @if (_error is not null) { <MudAlert Severity="Severity.Error" role="alert">@_error <MudButton OnClick="Reload">Reload saved policies</MudButton></MudAlert> }
-    <MudPaper Outlined Class="pa-4">
-        <MudText Typo="Typo.h3">Bulk fill (draft only)</MudText>
-        <MudCheckBox T="bool" @bind-Value="_bulkEnabled" Label="Limit enabled" />
-        <MudNumericField T="decimal?" Label="Download Mbps" @bind-Value="_bulkDown" Min="0" />
-        <MudNumericField T="decimal?" Label="Upload Mbps" @bind-Value="_bulkUp" Min="0" />
-        <MudButton OnClick="Fill" Disabled="_busy">Apply to all drafts</MudButton>
-    </MudPaper>
-    <MudStack Row Wrap="Wrap.Wrap">
-        <MudButton OnClick="SaveAll" Disabled="@(_busy || _rows.Count == 0)" Color="Color.Primary" Variant="Variant.Filled">Save all</MudButton>
-        <MudButton OnClick="SyncAll" Disabled="@(_busy || !_connected || _rows.Count == 0)">Force reapply all</MudButton>
-    </MudStack>
+@if (_error is not null)
+{
+    <div class="banner error" role="alert">
+        <span class="icon">@((MarkupString)Icon("warning"))</span>
+        <div>
+            <strong>Couldn’t save speed policies</strong>
+            <p>@_error</p>
+            <button class="outline" @onclick="Reload">Reload saved policies</button>
+        </div>
+    </div>
+}
+<div class="card">
+    <div class="section-head">
+        <h2>Category speed policies</h2>
+        <button class="outline" @onclick="@(() => _bulkOpen = true)">@((MarkupString)Icon("tune")) Bulk edit</button>
+    </div>
+    <p class="hint" style="margin-block-start:0">Base speed policies are independent of quota/rule dry-run. Unconfigured categories leave the router alone. Dry-run quotas and rules do not protect against base speed policy writes; save awaits the Agent.</p>
     @foreach (var row in _rows)
     {
-        <MudPaper Outlined Class="pa-4" @key="row.Original.CategoryKey">
-            <MudText Typo="Typo.h3">@row.Original.CategoryKey</MudText>
-            <MudText Typo="Typo.caption">Version @row.Original.DefinitionVersion · @(row.Original.IsUserConfigured ? "Configured" : "Not configured / not applied") · @_devices.Count(d => d.CategoryKey == row.Original.CategoryKey) saved devices</MudText>
-            <MudCheckBox T="bool" @bind-Value="row.Enabled" Label="Limit enabled (off = unlimited)" />
-            <MudGrid>
-                <MudItem xs="12" sm="6"><MudNumericField T="decimal?" Label="Download Mbps" @bind-Value="row.DownloadMbps" Min="0" /></MudItem>
-                <MudItem xs="12" sm="6"><MudNumericField T="decimal?" Label="Upload Mbps" @bind-Value="row.UploadMbps" Min="0" /></MudItem>
-            </MudGrid>
-            <MudStack Row Wrap="Wrap.Wrap"><MudButton OnClick="() => Save(row)" Disabled="_busy">Save</MudButton><MudButton OnClick="() => Reapply(row)" Disabled="@(_busy || !_connected)">Force reapply</MudButton></MudStack>
-        </MudPaper>
+        <div class="list-row" @key="row.Original.CategoryKey">
+            <div class="grow">
+                <h3>@row.Original.CategoryKey.Replace('_', ' ')</h3>
+                <p>@Summary(row) · Version @row.Original.DefinitionVersion · @(row.Original.IsUserConfigured ? "Configured" : "Not applied") · @_devices.Count(d => d.CategoryKey == row.Original.CategoryKey) saved devices</p>
+            </div>
+            <button class="text-button" @onclick="@(() => Edit(row))">Edit</button>
+            <button class="outline" @onclick="@(() => Reapply(row))" disabled="@(_busy || !_connected)">Force reapply</button>
+        </div>
     }
-</MudStack>
+    @if (_rows.Count == 0)
+    {
+        <p class="hint">No categories are seeded yet.</p>
+    }
+    <div class="actions">
+        <button class="button" @onclick="SaveAll" disabled="@(_busy || _rows.Count == 0)">Save all</button>
+        <button class="outline" @onclick="SyncAll" disabled="@(_busy || !_connected || _rows.Count == 0)">Sync all</button>
+    </div>
+</div>
+
+@if (_editing is not null)
+{
+    <section class="card" style="margin-block-start:20px">
+        <div class="section-head"><h2>Edit @_editing.Original.CategoryKey.Replace('_', ' ')</h2></div>
+        <label class="check-row">
+            <input type="checkbox" checked="@_editing.Enabled" @onchange="e => _editing.Enabled = e.Value is true" />
+            <span>Limit enabled<small>Off means unlimited. Download and upload are independent.</small></span>
+        </label>
+        <div class="form-grid" style="margin-block-start:16px">
+            <label class="field">Download Mbps
+                <input type="number" min="0" step="0.1" value="@_editing.DownloadMbps" @onchange="e => _editing.DownloadMbps = Parse(e.Value?.ToString())" />
+            </label>
+            <label class="field">Upload Mbps
+                <input type="number" min="0" step="0.1" value="@_editing.UploadMbps" @onchange="e => _editing.UploadMbps = Parse(e.Value?.ToString())" />
+            </label>
+        </div>
+        <div class="actions">
+            <button class="button" @onclick="@(() => Save(_editing))" disabled="@_busy">Save</button>
+            <button class="text-button" @onclick="@(() => _editing = null)">Close</button>
+        </div>
+    </section>
+}
+
+@if (_bulkOpen)
+{
+    <section class="card" style="margin-block-start:20px">
+        <div class="section-head"><h2>Bulk fill (draft only)</h2></div>
+        <label class="check-row">
+            <input type="checkbox" checked="@_bulkEnabled" @onchange="e => _bulkEnabled = e.Value is true" />
+            <span>Limit enabled</span>
+        </label>
+        <div class="form-grid" style="margin-block-start:16px">
+            <label class="field">Download Mbps
+                <input type="number" min="0" step="0.1" value="@_bulkDown" @onchange="e => _bulkDown = Parse(e.Value?.ToString())" />
+            </label>
+            <label class="field">Upload Mbps
+                <input type="number" min="0" step="0.1" value="@_bulkUp" @onchange="e => _bulkUp = Parse(e.Value?.ToString())" />
+            </label>
+        </div>
+        <div class="actions">
+            <button class="button" @onclick="Fill">Apply to all drafts</button>
+            <button class="text-button" @onclick="@(() => _bulkOpen = false)">Close</button>
+        </div>
+    </section>
+}
+
 @code {
     private List<SpeedPolicyDraft> _rows = [];
     private IReadOnlyList<Device> _devices = [];
-    private bool _bulkEnabled, _busy, _connected;
+    private bool _bulkEnabled, _busy, _connected, _bulkOpen;
+    private SpeedPolicyDraft? _editing;
     private decimal? _bulkDown, _bulkUp;
     private string? _error;
     protected override Task OnInitializedAsync() => Reload();
@@ -53,14 +108,20 @@
         _rows = (await Policies.GetAllAsync(default)).Select(SpeedPolicyDraft.From).OrderBy(p => p.Original.CategoryKey).ToList();
         _connected = await Connections.GetAsync(default) is not null;
     }
+    private static decimal? Parse(string? value) => decimal.TryParse(value, System.Globalization.NumberStyles.Float,
+        System.Globalization.CultureInfo.InvariantCulture, out var parsed) ? parsed : null;
+    private static string Summary(SpeedPolicyDraft row) => row.Enabled
+        ? $"{row.DownloadMbps ?? 0:0.#} Mbps ↓ / {(row.UploadMbps is { } up ? $"{up:0.#} Mbps ↑" : "— Mbps ↑")}"
+        : "Unlimited";
     private void Fill() { foreach (var row in _rows) { row.Enabled = _bulkEnabled; row.DownloadMbps = _bulkDown; row.UploadMbps = _bulkUp; } }
+    private void Edit(SpeedPolicyDraft row) => _editing = row;
     private async Task Persist(SpeedPolicyDraft row, DevicePolicy changed)
     {
         var current = await Policies.FindByCategoryAsync(row.Original.CategoryKey, default);
         if (current != row.Original) throw new InvalidOperationException("Category policy changed elsewhere. Reopen Speed policies before saving.");
         await Policies.UpsertAsync(changed, default); row.Original = changed;
     }
-    private Task Save(SpeedPolicyDraft row) => Run(async () => { await Persist(row, row.SavedPolicy()); Snackbar.Add("Policy saved. Awaiting Agent."); });
+    private Task Save(SpeedPolicyDraft row) => Run(async () => { await Persist(row, row.SavedPolicy()); Snackbar.Add("Policy saved. Awaiting Agent."); _editing = null; });
     private Task SaveAll() => Run(async () => { foreach (var row in _rows) await Persist(row, row.SavedPolicy()); Snackbar.Add("Policies saved. Awaiting Agent."); });
     private async Task Reapply(SpeedPolicyDraft row)
     {
@@ -78,6 +139,12 @@
         catch (Exception ex) when (ex is not OperationCanceledException)
         { Logger.LogWarning(ex, "Immediate policy reapply failed"); _error = "Policies saved, but immediate reapply failed. The Agent retries on its next tick; check Activity."; }
     }
+    private string Icon(string name) => name switch
+    {
+        "tune" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M3 6h18M3 12h18M3 18h18M7 3v6m10 0v6M9 15v6\"/></svg>",
+        "warning" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m12 3 10 18H2Z\"/><path d=\"M12 9v5m0 3h.1\"/></svg>",
+        _ => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"10\"/></svg>"
+    };
     private async Task Run(Func<Task> action)
     {
         if (_busy) return;

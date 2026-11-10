@@ -23,74 +23,142 @@
 @inject ILogger<RulesPanel> Logger
 @inject Confirm Confirm
 @inject NavigationManager Navigation
-<MudStack Spacing="3">
-    <MudText Typo="Typo.h2">@(Schedules ? "Schedules" : "Rules")</MudText>
-    @if (Options.ForceDryRun) { <MudAlert Severity="Severity.Warning">Forced dry-run: no new router effects. Existing live effects are released on the Agent's next tick. NETPILOT_RULES_FORCE_DRYRUN remains true until Internet counters/T8 are verified.</MudAlert> }
-    @if (!Options.Enabled) { <MudAlert Severity="Severity.Warning">Rules kill switch is active. New firings stop and existing effects release on the Agent's next tick.</MudAlert> }
-    <MudText Typo="Typo.caption">Kill switch: set NetPilot:Rules:Enabled=false (Docker NETPILOT_RULES_ENABLED=false) and redeploy both services. Web configuration is not verified Agent runtime state. Agent cadence: about @TickMinutes minutes.</MudText>
-    @if (_error is not null) { <MudAlert Severity="Severity.Error" role="alert">@_error <MudButton OnClick="Reload">Refresh</MudButton></MudAlert> }
-    @if (!_loaded) { <MudSkeleton Height="100px" aria-label="Loading rules" /> }
+@if (_error is not null)
+{
+    <div class="banner error" role="alert">
+        <span class="icon">@((MarkupString)Icon("warning"))</span>
+        <div>
+            <strong>Couldn’t load rules</strong>
+            <p>@_error</p>
+            <button class="outline" @onclick="Reload">Refresh</button>
+        </div>
+    </div>
+}
+@if (!_loaded)
+{
+    <div class="skeleton-wrap" aria-busy="true">
+        <div class="skeleton"></div>
+        <div class="skeleton"></div>
+    </div>
+}
+else
+{
+    @if (Schedules)
+    {
+        <div class="banner info">
+            <span class="icon">@((MarkupString)Icon("clock"))</span>
+            <p>Schedules are TimeWindow rules with the same rule IDs and evaluator. Overnight uses the starting weekday in @Clock.TimeZone.Id; start and end follow Agent cadence.</p>
+        </div>
+        <div class="grid">
+            <section class="card span-8 tablet-full">
+                <div class="section-head"><h2>Bedtime, with a safe morning</h2></div>
+                @foreach (var rule in VisibleRules.OrderBy(r => r.Name))
+                {
+                    <div class="list-row">
+                        <span class="symbol-tile large">@((MarkupString)Icon("clock"))</span>
+                        <div class="grow">
+                            <h3>@rule.Name</h3>
+                            <p>@RuleSummary.Describe(rule)</p>
+                            <span class="chip dry">TimeWindow rule</span>
+                        </div>
+                        <a class="text-button" href="@($"/automations/rules/{rule.Id}/edit")">Edit</a>
+                    </div>
+                }
+                @if (!VisibleRules.Any())
+                {
+                    <p class="hint">No bedtime rule is saved yet. Start from the bedtime template.</p>
+                }
+                <p class="hint">Starts and ends on the Agent’s next tick, not exactly at the displayed minute. Per-person calendars need new backend work.</p>
+                <div class="actions">
+                    <button class="button" @onclick="New">@((MarkupString)Icon("add")) Set bedtime</button>
+                </div>
+            </section>
+            <section class="card span-4 tablet-full">
+                <div class="section-head"><h2>Keep management reachable</h2></div>
+                <p>Protected devices skip automatic throttle and block. Main WiFi cannot be changed by a rule.</p>
+                <a href="/settings/safety" class="text-button">@((MarkupString)Icon("arrow")) Safety Center</a>
+            </section>
+        </div>
+    }
     else
     {
-        @if (Schedules) { <MudAlert Severity="Severity.Info">Schedules are TimeWindow rules with the same rule IDs and evaluator. Overnight uses the starting weekday in @Clock.TimeZone.Id; start and end follow Agent cadence.</MudAlert> }
-        <MudStack Row Wrap="Wrap.Wrap">
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="New">@(Schedules ? "Set bedtime" : "Create rule")</MudButton>
-            <MudButton OnClick="Reload">Refresh saved state</MudButton>
-        </MudStack>
-        <MudExpansionPanels>
-            <MudExpansionPanel Text="Start from a template (unsaved)" Expanded="@(_rules.Count == 0 || new Uri(Navigation.Uri).AbsolutePath.EndsWith("/templates", StringComparison.Ordinal))">
-                <MudGrid>
-                    @foreach (var template in TemplateCatalog.All.Where(t => !Schedules || t.Create().Trigger is TimeWindow))
-                    {
-                        <MudItem xs="12" sm="6"><MudPaper Outlined Class="pa-3">
-                            <MudText Typo="Typo.h3">@template.Name</MudText><MudText>@template.Description</MudText><MudText Typo="Typo.caption">@template.Hint</MudText>
-                            <MudButton OnClick="() => Start(template)">Start @template.Name</MudButton>
-                        </MudPaper></MudItem>
-                    }
-                </MudGrid>
-            </MudExpansionPanel>
-        </MudExpansionPanels>
-        @if (!VisibleRules.Any()) { <MudText>No saved @(Schedules ? "schedules" : "rules") yet. Start from a template.</MudText> }
-        @foreach (var rule in VisibleRules.OrderBy(r => r.Name))
-        {
-            <MudPaper Outlined Class="pa-4" @key="rule.Id">
-                <MudText Typo="Typo.h3">@rule.Name</MudText>
-                <MudText>@RuleSummary.Describe(rule)</MudText>
-                <MudText Typo="Typo.caption">Rule ID @rule.Id · Last fired @LocalTime(_firings.Where(f => f.RuleId == rule.Id).OrderByDescending(f => f.FiredAtUtc).FirstOrDefault()?.FiredAtUtc) · Active @_firings.Count(f => f.RuleId == rule.Id && f.Status == RuleFiringStatus.Active)</MudText>
-                <MudStack Row Wrap="Wrap.Wrap">
-                    <MudCheckBox T="bool" Value="rule.Enabled" ValueChanged="enabled => Toggle(rule, enabled)" Disabled="_busy" Label="Enabled" />
-                    <MudCheckBox T="bool" Value="rule.DryRun" ValueChanged="enabled => MakeDryRun(rule, enabled)" Disabled="@(_busy || rule.DryRun)" Label="Dry-run" />
-                    <MudButton Href="@($"/automations/rules/{rule.Id}/edit")">Edit</MudButton>
-                    <MudButton Href="@($"/automations/rules/{rule.Id}/history")">History / Why</MudButton>
-                    <MudButton OnClick="() => Preview(rule)">Preview now</MudButton>
-                    <MudButton Color="Color.Error" Disabled="_busy" OnClick="() => Delete(rule)">Delete</MudButton>
-                </MudStack>
-            </MudPaper>
-        }
-        <RulesHistory Firings="_firings" Rules="_rules" Devices="_devices" Claims="_claims" InitialRuleId="@(IsHistory ? RuleId?.ToString() : null)" Busy="_busy" ReleaseRequested="Release" />
-        @if (!Schedules)
-        {
-            <MudExpansionPanels><MudExpansionPanel Text="Rules JSON export / import">
-                <MudText>Version 1. Export contains rule configuration only. Import validates all IDs, never overwrites existing IDs, and creates DRY-RUN rules. To clone a rule, give it a new GUID.</MudText>
-                <MudButton OnClick="Export">Prepare export</MudButton>
-                @if (_export.Length > 0) { <MudButton Href="@("data:application/json;charset=utf-8," + Uri.EscapeDataString(_export))" download="netpilot-rules-v1.json">Download rules JSON</MudButton><MudTextField T="string" Label="Exported rules JSON" Value="_export" ReadOnly Lines="5" /> }
-                <MudTextField T="string" Label="Import rules JSON (or choose a file)" @bind-Value="_import" Lines="5" MaxLength="20000" />
-                <InputFile OnChange="ReadImportFile" accept=".json,application/json" aria-label="Choose rules JSON file (up to 1 MB)" />
-                <MudButton OnClick="Import" Disabled="@(_busy || string.IsNullOrWhiteSpace(_import))">Import as dry-run</MudButton>
-            </MudExpansionPanel></MudExpansionPanels>
-        }
-        @if (_editing is not null)
-        {
-            <AppSheet Open Title="@(_before is null ? "Create rule" : "Edit rule")" OpenChanged="Close">
-                <RuleWizard @key="_editing.Id" Initial="_editing" Hint="_hint" Devices="_devices" Categories="_categories" PreviewContext="_context" Busy="_busy" Saved="Save" />
-            </AppSheet>
-        }
-        @if (_preview is not null)
-        {
-            <AppSheet Open Title="Current-state preview" OpenChanged="ClosePreview"><RulePreviewView Rule="_preview" Context="_context" /></AppSheet>
-        }
+        <div class="banner info">
+            <span class="icon">@((MarkupString)Icon("eye"))</span>
+            <div>
+                <p><strong>Rules are in forced dry-run.</strong> Docker configuration overrides individual flags. Dry-run can still send notifications.</p>
+                <p class="hint">Kill switch: set NetPilot:Rules:Enabled=false (Docker NETPILOT_RULES_ENABLED=false) and redeploy both services. Web configuration is not verified Agent runtime state. Agent cadence: about @TickMinutes minutes.</p>
+                <span class="chip dry">Forced dry-run</span>
+            </div>
+        </div>
+        <div class="card">
+            <div class="section-head">
+                <h2>Saved rules</h2>
+                <button class="button" @onclick="New">@((MarkupString)Icon("add")) Create rule</button>
+            </div>
+            @if (!VisibleRules.Any())
+            {
+                <p class="hint">No saved rules yet. Start from a template.</p>
+            }
+            @foreach (var rule in VisibleRules.OrderBy(r => r.Name))
+            {
+                <div class="list-row" @key="rule.Id">
+                    <span class="symbol-tile">@((MarkupString)Icon("automations"))</span>
+                    <div class="grow">
+                        <h3>@rule.Name</h3>
+                        <p>@RuleSummary.Describe(rule)</p>
+                        <span class="chip @(rule.Enabled ? "ok" : "")">@(rule.Enabled ? "Enabled" : "Disabled")</span>
+                        <span class="chip dry">@(rule.DryRun ? "Forced dry-run" : "Dry-run off")</span>
+                        <small>Rule ID @rule.Id · Last fired @LocalTime(_firings.Where(f => f.RuleId == rule.Id).OrderByDescending(f => f.FiredAtUtc).FirstOrDefault()?.FiredAtUtc) · Active @_firings.Count(f => f.RuleId == rule.Id && f.Status == RuleFiringStatus.Active)</small>
+                    </div>
+                    <div class="actions">
+                        <a class="text-button" href="@($"/automations/rules/{rule.Id}/edit")">Edit</a>
+                        <a class="text-button" href="@($"/automations/rules/{rule.Id}/history")">History / Why</a>
+                        <button class="text-button" @onclick="() => Preview(rule)">Preview now</button>
+                        <button class="text-button" @onclick="() => Delete(rule)" disabled="@_busy">Delete</button>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <section class="card" style="margin-block-start:20px">
+            <div class="section-head"><h2>Start with a template</h2><small>Unsaved until you choose Save</small></div>
+            <div class="template-grid">
+                @foreach (var template in TemplateCatalog.All)
+                {
+                    <button class="template" @onclick="() => Start(template)">
+                        <strong>@template.Name</strong>
+                        <small>@template.Hint</small>
+                    </button>
+                }
+            </div>
+            <button class="text-button" @onclick="Reload">@((MarkupString)Icon("eye")) Preview last 7 days</button>
+        </section>
     }
-</MudStack>
+
+    <RulesHistory Firings="_firings" Rules="_rules" Devices="_devices" Claims="_claims" InitialRuleId="@(IsHistory ? RuleId?.ToString() : null)" Busy="_busy" ReleaseRequested="Release" />
+    @if (!Schedules)
+    {
+        <details class="card" style="margin-block-start:20px">
+            <summary>Rules JSON export / import</summary>
+            <p class="hint">Version 1. Export contains rule configuration only. Import validates all IDs, never overwrites existing IDs, and creates DRY-RUN rules. To clone a rule, give it a new GUID.</p>
+            <button class="outline" @onclick="Export">Prepare export</button>
+            @if (_export.Length > 0) { <a href="@("data:application/json;charset=utf-8," + Uri.EscapeDataString(_export))" download="netpilot-rules-v1.json" class="button">Download rules JSON</a> }
+            <MudTextField T="string" Label="Import rules JSON (or choose a file)" @bind-Value="_import" Lines="5" MaxLength="20000" />
+            <InputFile OnChange="ReadImportFile" accept=".json,application/json" aria-label="Choose rules JSON file (up to 1 MB)" />
+            <button class="button" @onclick="Import" disabled="@(_busy || string.IsNullOrWhiteSpace(_import))">Import as dry-run</button>
+        </details>
+    }
+    @if (_editing is not null)
+    {
+        <AppSheet Open Title="@(_before is null ? "Create rule" : "Edit rule")" OpenChanged="Close">
+            <RuleWizard @key="_editing.Id" Initial="_editing" Hint="_hint" Devices="_devices" Categories="_categories" PreviewContext="_context" Busy="_busy" Saved="Save" />
+        </AppSheet>
+    }
+    @if (_preview is not null)
+    {
+        <AppSheet Open Title="Current-state preview" OpenChanged="ClosePreview"><RulePreviewView Rule="_preview" Context="_context" /></AppSheet>
+    }
+}
 @code {
     [Parameter] public bool Schedules { get; set; }
     [Parameter] public Guid? RuleId { get; set; }
@@ -189,6 +257,16 @@
     }
     private Task ClosePreview(bool open) { if (!open) _preview = null; return Task.CompletedTask; }
     private string LocalTime(DateTimeOffset? at) => at is {} utc ? TimeZoneInfo.ConvertTime(utc, Clock.TimeZone).ToString("yyyy-MM-dd HH:mm:ss") : "Never";
+    private string Icon(string name) => name switch
+    {
+        "add" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 4v16M4 12h16\"/></svg>",
+        "arrow" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M4 12h16m-6-6 6 6-6 6\"/></svg>",
+        "clock" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 6v6l4 2\"/></svg>",
+        "automations" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m13 2-9 12h7l-1 8 10-13h-7Z\"/></svg>",
+        "eye" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/></svg>",
+        "warning" => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m12 3 10 18H2Z\"/><path d=\"M12 9v5m0 3h.1\"/></svg>",
+        _ => "<svg class=\"icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"10\"/></svg>"
+    };
     private async Task Run(Func<Task> action)
     {
         if (_busy) return;
