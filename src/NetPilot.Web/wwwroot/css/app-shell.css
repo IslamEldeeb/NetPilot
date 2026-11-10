@@ -283,7 +283,11 @@ html[data-theme=dark] .np-shell[data-theme-ready=false] { visibility:hidden; }
 }
 
 /* ── Main content ── */
-.np-main-content { padding-block-end:calc(96px + env(safe-area-inset-bottom)); }
+.np-main-content {
+  /* The app bar is in the content flow, so it needs no fixed-bar offset. */
+  padding-block-start:0;
+  padding-block-end:calc(96px + env(safe-area-inset-bottom));
+}
 .np-main-content main {
   padding:36px 32px 40px;
   max-inline-size:1424px;
