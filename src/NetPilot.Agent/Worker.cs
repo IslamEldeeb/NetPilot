@@ -13,7 +13,7 @@ namespace NetPilot.Agent;
 
 /// <summary>
 /// The reconciliation loop: one read, per-device fingerprint compare, write only what's
-/// wrong — every {PollIntervalSeconds} (default 180s). Never crashes the whole worker on a
+/// wrong — every {PollIntervalSeconds} (default 360s). Never crashes the whole worker on a
 /// single bad tick (router offline, bad password, transient network error); logs and
 /// retries next tick instead.
 /// </summary>
@@ -30,7 +30,7 @@ public class Worker(
     RuleEvaluationService ruleEvaluationService,
     IAgentHeartbeatStore heartbeatStore,
     RulesOptions rulesOptions,
-    TimeProvider clock, TemporaryActionEnforcement? temporaryActions = null) : BackgroundService
+    TimeProvider clock, TemporaryActionEnforcement? temporaryActions = null, IRouterPollingSettingsStore? pollingSettings = null) : BackgroundService
 {
     private bool _connected;
     private AgentHeartbeat _heartbeat = new();
@@ -41,11 +41,10 @@ public class Worker(
         await SeedConnectionFromEnvironmentAsync(stoppingToken);
 
         await LoadHeartbeatAsync(stoppingToken);
-        var pollInterval = TimeSpan.FromSeconds(configuration.GetValue("NetPilot:PollIntervalSeconds", 180));
         while (!stoppingToken.IsCancellationRequested)
         {
             await RunHeartbeatTickAsync(stoppingToken);
-            await Task.Delay(pollInterval, stoppingToken);
+            await Task.Delay(TimeSpan.FromSeconds(await GetPollingIntervalAsync(stoppingToken)), stoppingToken);
         }
     }
 
@@ -73,12 +72,24 @@ public class Worker(
         await CompleteHeartbeatAsync(provider, started, error, ct);
     }
 
+    private async Task<int> GetPollingIntervalAsync(CancellationToken ct)
+    {
+        try
+        {
+            var saved = pollingSettings is null ? null : await pollingSettings.GetIntervalSecondsAsync(ct);
+            if (saved is >= RouterPollingSettings.MinimumSeconds and <= RouterPollingSettings.MaximumSeconds) return saved.Value;
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        { logger.LogWarning("Could not read polling settings; using configured interval."); }
+        return configuration.GetValue("NetPilot:PollIntervalSeconds", 360);
+    }
+
     private async Task StartHeartbeatAsync(CancellationToken ct)
     {
         _heartbeat = _heartbeat with
         {
             LastTickStartedUtc = clock.GetUtcNow(),
-            TickIntervalSeconds = configuration.GetValue("NetPilot:PollIntervalSeconds", 180),
+            TickIntervalSeconds = await GetPollingIntervalAsync(ct),
             AppVersion = typeof(Worker).Assembly.GetName().Version?.ToString() ?? "unknown",
             EffectiveModes = new(rulesOptions.ForceDryRun, rulesOptions.Enabled)
         };

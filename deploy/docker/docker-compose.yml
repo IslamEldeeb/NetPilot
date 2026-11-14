@@ -1,18 +1,21 @@
 services:
   netpilot-agent:
     image: netpilot/agent:latest
+    # LiteDB's named mutex requires both a shared lock directory and PID namespace.
+    pid: host
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile.agent
     volumes:
       - netpilot-data:/data
+      - netpilot-locks:/root/.dotnet/corefx/Runtime/SharedMemory
     environment:
       - ROUTER_HOST=${ROUTER_HOST:-}
       - ROUTER_PASSWORD=${ROUTER_PASSWORD:-}
       - NetPilot__Rules__ForceDryRun=${NETPILOT_RULES_FORCE_DRYRUN:-true}
       - NetPilot__TemporaryActions__ForceDryRun=${NETPILOT_TEMPORARY_FORCE_DRYRUN:-true}
       - NetPilot__Rules__Enabled=${NETPILOT_RULES_ENABLED:-true}
-      - NetPilot__PollIntervalSeconds=${NETPILOT_POLL_INTERVAL_SECONDS:-180}
+      - NetPilot__PollIntervalSeconds=${NETPILOT_POLL_INTERVAL_SECONDS:-360}
       - NetPilot__Notifications__VapidSubject=${NETPILOT_VAPID_SUBJECT:-mailto:netpilot@localhost}
       - NetPilot__LocalTraffic__Url=${NETPILOT_LANTRAFFIC_URL:-}
       - NetPilot__LocalTraffic__Token=${NETPILOT_LANTRAFFIC_TOKEN:-}
@@ -26,11 +29,13 @@ services:
 
   netpilot-web:
     image: netpilot/web:latest
+    pid: host
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile.web
     volumes:
       - netpilot-data:/data
+      - netpilot-locks:/root/.dotnet/corefx/Runtime/SharedMemory
     environment:
       # Default-on app shell; false restores the classic root dashboard.
       - NetPilot__Ui__RedesignEnabled=${NETPILOT_UI_REDESIGN:-true}
@@ -39,7 +44,7 @@ services:
       - NetPilot__Rules__ForceDryRun=${NETPILOT_RULES_FORCE_DRYRUN:-true}
       - NetPilot__TemporaryActions__ForceDryRun=${NETPILOT_TEMPORARY_FORCE_DRYRUN:-true}
       - NetPilot__Rules__Enabled=${NETPILOT_RULES_ENABLED:-true}
-      - NetPilot__PollIntervalSeconds=${NETPILOT_POLL_INTERVAL_SECONDS:-180}
+      - NetPilot__PollIntervalSeconds=${NETPILOT_POLL_INTERVAL_SECONDS:-360}
       - NetPilot__Notifications__VapidSubject=${NETPILOT_VAPID_SUBJECT:-mailto:netpilot@localhost}
       - NetPilot__LocalTraffic__Url=${NETPILOT_LANTRAFFIC_URL:-}
       - NetPilot__LocalTraffic__Token=${NETPILOT_LANTRAFFIC_TOKEN:-}
@@ -56,3 +61,4 @@ services:
 
 volumes:
   netpilot-data:
+  netpilot-locks:

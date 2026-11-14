@@ -86,7 +86,7 @@ else
             <span class="icon">@((MarkupString)Icon("eye"))</span>
             <div>
                 <p><strong>Rules are in forced dry-run.</strong> Docker configuration overrides individual flags. Dry-run can still send notifications.</p>
-                <p class="hint">Kill switch: set NetPilot:Rules:Enabled=false (Docker NETPILOT_RULES_ENABLED=false) and redeploy both services. Web configuration is not verified Agent runtime state. Agent cadence: about @TickMinutes minutes.</p>
+                <p class="hint">Kill switch: set NetPilot:Rules:Enabled=false (Docker NETPILOT_RULES_ENABLED=false) and redeploy both services. Web configuration is not verified Agent runtime state. See Settings for the router refresh interval.</p>
                 <span class="chip dry">Forced dry-run</span>
             </div>
         </div>
@@ -174,7 +174,6 @@ else
     private bool _loaded, _busy;
     private bool IsHistory => new Uri(Navigation.Uri).AbsolutePath.EndsWith("/history", StringComparison.Ordinal);
     private IEnumerable<Rule> VisibleRules => _rules.Where(r => !Schedules || r.Trigger is TimeWindow);
-    private string TickMinutes => (Configuration.GetValue("NetPilot:PollIntervalSeconds", 180) / 60m).ToString("0.##");
     protected override async Task OnInitializedAsync()
     {
         await Reload();
@@ -229,7 +228,7 @@ else
     });
     private async Task Delete(Rule rule)
     {
-        if (!await Confirm.DangerAsync("Delete rule?", $"Delete {rule.Name}? Active effects release on the Agent's next tick (about {TickMinutes} minutes). Other rules and quotas may still restrict devices.")) return;
+        if (!await Confirm.DangerAsync("Delete rule?", $"Delete {rule.Name}? Active effects release on the Agent's next tick. Other rules and quotas may still restrict devices.")) return;
         await Run(async () => { Saved(await Commands.SaveRuleAsync(rule, null, default), "Rule deleted."); await Load(); });
     }
     private void Saved(AutomationChange change, string message) => Feedback.Saved(change, message, Schedules ? "/automations/schedules" : "/automations/rules");

@@ -38,7 +38,7 @@ public partial class Usage : IDisposable
     {
         _date = DateOnly.TryParseExact(Date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed) && parsed.Year is >= 2 and <= 9998 ? parsed.ToDateTime(TimeOnly.MinValue)
             : DateOnly.ParseExact(Clock.TodayKey(), "yyyy-MM-dd", CultureInfo.InvariantCulture).ToDateTime(TimeOnly.MinValue);
-        _period = Enum.TryParse<ReportPeriod>(Period, true, out var period) && Enum.IsDefined(period) ? period : ReportPeriod.Day;
+        _period = Enum.TryParse<ReportPeriod>(Period, true, out var period) && Enum.IsDefined(period) ? period : ReportPeriod.Month;
         _mac = MacAddress.TryParse(DeviceMac, out var mac) ? mac.ToString() : "";
         await LoadAsync();
         if (EditBudget) OpenBudget();

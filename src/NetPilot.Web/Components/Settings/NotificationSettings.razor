@@ -13,7 +13,6 @@
 <MudStack Spacing="4">
     <NotificationPreferencesEditor />
     <MudStack Row="true" Wrap="Wrap.Wrap"><MudText Typo="Typo.h2">This browser</MudText><MudButton OnClick="RefreshAsync" Disabled="_busy">Refresh / Retry</MudButton></MudStack>
-    <MudText Typo="Typo.caption">Quota actions are saved for the Agent’s next tick. Other exceeded quotas or rule claims may still restrict a device.</MudText>
     @if (_message is not null) { <MudAlert Severity="@(_failed ? Severity.Error : Severity.Info)" role="status">@_message</MudAlert> }
     @if (_status is null) { <MudText>Browser support and HTTPS status are unknown until the interactive browser connects.</MudText> }
     else
@@ -46,12 +45,14 @@
             <MudButton OnClick="@(() => RemoveAsync(subscription.Id))" Disabled="_busy" Color="Color.Error">Remove @(subscription.Label ?? "subscription")</MudButton>
         </MudPaper>
     }
+    <details class="settings-details"><summary>Notification history &amp; diagnostics</summary>
     <MudText Typo="Typo.h2">Recent notifications</MudText>
     <MudText Typo="Typo.caption">Last 20 channel attempts · @Clock.TimeZone.Id. Suppressed events are dropped, not queued.</MudText>
     @if (_log.Count == 0) { <MudText>No attempts recorded.</MudText> }
     @foreach (var entry in _log) { <MudText>@LocalTime(entry.AtUtc) · @entry.ChannelId · @entry.Outcome</MudText> }
     <MudText Typo="Typo.h2">Effective deployment settings</MudText>
     <MudText>VAPID contact: @Options.VapidSubject · Dedupe: @Options.DedupeWindowHours hours · Action lifetime: @Options.ActionTokenHours hours</MudText>
+    </details>
 </MudStack>
 
 @code {

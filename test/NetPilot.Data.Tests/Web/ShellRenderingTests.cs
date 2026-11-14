@@ -263,11 +263,11 @@ public sealed class ShellRenderingTests
     [Theory]
     [InlineData("router", "Router connection")]
     [InlineData("wireless", "Main WiFi")]
-    [InlineData("notifications", "Shared notification preferences")]
-    [InlineData("health", "LAN exclusion / T8")]
-    [InlineData("traffic", "Accuracy: Not automatically verified")]
-    [InlineData("app", "HTTPS and installation")]
-    [InlineData("about", "Database size is not measured")]
+    [InlineData("notifications", "Notification preferences")]
+    [InlineData("health", "Network status")]
+    [InlineData("traffic", "Network status")]
+    [InlineData("app", "Network status")]
+    [InlineData("about", "Network status")]
     [InlineData("appearance", "System")]
     [InlineData("backup", "Download backup")]
     [InlineData("security", "Dashboard access")]
@@ -416,6 +416,7 @@ public sealed class ShellRenderingTests
         services.AddScoped<ActivityInboxState>();
         services.AddScoped<AutomationFeedback>();
         services.AddScoped<DeviceRouterActions>();
+        services.AddSingleton<RouterSyncJobs>();
         services.AddScoped<NetPilot.Web.Features.UsageOverviewQuery>();
         services.AddSingleton(new NetPilot.Core.Actions.TemporaryActionOptions());
         services.AddScoped<SettingsRouterActions>();

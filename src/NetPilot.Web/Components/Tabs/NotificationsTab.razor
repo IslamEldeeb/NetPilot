@@ -12,7 +12,7 @@
 
 <div class="np-notifications">
     <div class="np-section-head"><h3>Notifications</h3><button type="button" class="btn btn-outline-secondary btn-sm" disabled="@_busy" @onclick="RefreshAsync">Refresh</button></div>
-    <p class="np-device-sub">Quota actions take effect on the Agent's next tick (default 180 seconds). Other exceeded quotas may still restrict a device.</p>
+    <p class="np-device-sub">Quota actions take effect on the Agent's next tick. Other exceeded quotas may still restrict a device.</p>
     @if (_message is not null)
     {
         <div class="alert @(_failed ? "alert-danger" : "alert-info")" role="status">@_message</div>

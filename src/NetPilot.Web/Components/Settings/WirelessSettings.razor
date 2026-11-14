@@ -7,12 +7,12 @@
 @inject Confirm Confirm
 <MudStack Spacing="3">
     <MudText Typo="Typo.h2">Wireless</MudText>
-    <MudText>Guest and IoT changes contact the router directly. Changes can disconnect devices; protection only covers automatic device throttle/block.</MudText>
-    <MudButton OnClick="RefreshAsync" Disabled="@(_busy || !_configured || !Provider.Capabilities.SupportsWirelessRead)" Variant="Variant.Outlined">@(_busy ? "Working…" : "Refresh wireless / Retry")</MudButton>
+    <MudText>Manage guest and IoT networks. Changes are sent directly to the router and may disconnect devices.</MudText>
+    <MudButton OnClick="RefreshAsync" Disabled="@(_busy || !_configured || !Provider.Capabilities.SupportsWirelessRead)" Variant="Variant.Outlined">@(_busy ? "Working…" : "Load networks from router")</MudButton>
     @if (!_configured) { <MudLink Href="/settings/router">Configure a router first</MudLink> }
     @if (!Provider.Capabilities.SupportsWirelessRead) { <MudAlert Severity="Severity.Info">Wireless reads are unsupported by this provider.</MudAlert> }
     @if (_message is not null) { <MudAlert Severity="@(_failed ? Severity.Error : Severity.Info)" role="status">@_message</MudAlert> }
-    @if (_networks.Count == 0) { <MudText>No wireless snapshot. Refresh explicitly to contact the router.</MudText> }
+    @if (_networks.Count == 0) { <MudText>Load networks to view their current settings.</MudText> }
     @foreach (var network in _networks.Where(n => n.Id.Kind != WirelessNetworkKind.Main).OrderBy(n => n.Id.Kind == WirelessNetworkKind.Guest ? 0 : 1).ThenBy(n => n.Id.Band))
     { @NetworkCard(network) }
     <MudExpansionPanels Elevation="0">
@@ -34,11 +34,12 @@
         <MudStack Spacing="2">
             <MudText Typo="Typo.h3">@network.DisplayName · @network.Id.Kind · @WirelessNetworkId.BandToken(network.Id.Band)</MudText>
             <MudText>@(network.Enabled ? "On" : "Off") · SSID: @(network.Ssid ?? "Unknown") · Broadcast: @(network.SsidBroadcast?.ToString() ?? "Unknown")</MudText>
+            <details class="settings-details"><summary>Network details</summary>
             <MudText>Security: @(network.SecurityMode ?? "Unknown") · Channel: @(network.Channel?.ToString() ?? "Follows main radio") · Width: @(network.ChannelWidth ?? "Unknown") · TX: @(network.TxPower ?? "Unknown")</MudText>
-            <MudText Typo="Typo.caption">Coupling: @(network.CoupledWith.Count == 0 ? "Not verified" : string.Join(", ", network.CoupledWith))</MudText>
+            <MudText Typo="Typo.caption">Coupling: @(network.CoupledWith.Count == 0 ? "Not verified" : string.Join(", ", network.CoupledWith))</MudText></details>
             @if (_editing?.Id == network.Id)
             {
-                <MudSwitch T="bool" Label="Network enabled" @bind-Value="_enabled" Disabled="@(_busy || !network.Features.CanToggle || !Provider.Capabilities.SupportsWirelessToggle)" />
+                <MudSwitch Color="Color.Primary" T="bool" Label="Network enabled" @bind-Value="_enabled" Disabled="@(_busy || !network.Features.CanToggle || !Provider.Capabilities.SupportsWirelessToggle)" />
                 <MudTextField T="string" Label="SSID" @bind-Value="_ssid" Disabled="@(_busy || !network.Features.CanEditSsid || !Provider.Capabilities.SupportsWirelessEdit)" MaxLength="32" />
                 @if (network.Id.Kind == WirelessNetworkKind.Guest && network.Features.CanEditPassword && Provider.Capabilities.SupportsWirelessEdit)
                 { <MudTextField T="string" Label="New guest password (blank keeps current)" InputType="InputType.Password" @bind-Value="_password" Disabled="_busy" autocomplete="new-password" /> }

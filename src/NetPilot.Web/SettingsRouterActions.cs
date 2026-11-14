@@ -54,6 +54,6 @@ public sealed class SettingsRouterActions(IRouterProvider provider, IRouterConne
         await ConnectSavedAsync();
         await provider.RebootAsync(CancellationToken.None);
         await activity.AppendAsync(new(clock.GetUtcNow(), ActivityEventType.RouterRebooted, null,
-            "Router reboot requested from Settings; recovery not verified"), CancellationToken.None);
+            "Router reboot requested from dashboard; recovery not verified"), CancellationToken.None);
     }
 }

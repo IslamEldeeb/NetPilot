@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components;
+using NetPilot.Abstractions;
 using MudBlazor;
 using NetPilot.Core.Devices;
 using NetPilot.Core.Enforcement.Claims;
@@ -85,6 +86,50 @@ public partial class Devices : IDisposable
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
         catch (Exception ex) { Logger.LogWarning(ex, "Cannot load devices"); _error = "Could not load devices. Retry or open Classic view."; }
         finally { _loaded = true; }
+    }
+
+    private string? _speedMac;
+    private decimal? _speedDown, _speedUp;
+    private bool _speedBusy;
+    private SpeedLimit? ConfiguredLimit(Device device) => device.QuotaThrottle ?? device.Override ??
+        _policies.FirstOrDefault(p => p.CategoryKey == device.CategoryKey && p.IsUserConfigured)?.Limit;
+    private bool HasLimitMismatch(Device device) => ConfiguredLimit(device) is { } desired && device.RouterReportedLimit is { } reported &&
+        !RouterLimitDrift.Matches(new SpeedLimit(reported.Enabled, reported.DownloadKbps, reported.UploadKbps), desired);
+    private static string RouterLimitText(Device device) => device.RouterReportedLimit is { } limit
+        ? DeviceList.DescribeLimit(new SpeedLimit(limit.Enabled, limit.DownloadKbps, limit.UploadKbps)) : "Not observed";
+    private string LimitText(Device device)
+    {
+        var policy = _policies.FirstOrDefault(p => p.CategoryKey == device.CategoryKey && p.IsUserConfigured);
+        var limit = device.QuotaThrottle ?? device.Override ?? policy?.Limit;
+        return limit is null ? "Not configured" : DeviceList.DescribeLimit(limit);
+    }
+    private void EditSpeed(Device device)
+    {
+        _speedMac = device.Mac;
+        var limit = device.Override ?? _policies.FirstOrDefault(p => p.CategoryKey == device.CategoryKey && p.IsUserConfigured)?.Limit;
+        _speedDown = limit?.Enabled == true ? limit.DownloadKbps / 1000m : null;
+        _speedUp = limit?.Enabled == true ? limit.UploadKbps / 1000m : null;
+    }
+    private Task SaveSpeed() => UpdateSpeed(false);
+    private Task ClearSpeed() => UpdateSpeed(true);
+    private async Task UpdateSpeed(bool inherit)
+    {
+        if (_speedMac is null || _speedBusy) return;
+        _speedBusy = true;
+        try
+        {
+            if (!inherit && ((_speedDown is <= 0 or > 2147483) || (_speedUp is <= 0 or > 2147483)))
+                throw new ArgumentException("Enter positive speeds within the supported range, or leave blank for unlimited.");
+            var device = await DeviceStore.FindByMacAsync(new MacAddress(_speedMac), _lifetime.Token) ?? throw new InvalidOperationException("Device no longer exists.");
+            int? Kbps(decimal? value) => value is null ? null : checked((int)Math.Round(value.Value * 1000));
+            device.Override = inherit ? null : new SpeedLimit(_speedDown is not null || _speedUp is not null, Kbps(_speedDown), Kbps(_speedUp));
+            await DeviceStore.UpsertAsync(device, _lifetime.Token);
+            _speedMac = null;
+            await LoadAsync();
+            Snackbar.Add("Speed setting saved. Awaiting Agent.");
+        }
+        catch (Exception ex) { Logger.LogWarning(ex, "Could not save speed limit"); Snackbar.Add(ex is ArgumentException ? ex.Message : "Could not save speed limit.", Severity.Error); }
+        finally { _speedBusy = false; }
     }
 
     private async Task RefreshFromRouterAsync()

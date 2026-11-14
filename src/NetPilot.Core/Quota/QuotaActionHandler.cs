@@ -36,7 +36,7 @@ public class QuotaActionHandler(IQuotaActionTokenService tokens, IQuotaStateStor
         await LogAcceptedAsync(claim, ct);
         var description = claim.Action == NotificationActionIds.Extend1Gb ? "+1 GB granted for this quota period." : "Restore requested for this quota period.";
         return new(status, description
-            + " The Agent applies changes on its next tick (default 180 seconds). Other exceeded quotas may still restrict this device.");
+            + " The Agent applies changes on its next tick. Other exceeded quotas may still restrict this device.");
     }
 
     private async Task<QuotaActionStatus> ApplyToPeriodAsync(string token, QuotaActionClaim claim, CancellationToken ct)

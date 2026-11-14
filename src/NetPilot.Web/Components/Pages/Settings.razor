@@ -6,114 +6,77 @@
 @inject DashboardLoginOptions Login
 <PageTitle>Settings · NetPilot</PageTitle>
 <div class="page-head">
-    <div>
-        <div class="eyebrow">Your preferences</div>
-        <h1>Settings</h1>
-        <p>A dependable home network starts with clear controls.</p>
-    </div>
-    <div class="actions">
-        <a href="/setup" class="text-button">Setup</a>
-    </div>
+    <div><div class="eyebrow">Your network</div><h1>Settings</h1><p>Manage your connection, notifications and preferences.</p></div>
 </div>
-
 <div class="settings-layout">
     <nav class="settings-nav" aria-label="Settings sections">
         @foreach (var entry in Entries)
         {
-            var href = entry.Href;
-            <a href="@href" class="@(IsActive(href) ? "active" : "")">@((MarkupString)Icon(entry.Icon)) @entry.Title</a>
+            <a href="@entry.Href" class="@(IsActive(entry.Href) ? "active" : "")" aria-current="@(IsActive(entry.Href) ? "page" : null)">@((MarkupString)Icon(entry.Icon)) @entry.Title</a>
         }
+        <div class="settings-nav-divider"></div>
+        <span class="settings-nav-label">Network tools</span>
+        <a href="/settings/safety">@((MarkupString)Icon("shield")) Safety center</a>
+        <a href="/settings/health">@((MarkupString)Icon("activity")) System health</a>
     </nav>
-    <div>
-        @if (Section is null && NetworkId is null)
+    <main class="settings-content">
+        @switch (Section?.ToLowerInvariant() ?? "general")
         {
-            <section class="card">
-                <div class="section-head"><h2>Your household controls</h2></div>
-                <p>Connect and maintain your network, keep alerts useful, and make safety visible.</p>
-                @foreach (var entry in Entries)
-                {
-                    <a class="list-row" style="text-decoration:none;color:inherit" href="@entry.Href">
-                        <span class="symbol-tile">@((MarkupString)Icon(entry.Icon))</span>
-                        <span class="grow">
-                            <strong>@entry.Title</strong>
-                            <small>@entry.Body</small>
-                        </span>
-                        <span class="icon">@((MarkupString)Icon("arrow"))</span>
-                    </a>
-                }
-            </section>
-            @if (Login.Enabled)
-            {
-                <section class="card" style="margin-block-start:20px">
-                    <div class="section-head"><h2>Security</h2></div>
-                    <p>Shared dashboard password. There are no individual accounts.</p>
-                    <form method="post" action="/logout" data-enhance="false">
-                        <AntiforgeryToken />
-                        <button type="submit" class="outline">@((MarkupString)Icon("lock")) Sign out</button>
-                    </form>
+            case "general": case "appearance": case "security":
+                <div class="settings-heading"><h2>General</h2><p>Control refresh timing, appearance and dashboard access.</p></div>
+                <PollingSettings />
+                <section class="card settings-panel"><AppearanceSettings /></section>
+                <section class="card settings-panel">
+                    <h2>Dashboard access</h2>
+                    <p>Shared password login: <strong>@(Login.Enabled ? "On" : "Off")</strong>.</p>
+                    @if (Login.Enabled)
+                    {
+                        <form method="post" action="/logout" data-enhance="false"><AntiforgeryToken /><button type="submit" class="outline">Sign out</button></form>
+                    }
+                    else { <p class="hint">Set a dashboard password in your deployment to protect access.</p> }
                 </section>
-            }
-            else
-            {
-                <div class="banner info">
-                    <span class="icon">@((MarkupString)Icon("lock"))</span>
-                    <p>Dashboard login is off. Configure NETPILOT_WEB_PASSWORD in deployment to enable sign-out and password protection.</p>
-                </div>
-            }
+                break;
+            case "router":
+                <div class="settings-heading"><h2>Router</h2><p>Manage the connection to your router.</p></div>
+                <section class="card settings-panel"><RouterSettings /></section>
+                break;
+            case "wireless":
+                <div class="settings-heading"><h2>Wi-Fi</h2><p>View and manage supported wireless networks.</p></div>
+                <section class="card settings-panel"><WirelessSettings NetworkId="@NetworkId" /></section>
+                break;
+            case "notifications":
+                <div class="settings-heading"><h2>Notifications</h2><p>Choose what NetPilot sends and which devices receive alerts.</p></div>
+                <section class="card settings-panel"><NotificationSettings /></section>
+                break;
+            case "backup":
+                <div class="settings-heading"><h2>Backup</h2><p>Keep a copy of your NetPilot data.</p></div>
+                <section class="card settings-panel"><BackupSettings /></section>
+                break;
+            case "health": case "traffic": case "app": case "about":
+                <div class="settings-heading"><h2>System health</h2><p>Connection status and troubleshooting information.</p></div>
+                <section class="card settings-panel"><HealthSettings /></section>
+                break;
+            default:
+                <div class="card empty-state"><h2>Settings section not found</h2><a href="/settings" class="button">General settings</a></div>
+                break;
         }
-        else
-        {
-            @switch (Section?.ToLowerInvariant() ?? "wireless")
-            {
-                case "router": <RouterSettings /> break;
-                case "wireless": <WirelessSettings NetworkId="@NetworkId" /> break;
-                case "notifications": <NotificationSettings /> break;
-                case "backup": <BackupSettings /> break;
-                case "appearance": <AppearanceSettings /> break;
-                case "health": case "traffic": case "app": case "about": <HealthSettings /> break;
-                case "security":
-                    <section class="card">
-                        <div class="section-head"><h2>Dashboard access</h2></div>
-                        <p>Shared password login: @(Login.Enabled ? "Enabled" : "Off"). Configure NETPILOT_WEB_PASSWORD in deployment. There are no individual accounts.</p>
-                        @if (Login.Enabled)
-                        {
-                            <form method="post" action="/logout" data-enhance="false">
-                                <AntiforgeryToken />
-                                <button type="submit" class="outline">@((MarkupString)Icon("lock")) Sign out</button>
-                            </form>
-                        }
-                    </section>
-                    break;
-                default:
-                    <div class="card empty-state">
-                        <span class="symbol-tile">@((MarkupString)Icon("settings"))</span>
-                        <h2>Settings section not found</h2>
-                        <p>Choose a section from Settings.</p>
-                        <a href="/settings" class="button">All settings</a>
-                    </div>
-                    break;
-            }
-        }
-    </div>
+    </main>
 </div>
 
 @code {
     [Parameter] public string? Section { get; set; }
     [Parameter] public string? NetworkId { get; set; }
-    private static readonly (string Title, string Body, string Href, string Icon)[] Entries =
+    private static readonly (string Title, string Href, string Icon)[] Entries =
     [
-        ("Router", "Host, transport, encrypted credentials and connection test.", "/settings/router", "router"),
-        ("Wireless", "Guest and IoT controls, main network read-only.", "/settings/wireless", "wifi"),
-        ("Notifications", "This browser, shared preferences and push tests.", "/settings/notifications", "bell"),
-        ("Safety Center", "Evidence, protected devices and one-policy graduation.", "/settings/safety", "shield"),
-        ("Security", "Shared dashboard password and sign-out.", "/settings/security", "lock"),
-        ("LAN source", "LAN exclusion and counter confidence.", "/settings/traffic", "leaf"),
-        ("HTTPS / Install", "Phone installation guidance.", "/settings/app", "devices"),
-        ("System health", "Agent heartbeat, router freshness and reboot.", "/settings/health", "activity"),
-        ("Backup", "Download database and keys, restore guide and retention.", "/settings/backup", "cloud"),
-        ("About / appearance", "Versions, timezone, provider and theme.", "/settings/about", "tune")
+        ("General", "/settings", "tune"),
+        ("Router", "/settings/router", "router"),
+        ("Wi-Fi", "/settings/wireless", "wifi"),
+        ("Notifications", "/settings/notifications", "bell"),
+        ("Backup", "/settings/backup", "cloud")
     ];
-    private bool IsActive(string href) => Section is not null && href.EndsWith("/" + Section, StringComparison.OrdinalIgnoreCase);
+    private bool IsActive(string href) => href == "/settings"
+        ? Section is null || Section.Equals("general", StringComparison.OrdinalIgnoreCase) || Section.Equals("appearance", StringComparison.OrdinalIgnoreCase) || Section.Equals("security", StringComparison.OrdinalIgnoreCase)
+        : Section is not null && href.EndsWith("/" + Section, StringComparison.OrdinalIgnoreCase);
 
     private string Icon(string name) => name switch
     {

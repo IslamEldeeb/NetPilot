@@ -40,6 +40,7 @@ builder.Services.AddScoped<Confirm>();
 builder.Services.AddScoped<ActivityInboxState>();
 builder.Services.AddScoped<AutomationFeedback>();
 builder.Services.AddScoped<DeviceRouterActions>();
+builder.Services.AddSingleton<RouterSyncJobs>();
 builder.Services.AddScoped<NetPilot.Web.Features.UsageOverviewQuery>();
 builder.Services.AddScoped<SettingsRouterActions>();
 builder.Services.AddScoped<NetPilot.Core.Safety.SafetyGraduationService>();

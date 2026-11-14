@@ -4,7 +4,7 @@
 @inject IPolicyStore Policies
 @inject IDeviceStore Devices
 @inject IRouterConnectionStore Connections
-@inject DeviceRouterActions Router
+@inject RouterSyncJobs SyncJobs
 @inject Confirm Confirm
 @inject ISnackbar Snackbar
 @inject ILogger<SpeedPolicies> Logger
@@ -35,20 +35,9 @@
             <button class="text-button" @onclick="@(() => Edit(row))">Edit</button>
             <button class="outline" @onclick="@(() => Reapply(row))" disabled="@(_busy || !_connected)">Force reapply</button>
         </div>
-    }
-    @if (_rows.Count == 0)
-    {
-        <p class="hint">No categories are seeded yet.</p>
-    }
-    <div class="actions">
-        <button class="button" @onclick="SaveAll" disabled="@(_busy || _rows.Count == 0)">Save all</button>
-        <button class="outline" @onclick="SyncAll" disabled="@(_busy || !_connected || _rows.Count == 0)">Sync all</button>
-    </div>
-</div>
-
-@if (_editing is not null)
+        @if (_editing == row)
 {
-    <section class="card" style="margin-block-start:20px">
+    <section class="card" style="margin-block:12px">
         <div class="section-head"><h2>Edit @_editing.Original.CategoryKey.Replace('_', ' ')</h2></div>
         <label class="check-row">
             <input type="checkbox" checked="@_editing.Enabled" @onchange="e => _editing.Enabled = e.Value is true" />
@@ -68,6 +57,17 @@
         </div>
     </section>
 }
+
+    }
+    @if (_rows.Count == 0)
+    {
+        <p class="hint">No categories are seeded yet.</p>
+    }
+    <div class="actions">
+        <button class="button" @onclick="SaveAll" disabled="@(_busy || _rows.Count == 0)">Save all</button>
+        <button class="outline" @onclick="SyncAll" disabled="@(_busy || !_connected || _rows.Count == 0)">Sync all</button>
+    </div>
+</div>
 
 @if (_bulkOpen)
 {
@@ -114,7 +114,7 @@
         ? $"{row.DownloadMbps ?? 0:0.#} Mbps ↓ / {(row.UploadMbps is { } up ? $"{up:0.#} Mbps ↑" : "— Mbps ↑")}"
         : "Unlimited";
     private void Fill() { foreach (var row in _rows) { row.Enabled = _bulkEnabled; row.DownloadMbps = _bulkDown; row.UploadMbps = _bulkUp; } }
-    private void Edit(SpeedPolicyDraft row) => _editing = row;
+    private void Edit(SpeedPolicyDraft row) => _editing = _editing == row ? null : row;
     private async Task Persist(SpeedPolicyDraft row, DevicePolicy changed)
     {
         var current = await Policies.FindByCategoryAsync(row.Original.CategoryKey, default);
@@ -126,18 +126,17 @@
     private async Task Reapply(SpeedPolicyDraft row)
     {
         if (!await Confirm.DangerAsync("Reapply speed policy now?", $"Save and force reapply {row.Original.CategoryKey} to {_devices.Count(d => d.CategoryKey == row.Original.CategoryKey)} saved devices? This Web action changes the router immediately, including protected devices.", "Force reapply")) return;
-        await Run(async () => { await Persist(row, row.ReappliedPolicy()); await Push(); });
+        await Run(async () => { await Persist(row, row.ReappliedPolicy()); StartSync(); });
     }
     private async Task SyncAll()
     {
         if (!await Confirm.DangerAsync("Force reapply all?", $"Save all drafts and force reapply {_rows.Count} categories ({_devices.Count} saved devices) immediately? This includes protected devices.", "Force reapply all")) return;
-        await Run(async () => { foreach (var row in _rows) await Persist(row, row.ReappliedPolicy()); await Push(); });
+        await Run(async () => { foreach (var row in _rows) await Persist(row, row.ReappliedPolicy()); StartSync(); });
     }
-    private async Task Push()
+    private void StartSync()
     {
-        try { await Router.RefreshAsync(); Snackbar.Add("Reapply reconciliation completed. Check Activity for per-device results."); }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        { Logger.LogWarning(ex, "Immediate policy reapply failed"); _error = "Policies saved, but immediate reapply failed. The Agent retries on its next tick; check Activity."; }
+        if (SyncJobs.TryStart()) Snackbar.Add("Sync started in the background. You can continue using NetPilot.");
+        else Snackbar.Add("A router sync is already running. Saved policies will be picked up on the next Agent tick.", Severity.Warning);
     }
     private string Icon(string name) => name switch
     {

@@ -31,7 +31,6 @@ public partial class RulesTab
     private string _hint = "";
     private bool _isNew, _busy, _loaded;
     private string? _error, _message;
-    private string TickMinutes => (Configuration.GetValue("NetPilot:PollIntervalSeconds", 180) / 60m).ToString("0.##", CultureInfo.InvariantCulture);
     protected override Task OnInitializedAsync() => RefreshAsync();
     private string LocalTime(DateTimeOffset? utc) => utc.HasValue ? TimeZoneInfo.ConvertTime(utc.Value, Clock.TimeZone).ToString("yyyy-MM-dd HH:mm:ss") : "Never";
 
@@ -56,7 +55,7 @@ public partial class RulesTab
         _editing = rule; _editorKey = Guid.NewGuid(); _isNew = isNew; _hint = hint;
     }
     private void CancelEditor() => _editing = null;
-    private string NextTick => $"Takes effect on the Agent's next tick (about {TickMinutes} minutes).";
+    private string NextTick => $"Takes effect on the Agent's next tick.";
 
     private Task SaveAsync(Rule rule) => RunAsync(async () =>
     {
@@ -92,7 +91,7 @@ public partial class RulesTab
     private Task RequestReleaseAsync(string id) => RunAsync(async () =>
     {
         var requested = await FiringStore.RequestReleaseAsync(id, CancellationToken.None);
-        _message = requested ? $"Release requested – the Agent will release it on its next tick (about {TickMinutes} minutes). Other claims may still restrict this device."
+        _message = requested ? $"Release requested – the Agent will release it on its next tick. Other claims may still restrict this device."
             : "This firing is no longer active. Refresh to see its current status.";
         await LoadAsync();
     });

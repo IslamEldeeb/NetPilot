@@ -44,7 +44,8 @@ public sealed class BatchCRenderingTests
             await services.GetRequiredService<IActionClaimStore>().UpsertAsync(new(mac, ClaimKind.Throttle, "rule:bedtime", 128, now), default);
             var html = await RenderAsync(services, page);
             Assert.Contains("5 GB", html);
-            Assert.Contains("2 GB", System.Text.RegularExpressions.Regex.Replace(html, "<[^>]*>", ""));
+            if (page == typeof(HomeDashboard)) Assert.Contains("2 GB", System.Text.RegularExpressions.Regex.Replace(html, "<[^>]*>", ""));
+            else Assert.Contains("aria-pressed=\"true\">Month", html);
             Assert.Contains("Bedroom TV", html);
             Assert.Contains("/devices/AA-BB-CC-DD-EE-01", html);
             Assert.Contains("Household ISP budget", html);

@@ -139,6 +139,26 @@ else
                     </div>
                     <div class="np-device-card-status">@RestrictionChip(row)</div>
                     <div class="np-device-addresses"><span><b>IP</b> <bdi>@row.Device.IpAddress</bdi></span><span><b>MAC</b> <bdi>@row.Device.Mac</bdi></span></div>
+                    <div class="np-speed-panel @(HasLimitMismatch(row.Device) ? "np-speed-mismatch" : "")">
+                        <div class="np-speed-heading">
+                            <span>Speed limit</span>
+                            <button type="button" class="np-speed-edit" @onclick="@(() => EditSpeed(row.Device))" aria-expanded="@(_speedMac == (string)row.Device.Mac ? "true" : "false")" aria-label="@($"Edit speed for {row.DisplayName}")">Edit</button>
+                        </div>
+                        <div class="np-speed-values"><span>Saved <strong>@LimitText(row.Device)</strong></span><span>Router <strong>@RouterLimitText(row.Device)</strong></span></div>
+                        @if (HasLimitMismatch(row.Device))
+                        {
+                            <details class="np-speed-discrepancy"><summary>Different from saved limit</summary><small>Temporary restrictions can also change the router limit.</small></details>
+                        }
+                        @if (_speedMac == (string)row.Device.Mac)
+                        {
+                            <div class="np-speed-editor">
+                                <label class="field">Download Mbps <input type="number" min="0.001" step="0.001" @bind="_speedDown" /></label>
+                                <label class="field">Upload Mbps <input type="number" min="0.001" step="0.001" @bind="_speedUp" /></label>
+                                <p class="hint">Leave a field empty for unlimited. Saving applies a device override on the next Agent tick.</p>
+                                <div class="actions"><button class="button" @onclick="SaveSpeed" disabled="@_speedBusy">Save</button><button class="outline" @onclick="ClearSpeed" disabled="@_speedBusy">Use category</button><button class="text-button" @onclick="@(() => _speedMac = null)">Cancel</button></div>
+                            </div>
+                        }
+                    </div>
                     <div class="np-device-usage"><span>Today</span><span><strong>@DataSize.ToGb(row.InternetTodayBytes).ToString("0.##")</strong> GB</span></div>
                     @if (row.QuotaDailyBytes is > 0)
                     {

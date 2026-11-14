@@ -9,14 +9,16 @@
     </form>
     <MudText>One download at a time. If it fails or reports Busy, retry after 30 seconds. A download is not a verified restore rehearsal.</MudText>
     <MudLink Href="https://github.com/IslamEldeeb/NetPilot/blob/main/docs/backup-restore.md">Restore instructions · docs/backup-restore.md</MudLink>
-    <MudText>Restore remains manual under design decision D8. In-app upload, maintenance handshake and restore progress are deferred until a safe two-process restore protocol is available.</MudText>
-    <MudText Typo="Typo.h2">Shared retention</MudText>
+    <MudText>To restore a backup, follow the restore instructions after stopping both services.</MudText>
+    <details class="settings-details"><summary>Advanced: data retention</summary>
+    <MudText Typo="Typo.h2">Data retention</MudText>
     <MudText>Applied by Agent/notification maintenance. Active claims, active quota actions, active rule firings and restoration metadata are preserved regardless of these limits. Device usage and activity history are not pruned by these settings.</MudText>
     @if (_message is not null) { <MudAlert Severity="@(_failed ? Severity.Error : Severity.Info)" role="status">@_message</MudAlert> }
     <MudNumericField T="int" Label="Notification attempts to keep" Min="20" Max="10000" @bind-Value="_attempts" />
     <MudNumericField T="int" Label="Inactive quota state days" Min="62" Max="3650" @bind-Value="_days" />
     <MudNumericField T="int" Label="Rule firings to keep (active always retained)" Min="100" Max="10000" @bind-Value="_firings" />
     <MudStack Row="true" Wrap="Wrap.Wrap"><MudButton OnClick="SaveAsync" Disabled="_busy" Color="Color.Primary">Save retention</MudButton><MudButton OnClick="LoadAsync" Disabled="_busy">Reload / Retry</MudButton></MudStack>
+    </details>
 </MudStack>
 @code {
     private int _attempts = 500, _days = 62, _firings = 1000;

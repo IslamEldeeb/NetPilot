@@ -85,7 +85,7 @@ Reviewed requested sources: [CLAUDE.md](../../CLAUDE.md), [README](../../README.
 Concrete reconciliations:
 
 - Rules T7a/b/c are implemented in code and current Phase 5/rules docs, despite CLAUDE.md's stale “planned” line; live UI/router checks remain open.
-- Agent applies automatic quota/rule effects on the next tick (default 180 seconds). Current **force reapply/Sync all also attempt immediate Web writes**, and **manual refresh reconciles policies**, in addition to block/unblock/wireless/reboot/test direct paths. Specs preserve and disclose these until gateway migration.
+- Agent applies automatic quota/rule effects on the next tick (default 360 seconds). Current **force reapply/Sync all also attempt immediate Web writes**, and **manual refresh reconciles policies**, in addition to block/unblock/wireless/reboot/test direct paths. Specs preserve and disclose these until gateway migration.
 - Quota/rule usage is intended as Internet-only after optional exclusions; without exporter (or on failure), router LAN bytes can remain included. Do not imply perfect Internet attribution. Historical totals are not reclassified.
 - GB formatter mismatch and required health/receipt/backend additions are explicit gaps. Main wireless remains read-only; IoT password and radio writes unsupported; reboot and coupling remain unverified; model/firmware reads already use the confirmed R6 endpoint.
 - Current PWA worker does not cache pages. Offline shell, durable inbox, profiles, restore and historical replay are proposed work. Billing cycles and generalized quota bonus/temporary pause are implemented in Batch C; the shared-password login is implemented separately.

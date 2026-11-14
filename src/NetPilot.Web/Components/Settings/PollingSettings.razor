@@ -1,0 +1,43 @@
+@using NetPilot.Core.Health
+@inject IRouterPollingSettingsStore Store
+@inject IAgentHeartbeatStore Heartbeats
+@inject IConfiguration Configuration
+<section class="card">
+    <div class="section-head"><h2>Router refresh</h2></div>
+    <p>Choose how often NetPilot checks your router for devices and usage. Longer intervals reduce router requests.</p>
+    <label class="field">Refresh interval (minutes)
+        <input type="number" min="1" max="60" step="1" @bind="_minutes" disabled="@_busy" />
+    </label>
+    <p class="hint">Choose 1–60 minutes. Quotas, rules and saved speed limits are also checked on this schedule. Changes take effect after the current wait finishes; a router fetch can take extra time.</p>
+    @if (_message is not null) { <p role="status">@_message</p> }
+    <button type="button" class="button" @onclick="SaveAsync" disabled="@_busy">Save interval</button>
+</section>
+@code {
+    private int _minutes = 6;
+    private bool _busy;
+    private string? _message;
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var saved = await Store.GetIntervalSecondsAsync(CancellationToken.None);
+            var heartbeat = await Heartbeats.GetAsync(CancellationToken.None);
+            var seconds = saved ?? (heartbeat?.TickIntervalSeconds > 0 ? heartbeat.TickIntervalSeconds : Configuration.GetValue("NetPilot:PollIntervalSeconds", 360));
+            _minutes = Math.Clamp((int)Math.Round(seconds / 60d), 1, 60);
+        }
+        catch (Exception) { _message = "Could not load the saved interval. Reload this page before saving."; _busy = true; }
+    }
+    private async Task SaveAsync()
+    {
+        _busy = true; _message = null;
+        try
+        {
+            if (_minutes is < 1 or > 60) throw new ArgumentException("Choose an interval between 1 and 60 minutes.");
+            await Store.SaveIntervalSecondsAsync(_minutes * 60, CancellationToken.None);
+            _message = "Saved. The Agent will use this interval after its current wait.";
+        }
+        catch (ArgumentException ex) { _message = ex.Message; }
+        catch (Exception) { _message = "Could not save the interval. Please try again."; }
+        finally { _busy = false; }
+    }
+}

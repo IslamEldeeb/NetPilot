@@ -1,8 +1,14 @@
+@using NetPilot.Abstractions
+@using NetPilot.Core.RouterConnection
 @using NetPilot.Core.Actions
 @using NetPilot.Core.Devices
 @using NetPilot.Core.Enforcement.Claims
 @using NetPilot.Core.Quota
 @using NetPilot.Core.Usage
+@inject IRouterProvider RouterProvider
+@inject IRouterConnectionStore RouterConnections
+@inject SettingsRouterActions RouterActions
+@inject Confirm Confirm
 @inject TemporaryActions Commands
 @inject NetPilot.Core.Actions.TemporaryActionOptions ActionOptions
 @inject QuotaBonusCommands Bonuses
@@ -24,7 +30,18 @@
             <button type="button" class="np-quick-choice" aria-pressed="@(_action == "bonus" ? "true" : "false")" disabled="@(_busy || _accepted)" @onclick="@(() => SelectAction("bonus"))">
                 <MudIcon Icon="@Icons.Material.Outlined.CardGiftcard" /><span>Extra GB</span>
             </button>
+            <button type="button" class="np-quick-choice" aria-pressed="@(_action == "reboot" ? "true" : "false")" disabled="@(_busy || _accepted)" @onclick="@(() => SelectAction("reboot"))">
+                <MudIcon Icon="@Icons.Material.Outlined.RestartAlt" /><span>Reboot router</span>
+            </button>
         </div>
+        @if (_action == "reboot")
+        {
+            <MudAlert Severity="Severity.Warning">Rebooting disconnects all devices. The router reboot endpoint has not been verified on this model; recovery must be checked separately.</MudAlert>
+            @if (!_routerConfigured) { <MudText>Configure a router before rebooting.</MudText> }
+            else if (!RouterProvider.Capabilities.SupportsReboot) { <MudText>This router provider does not support reboot.</MudText> }
+        }
+        else
+        {
         <MudSelect T="string" @bind-Value="_target" Label="Device or category" Variant="Variant.Outlined" Margin="Margin.Dense">
             @foreach (var device in _devices) { <MudSelectItem T="string" Value="@($"device:{device.Mac}")">@HouseholdUsage.DeviceName(device)</MudSelectItem> }
             @if (_action != "bonus") { @foreach (var category in _devices.Select(device => device.CategoryKey).Distinct().Order()) { <MudSelectItem T="string" Value="@($"category:{category}")">Category: @category</MudSelectItem> } }
@@ -46,14 +63,18 @@
                 Expiry is measured from save; release happens on the first successful tick after expiry. Other holds and base policies remain. Protected devices are checked again by the Agent.
             </MudAlert>
         }
-        <MudText Typo="Typo.caption">Takes effect on the Agent’s next tick (about @IntervalSeconds seconds). Retries or an offline Agent can take longer. No router command is sent by this sheet.</MudText>
+        <MudText Typo="Typo.caption">Takes effect on the Agent’s next tick. Retries or an offline Agent can take longer. No router command is sent by this sheet.</MudText>
+        }
         @if (_message is not null) { <MudAlert Severity="Severity.Success" role="status">@_message</MudAlert> }
         @if (_error is not null) { <MudAlert Severity="Severity.Error" role="alert">@_error</MudAlert> }
     </div>
     </ChildContent>
     <Footer>
         <MudButton OnClick="@(() => OpenChanged.InvokeAsync(false))" Variant="Variant.Outlined">Cancel</MudButton>
-        <MudButton OnClick="SaveAsync" Disabled="@(_busy || Targets.Length == 0 || _accepted)" Variant="Variant.Filled" Color="Color.Primary">Apply</MudButton>
+        @if (_action == "reboot")
+        { <MudButton OnClick="RebootAsync" Disabled="@(_busy || _accepted || !_routerConfigured || !RouterProvider.Capabilities.SupportsReboot)" Variant="Variant.Filled" Color="Color.Error">Reboot router</MudButton> }
+        else
+        { <MudButton OnClick="SaveAsync" Disabled="@(_busy || Targets.Length == 0 || _accepted)" Variant="Variant.Filled" Color="Color.Primary">Apply</MudButton> }
     </Footer>
 </AppSheet>
 @code {
@@ -68,11 +89,10 @@
     private int _minutes = 60, _customMinutes = 45, _kbps = 512;
     private decimal _bonusGb = 1;
     private QuotaPeriodKind _period;
-    private bool _dryRun = true, _busy, _wasOpen, _accepted;
+    private bool _dryRun = true, _busy, _wasOpen, _accepted, _routerConfigured;
     private Guid _requestId;
     private string _dayKey = "", _monthKey = "";
     private int Duration => _minutes == 0 ? _customMinutes : _minutes;
-    private int IntervalSeconds => Configuration.GetValue("NetPilot:PollIntervalSeconds", 180);
     private string PeriodKey => _period == QuotaPeriodKind.Day ? _dayKey : _monthKey;
     private MacAddress[] Targets => _devices.Where(device => _target == $"device:{device.Mac}" || (_action != "bonus" && _target == $"category:{device.CategoryKey}")).Select(device => device.Mac).ToArray();
     private string TargetName => _target.StartsWith("category:", StringComparison.Ordinal) ? _target[9..]
@@ -88,6 +108,7 @@
             _dayKey = Clock.TodayKey(); _monthKey = Clock.ThisMonthKey();
             try
             {
+                _routerConfigured = await RouterConnections.GetAsync(CancellationToken.None) is not null;
                 _devices = await Devices.GetAllAsync(CancellationToken.None);
                 _protected = await Protection.GetAllAsync(CancellationToken.None);
                 _target = DeviceMac is not null ? $"device:{DeviceMac}" : _devices.FirstOrDefault() is { } first ? $"device:{first.Mac}" : "";
@@ -102,6 +123,26 @@
         if (action == "bonus" && _target.StartsWith("category:", StringComparison.Ordinal))
             _target = _devices.FirstOrDefault() is { } first ? $"device:{first.Mac}" : "";
     }
+    private async Task RebootAsync()
+    {
+        if (_busy || _accepted || !_routerConfigured || !RouterProvider.Capabilities.SupportsReboot) return;
+        if (!await Confirm.DangerAsync("Reboot router?", "All devices will lose their connection temporarily. The reboot endpoint is not verified; have physical access and check recovery before retrying.", "Reboot now")) return;
+        _busy = true; _error = _message = null;
+        try
+        {
+            await RouterActions.RebootAsync();
+            _accepted = true;
+            _message = "Reboot command sent. Recovery is not verified; wait before checking the connection.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Router reboot failed");
+            _accepted = true;
+            _error = "Reboot request failed or its result is unknown. Check the router before retrying.";
+        }
+        finally { _busy = false; }
+    }
+
     private async Task SaveAsync()
     {
         _busy = true; _error = _message = null;

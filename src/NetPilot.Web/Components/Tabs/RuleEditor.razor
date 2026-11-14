@@ -118,7 +118,7 @@
             {
                 <ul class="text-danger" role="alert">@foreach (var error in errors) { <li>@error</li> }</ul>
             }
-            <p class="np-device-sub">Saving takes effect on the Agent's next tick (about @TickMinutes minutes).</p>
+            <p class="np-device-sub">Saving takes effect on the Agent's next tick.</p>
             <div class="np-rule-controls">
                 <button type="submit" class="np-save-btn" disabled="@(Busy || validRule is null)">@(Busy ? "Saving…" : "Save rule")</button>
                 <button type="button" class="btn btn-link" @onclick="() => Cancelled.InvokeAsync()">Cancel</button>
@@ -132,7 +132,6 @@
     [Parameter] public bool IsNew { get; set; }
     [Parameter] public bool Busy { get; set; }
     [Parameter] public string Hint { get; set; } = "";
-    [Parameter] public string TickMinutes { get; set; } = "3";
     [Parameter] public IReadOnlyList<Device> Devices { get; set; } = [];
     [Parameter] public IReadOnlyList<string> Categories { get; set; } = [];
     [Parameter] public EventCallback<Rule> Saved { get; set; }

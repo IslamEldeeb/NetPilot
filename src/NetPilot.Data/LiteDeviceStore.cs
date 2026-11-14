@@ -49,6 +49,22 @@ public class LiteDeviceStore : IDeviceStore
         return Task.CompletedTask;
     }
 
+    public Task UpdateRouterLimitAsync(MacAddress mac, SpeedLimitState? limit, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        _db.InTransaction(() =>
+        {
+            var saved = _collection.FindById((string)mac);
+            if (saved is null) return;
+            saved.RouterLimitEnabled = limit?.Enabled;
+            saved.RouterDownloadKbps = limit?.DownloadKbps;
+            saved.RouterUploadKbps = limit?.UploadKbps;
+            saved.RouterLimitCurrentlyEnforced = limit?.IsCurrentlyEnforced;
+            _collection.Update(saved);
+        });
+        return Task.CompletedTask;
+    }
+
     public Task UpdateIdentityAsync(MacAddress mac, DeviceIdentity identity, CancellationToken ct)
     {
         _db.InTransaction(() =>

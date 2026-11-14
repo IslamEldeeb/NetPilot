@@ -76,7 +76,7 @@ public class RuleAgentIntegrationTests : IDisposable
         Assert.Equal(1, failed.ConsecutiveFailedTicks);
         Assert.Equal("Router operation failed", failed.LastErrorSummary);
         Assert.Equal(new(true, true), failed.EffectiveModes);
-        Assert.Equal(180, failed.TickIntervalSeconds);
+        Assert.Equal(360, failed.TickIntervalSeconds);
         Assert.NotEmpty(failed.AppVersion);
         Assert.True(failed.LastTickDurationMs >= 0);
         await worker.RunHeartbeatTickAsync(Ct);

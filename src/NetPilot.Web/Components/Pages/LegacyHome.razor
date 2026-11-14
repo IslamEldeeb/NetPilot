@@ -15,6 +15,7 @@
 @inject IActivityLogStore ActivityLogStore
 @inject ILocalTrafficStore LocalTrafficStore
 @inject IUsageStore UsageStore
+@inject RouterSyncJobs SyncJobs
 @inject IRouterConnectionStore ConnectionStore
 @inject RouterPasswordProtector PasswordProtector
 @inject IRouterProvider RouterProvider
@@ -931,23 +932,11 @@
         row.IsConfigured = true;
     }
 
-    private async Task PushToRouterNowAsync(string failureLogMessage)
+    private Task PushToRouterNowAsync(string failureLogMessage)
     {
-        if (_connection is null)
-            return;
-
-        try
-        {
-            var password = PasswordProtector.Decrypt(_connection.EncryptedPassword);
-            var settings = new RouterConnectionSettings(_connection.Host, _connection.UseHttps, _connection.Username, password);
-            await RouterProvider.ConnectAsync(settings, CancellationToken.None);
-            await ReconciliationService.ReconcileAsync(RouterProvider, CancellationToken.None);
-            await RefreshLiveDataAsync();
-        }
-        catch (Exception ex)
-        {
-            Logger.LogWarning(ex, "{Message}", failureLogMessage);
-        }
+        if (_connection is not null && !SyncJobs.TryStart())
+            Logger.LogWarning("{Message}: another sync is already running", failureLogMessage);
+        return Task.CompletedTask;
     }
 
     private async Task RebootRouterAsync()

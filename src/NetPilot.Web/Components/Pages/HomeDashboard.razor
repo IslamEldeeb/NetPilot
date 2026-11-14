@@ -16,10 +16,17 @@
     </div>
     <div class="actions">
         <button class="button" @onclick="LoadAsync">@((MarkupString)Icon("refresh")) Refresh saved summary</button>
+        <button class="outline" @onclick="RefreshRouterAsync" disabled="@(!_configured || _refreshingRouter)" title="Fetch from the router and reconcile saved speed policies">@((MarkupString)Icon("refresh")) @(_refreshingRouter ? "Refreshing router…" : "Refresh from router")</button>
         <button class="button tonal" @onclick="@(() => _quickActions = true)">Quick actions</button>
         <a href="/usage" class="text-button">@((MarkupString)Icon("arrow")) View usage</a>
     </div>
 </div>
+<p class="hint">Refreshing from the router also reconciles saved speed policies and may apply changes.</p>
+
+@if (_routerRefreshMessage is not null)
+{
+    <div class="banner @(_routerRefreshFailed ? "error" : "info")" role="status">@_routerRefreshMessage</div>
+}
 
 @if (_error is not null)
 {

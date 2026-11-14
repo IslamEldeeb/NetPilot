@@ -7,7 +7,7 @@
     { <div class="alert alert-warning" role="status"><strong>Rules are in forced dry-run: nothing is applied. Set NETPILOT_RULES_FORCE_DRYRUN=false and redeploy to enforce.</strong><div>Existing live effects are released on the Agent's next tick.</div></div> }
     @if (!Options.Enabled)
     { <div class="alert alert-warning" role="status"><strong>Rules are disabled: the kill switch (NetPilot:Rules:Enabled=false) is active.</strong><div>The Agent stops new firings and releases existing effects on its next tick.</div></div> }
-    <p class="np-device-sub">Enforcement changes take effect on the Agent's next tick (about @TickMinutes minutes). Dry-run logs and notifies what would happen without changing the router. Notifications are configured in the Notifications tab.</p>
+    <p class="np-device-sub">Enforcement changes take effect on the Agent's next tick. Dry-run logs and notifies what would happen without changing the router. Notifications are configured in the Notifications tab.</p>
     @if (_error is not null) { <div class="alert alert-danger" role="alert">@_error</div> }
     @if (_message is not null) { <div class="alert alert-success" role="status">@_message</div> }
     @if (!_loaded) { <p class="np-empty">Rules have not loaded. Use Refresh to retry.</p> }
@@ -27,7 +27,7 @@
         </section>
         @if (_editing is not null)
         {
-            <RuleEditor @key="_editorKey" InitialRule="_editing" IsNew="_isNew" Devices="_devices" Categories="_categories" Hint="@_hint" TickMinutes="@TickMinutes" Busy="_busy" Saved="SaveAsync" Cancelled="CancelEditor" />
+            <RuleEditor @key="_editorKey" InitialRule="_editing" IsNew="_isNew" Devices="_devices" Categories="_categories" Hint="@_hint" Busy="_busy" Saved="SaveAsync" Cancelled="CancelEditor" />
         }
         <section class="mb-4" aria-label="Saved rules">
             <h4>Saved rules</h4>
@@ -46,7 +46,7 @@
                     </div>
                     @if (_deleteId == rule.Id)
                     {
-                        <div class="alert alert-warning mt-2" role="alert">Delete “@rule.Name”? Its active effects will be released on the Agent's next tick (about @TickMinutes minutes). Other rules and quotas may still restrict devices.
+                        <div class="alert alert-warning mt-2" role="alert">Delete “@rule.Name”? Its active effects will be released on the Agent's next tick. Other rules and quotas may still restrict devices.
                             <button type="button" class="btn btn-danger btn-sm" disabled="@_busy" @onclick="() => DeleteAsync(rule.Id)">Confirm delete</button>
                             <button type="button" class="btn btn-link btn-sm" @onclick="() => _deleteId = null">Cancel</button>
                         </div>
@@ -54,6 +54,6 @@
                 </article>
             }
         </section>
-        <RuleFiringHistory Firings="_firings" Rules="_rules" Devices="_devices" Claims="_claims" TickMinutes="@TickMinutes" Busy="_busy" ReleaseRequested="RequestReleaseAsync" />
+        <RuleFiringHistory Firings="_firings" Rules="_rules" Devices="_devices" Claims="_claims" Busy="_busy" ReleaseRequested="RequestReleaseAsync" />
     }
 </div>

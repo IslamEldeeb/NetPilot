@@ -1208,3 +1208,45 @@ button:disabled::after { opacity:0!important; }
 .np-shell .mud-paper.np-legacy-panel .np-save-btn { color:var(--mud-palette-primary-text); background:var(--mud-palette-primary); }
 .np-legacy-panel :is(input,select) { color:var(--mud-palette-text-primary); background-color:var(--mud-palette-surface); }
 .np-legacy-panel :is(button,a.btn,input:not([type=checkbox]),select) { min-block-size:48px; }
+
+/* Make switch state visible in both themes, including for users who cannot rely on thumb position alone. */
+.np-shell .mud-switch-base.mud-checked + .mud-switch-track { background-color: var(--mud-palette-primary); opacity: 0.9; }
+.np-shell .mud-switch-base:not(.mud-checked) + .mud-switch-track { background-color: var(--mud-palette-on-surface-variant); opacity: 0.4; }
+.settings-nav summary { cursor:pointer; padding:12px; color:var(--mud-palette-on-surface-variant); }
+
+/* Settings */
+.settings-content { min-width:0; display:flex; flex-direction:column; gap:18px; }
+.settings-heading h2 { margin:0 0 5px; font-size:1.5rem; }
+.settings-heading p { margin:0; color:var(--mud-palette-on-surface-variant); }
+.settings-panel { padding:24px; }
+.settings-panel h2 { margin-top:0; }
+.settings-nav-divider { border-top:1px solid var(--mud-palette-outline-variant); margin:12px 16px; }
+.settings-nav-label { padding:0 16px 4px; color:var(--mud-palette-on-surface-variant); font-size:.72rem; font-weight:600; text-transform:uppercase; letter-spacing:.06em; }
+.settings-details { border-top:1px solid var(--mud-palette-outline-variant); padding-top:16px; margin-top:8px; }
+.settings-details summary { cursor:pointer; font-weight:600; padding:8px 0; }
+@media (max-width: 768px) { .settings-nav { flex-direction:row; overflow-x:auto; align-items:center; padding-bottom:4px; } .settings-nav a { white-space:nowrap; flex-shrink:0; } .settings-nav-divider,.settings-nav-label { display:none; } .settings-panel { padding:18px; } }
+.health-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; margin:20px 0; }
+.health-item { display:flex; flex-direction:column; gap:6px; padding:18px; border:1px solid var(--mud-palette-outline-variant); border-radius:14px; }
+.health-item span,.health-item small { color:var(--mud-palette-on-surface-variant); }
+.health-item strong { font-size:1.1rem; }
+.np-quick-choices { grid-template-columns:repeat(2,minmax(0,1fr)); }
+@media (max-width:600px) { .health-grid { grid-template-columns:1fr; } }
+.np-device-quota.np-speed-mismatch { border:1px solid var(--mud-palette-error); border-radius:10px; padding:10px; }
+.np-speed-router { font-size:.82rem; margin-top:8px; }
+.np-speed-warning { color:var(--mud-palette-error); font-weight:700; }
+.banner.error a { color:#fff; font-weight:700; text-decoration:underline; text-underline-offset:2px; }
+.banner.error a:hover, .banner.error a:focus-visible { color:#fff; text-decoration-thickness:2px; }
+/* Compact device speed summary */
+.np-device-card { gap:9px; }
+.np-device-usage strong { font-size:1.35rem; }
+.np-speed-panel { border:1px solid var(--mud-palette-outline-variant); border-radius:10px; padding:8px 10px; }
+.np-speed-panel.np-speed-mismatch { border-color:var(--mud-palette-error); }
+.np-speed-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; color:var(--mud-palette-on-surface-variant); font-size:.75rem; font-weight:600; }
+.np-speed-edit { border:0; background:transparent; color:var(--mud-palette-primary); font:inherit; font-weight:700; padding:3px 4px; cursor:pointer; }
+.np-speed-edit:focus-visible { outline:2px solid var(--mud-palette-primary); outline-offset:2px; border-radius:3px; }
+.np-speed-values { display:flex; flex-wrap:wrap; gap:4px 12px; font-size:.75rem; color:var(--mud-palette-on-surface-variant); }
+.np-speed-values strong { color:var(--mud-palette-on-surface); font-variant-numeric:tabular-nums; }
+.np-speed-discrepancy { margin-top:4px; color:var(--mud-palette-error); font-size:.75rem; }
+.np-speed-discrepancy summary { cursor:pointer; font-weight:700; }
+.np-speed-discrepancy small { color:var(--mud-palette-on-surface-variant); }
+.np-speed-editor { display:grid; gap:8px; margin-top:12px; }

@@ -28,6 +28,19 @@ public sealed class DeviceRouterActions(
         await usage.TrackAsync(snapshots, CancellationToken.None);
     }
 
+    public async Task SyncAndReadBackAsync()
+    {
+        await RefreshAsync();
+        // Reconciliation reads before writing. Read again without applying policies so the
+        // dashboard displays the router's post-write observation, including failed writes.
+        var snapshots = await provider.GetDevicesAsync(CancellationToken.None);
+        foreach (var snapshot in snapshots)
+        {
+            var mac = new MacAddress(snapshot.MacAddress);
+            await devices.UpdateRouterLimitAsync(mac, snapshot.CurrentLimit, CancellationToken.None);
+        }
+    }
+
     public async Task BlockAsync(MacAddress mac)
     {
         var device = await devices.FindByMacAsync(mac, CancellationToken.None)

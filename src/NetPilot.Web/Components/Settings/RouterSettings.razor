@@ -8,16 +8,16 @@
 @inject UsagePeriodClock Clock
 <MudStack Spacing="3">
     <MudText Typo="Typo.h2">Router connection</MudText>
-    <MudText>@Provider.DisplayName · @(_saved is null ? "Not configured" : "Configured (does not prove connected)")</MudText>
+    <MudText>@Provider.DisplayName · @(_saved is null ? "Not configured" : "Saved · use Test connection to check")</MudText>
     <MudText Typo="Typo.caption">User: @(_saved?.Username ?? "admin"). Testing contacts the router directly and may contend with the Agent session. Router HTTPS is separate from dashboard HTTPS.</MudText>
     @if (_message is not null) { <MudAlert Severity="@(_failed ? Severity.Error : Severity.Info)" role="status">@_message</MudAlert> }
     <MudTextField T="string" Label="Router host or IP" @bind-Value="_host" Disabled="_busy" />
-    <MudSwitch T="bool" Label="Use HTTPS to router" @bind-Value="_https" Disabled="_busy" />
+    <MudSwitch Color="Color.Primary" T="bool" Label="Use HTTPS to router" @bind-Value="_https" Disabled="_busy" />
     <MudTextField T="string" Label="New router password" InputType="InputType.Password" @bind-Value="_password" HelperText="Leave blank to keep the saved password. Saved secrets are never shown." autocomplete="new-password" Disabled="_busy" />
     <MudStack Row="true" Wrap="Wrap.Wrap">
         <MudButton OnClick="SaveAsync" Color="Color.Primary" Variant="Variant.Filled" Disabled="_busy">Save connection</MudButton>
         <MudButton OnClick="TestAsync" Variant="Variant.Outlined" Disabled="_busy">@(_busy ? "Working…" : "Test connection")</MudButton>
-        <MudButton OnClick="LoadAsync" Disabled="_busy">Cancel edits / Reload</MudButton>
+        <MudButton OnClick="LoadAsync" Disabled="_busy">Discard changes</MudButton>
     </MudStack>
 </MudStack>
 @code {

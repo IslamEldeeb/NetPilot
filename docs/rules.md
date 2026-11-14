@@ -1,6 +1,6 @@
 # Rules
 
-The **Rules** tab creates, edits, enables, dry-runs and deletes rules. Templates only prefill an editor; click **Save rule** to persist. Every new rule starts enabled and in dry-run. The Web process writes rule data and release requests only. The Agent evaluates rules after usage tracking and quotas on its next tick (default 180 seconds, about 3 minutes), then applies or releases effects. Refresh the tab to read current firings and claims. No browser or real-router verification was performed for T7c; the checks below remain deployment work.
+The **Rules** tab creates, edits, enables, dry-runs and deletes rules. Templates only prefill an editor; click **Save rule** to persist. Every new rule starts enabled and in dry-run. The Web process writes rule data and release requests only. The Agent evaluates rules after usage tracking and quotas on its next tick (default 360 seconds, about 6 minutes), then applies or releases effects. Refresh the tab to read current firings and claims. No browser or real-router verification was performed for T7c; the checks below remain deployment work.
 
 ## Trigger, scope, actions and revert
 
@@ -24,7 +24,7 @@ Invalid forms show validation errors and disable Save. For example, an empty dev
 
 A rule's **Dry-run** flag logs/notifies what it would do without creating router effects. Separately, `NetPilot:Rules:ForceDryRun=true` forces every rule to dry-run regardless of its own flag. The Docker deployment defaults **NETPILOT_RULES_FORCE_DRYRUN=true**. Both Agent and Web receive `NetPilot__Rules__ForceDryRun` and bind `RulesOptions` from the same `NetPilot:Rules` section. The prominent dashboard banner reports that Web configuration; keep both processes configured identically when running outside Compose.
 
-`NetPilot:Rules:Enabled=false` is the global kill switch: the Agent stops new evaluations and releases existing rule effects. Compose maps **NETPILOT_RULES_ENABLED** to both processes (default true). Existing live effects are also released when forced dry-run becomes active or their rule becomes disabled, deleted or dry-run. These changes happen on the Agent's next tick, with retries and per-tick router-write limits; the displayed interval is approximate, not a completion deadline. Compose shares **NETPILOT_POLL_INTERVAL_SECONDS** (default 180) with both processes as `NetPilot:PollIntervalSeconds` for the dashboard timing note.
+`NetPilot:Rules:Enabled=false` is the global kill switch: the Agent stops new evaluations and releases existing rule effects. Compose maps **NETPILOT_RULES_ENABLED** to both processes (default true). Existing live effects are also released when forced dry-run becomes active or their rule becomes disabled, deleted or dry-run. These changes happen on the Agent's next tick, with retries and per-tick router-write limits; the displayed interval is approximate, not a completion deadline. Compose shares **NETPILOT_POLL_INTERVAL_SECONDS** (default 360) with both processes as `NetPilot:PollIntervalSeconds` for the dashboard timing note.
 
 To enable enforcement safely:
 
@@ -44,7 +44,7 @@ Under **Activity from rules**, select a device to see persisted action claims fr
 
 History shows newest first, filterable by rule, device and dry-run/live results: local time, saved rule name, subject (device/MAC, household, plus affected wireless ids), outcome, status, actions, scheduled revert condition and error/detail. Outcomes include Applied, DryRun, SkippedProtected and Failed. Active means recovery or effects are still pending; it does not guarantee that every action succeeded.
 
-Choose **Release now**, then confirm to atomically set `ReleaseRequested` only on that active firing. The Agent releases its effects on the next tick (about 3 minutes by default), possibly over more ticks if retries or the action budget require it. Repeated requests are safe. The Web never calls the router. History shows “Release requested” until the Agent finishes. This is also the approval step for **New device guard**. Usage rules may fire again after cooldown/once-per suppression expires; release is not a permanent exemption. Quota claims have their own release controls via notification actions.
+Choose **Release now**, then confirm to atomically set `ReleaseRequested` only on that active firing. The Agent releases its effects on the next tick (about 6 minutes by default), possibly over more ticks if retries or the action budget require it. Repeated requests are safe. The Web never calls the router. History shows “Release requested” until the Agent finishes. This is also the approval step for **New device guard**. Usage rules may fire again after cooldown/once-per suppression expires; release is not a permanent exemption. Quota claims have their own release controls via notification actions.
 
 ## WiFi lockout guard
 

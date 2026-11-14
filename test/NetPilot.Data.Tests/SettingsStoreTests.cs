@@ -33,6 +33,20 @@ public sealed class SettingsStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task PollIntervalIsSharedAndRejectsInvalidValues()
+    {
+        using var webDb = new NetPilotDatabase(DbPath);
+        using var agentDb = new NetPilotDatabase(DbPath);
+        var web = new LiteRouterPollingSettingsStore(webDb);
+        var agent = new LiteRouterPollingSettingsStore(agentDb);
+        Assert.Null(await agent.GetIntervalSecondsAsync(Ct));
+        await web.SaveIntervalSecondsAsync(360, Ct);
+        Assert.Equal  (360, await agent.GetIntervalSecondsAsync(Ct));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => web.SaveIntervalSecondsAsync(30, Ct));
+        Assert.Equal(360, await agent.GetIntervalSecondsAsync(Ct));
+    }
+
+    [Fact]
     public async Task SetupResumesAcrossReopen_AndCreatesOnlyOneSafeQuotaWithoutOverwriting()
     {
         using (var db = new NetPilotDatabase(DbPath))

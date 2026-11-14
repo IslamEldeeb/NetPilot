@@ -4,18 +4,18 @@
 @inject NotificationOptions Options
 @inject NetPilot.Core.Usage.UsagePeriodClock Clock
 <MudStack Spacing="2">
-    <MudText Typo="Typo.h2">Shared notification preferences</MudText>
-    <MudText>Saved in the shared database and read by both Agent and Web for each dispatch.</MudText>
+    <MudText Typo="Typo.h2">Notification preferences</MudText>
+    <MudText>These preferences apply to all registered devices.</MudText>
     @if (_message is not null) { <MudAlert Severity="@(_failed ? Severity.Error : Severity.Info)" role="status">@_message</MudAlert> }
-    <MudSwitch T="bool" Label="Automatic notifications enabled" @bind-Value="_enabled" />
-    <MudSwitch T="bool" Label="Quiet hours enabled" @bind-Value="_quiet" />
+    <MudSwitch Color="Color.Primary" T="bool" Label="Automatic notifications enabled" @bind-Value="_enabled" />
+    <MudSwitch Color="Color.Primary" T="bool" Label="Quiet hours enabled" @bind-Value="_quiet" />
     <MudGrid>
         <MudItem xs="12" sm="6"><MudTextField T="string" Label="Quiet start (HH:mm)" @bind-Value="_start" /></MudItem>
         <MudItem xs="12" sm="6"><MudTextField T="string" Label="Quiet end (HH:mm)" @bind-Value="_end" /></MudItem>
     </MudGrid>
     <MudText Typo="Typo.caption">@Clock.TimeZone.Id. Quiet hours suppress quota Warning/DryRun and dry-run rule messages. Exceeded, Applied, Reverted and Protected bypass quiet hours. Per-event switches still apply. Suppressed messages are dropped.</MudText>
     @foreach (var kind in Enum.GetValues<NotificationEvent>().Where(e => e != NotificationEvent.General))
-    { <MudSwitch T="bool" Value="@(!_disabled.Contains(kind))" ValueChanged="@(enabled => Toggle(kind, enabled))" Label="@Label(kind)" /> }
+    { <MudSwitch Color="Color.Primary" T="bool" Value="@(!_disabled.Contains(kind))" ValueChanged="@(enabled => Toggle(kind, enabled))" Label="@Label(kind)" /> }
     <MudStack Row="true" Wrap="Wrap.Wrap">
         <MudButton OnClick="SaveAsync" Disabled="_busy" Color="Color.Primary" Variant="Variant.Filled">Save shared preferences</MudButton>
         <MudButton OnClick="LoadAsync" Disabled="_busy">Reload preferences</MudButton>

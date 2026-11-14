@@ -1,0 +1,11 @@
+@implements IDisposable
+@inject RouterSyncJobs SyncJobs
+@if (SyncJobs.Status is { Message: not null } status)
+{
+    <div class="banner @(status.Failed ? "error" : "info")" role="status">@status.Message</div>
+}
+@code {
+    protected override void OnInitialized() => SyncJobs.Changed += OnChanged;
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+    public void Dispose() => SyncJobs.Changed -= OnChanged;
+}

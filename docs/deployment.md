@@ -92,7 +92,7 @@ Both containers mount the same `netpilot-data` volume, which holds the LiteDB fi
 | `ROUTER_HOST` | `deploy/docker/.env` | — | Router LAN address, first-run seed only |
 | `ROUTER_PASSWORD` | `deploy/docker/.env` | — | Router admin password, first-run seed only, encrypted before storage |
 | `NetPilot__DataDirectory` | Baked into both Dockerfiles | `/data` | Where the shared LiteDB file and key ring live inside each container |
-| `NetPilot__PollIntervalSeconds` | Agent's `appsettings.json`, override via compose `environment:` if needed | `180` | Reconciliation tick interval |
+| `NetPilot__PollIntervalSeconds` | Agent's `appsettings.json`, override via compose `environment:` if needed | `360` | Reconciliation tick interval |
 | `NETPILOT_VAPID_SUBJECT` | `.env` → both services' `NetPilot__Notifications__VapidSubject` | `mailto:netpilot@localhost` | Placeholder fallback; set a real monitored `mailto:` contact for Web Push |
 | `NETPILOT_TIMEZONE` | `.env` → both services' `NetPilot__TimeZone` | `Africa/Cairo` | Optional IANA zone for usage periods and notification quiet hours; use the same zone in both hosts |
 | `TS_AUTHKEY` | `.env` → Tailscale override only | Empty | Secret enrollment key; short expiry, tagged, preferably one-off; clear after enrollment |
@@ -135,7 +135,7 @@ Use the same Compose file set as your deployment for `ps`, `logs` and `exec` (ad
 - [ ] On the Android phone, open the selected trusted HTTPS URL. Notifications shows **Secure context: Yes** and **Push supported: Yes**. Enable notifications, allow permission, and confirm **Subscribed here: Yes**.
 - [ ] Send a test notification. Check the per-subscription result **and actual phone display**; acceptance by the push service alone does not prove delivery.
 - [ ] In **Quotas → Protected devices**, protect the phone's MAC. Create a fresh per-device policy for it: **Action = NotifyOnly**, **Exempt off**, **Dry-run off**, daily cap **0.001 GB** (decimal 1 MB), monthly cap empty. Set this before its first evaluated crossing: threshold events are remembered once per period, so editing an already-crossed dry-run policy does not replay the exceeded event. Use a device/period with no prior crossing state or wait for the next day rather than deleting database rows.
-- [ ] Generate a small amount of phone traffic; wait for the Agent's next tick (default 180 seconds). Check the exceeded event in Activity/Notifications and the phone notification. The phone remains protected; NotifyOnly never throttles or blocks it. Restore/remove this temporary device policy afterwards, checking what it will inherit.
+- [ ] Generate a small amount of phone traffic; wait for the Agent's next tick (default 360 seconds). Check the exceeded event in Activity/Notifications and the phone notification. The phone remains protected; NotifyOnly never throttles or blocks it. Restore/remove this temporary device policy afterwards, checking what it will inherit.
 - [ ] Keep **every other quota policy in dry-run** until usage agrees with the router's own numbers over several days, units/reset behaviour are understood, and T8 excludes LAN traffic. Do not test live Block/Throttle as part of this rollout.
 
 ## Backup and restore

@@ -38,6 +38,7 @@ else
                 }
             </MudAppBar>
             <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-6">
+                <RouterSyncStatusBanner />
                 <main id="main-content" tabindex="-1"><CascadingValue Value="this" IsFixed="true">@Body</CascadingValue></main>
                 <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2" Class="mt-6">
                     <MudText Typo="Typo.caption">@Clock.TimeZone.Id · Web configuration shown in Safety Center</MudText>

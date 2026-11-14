@@ -13,6 +13,7 @@ namespace NetPilot.Web.Components.Pages;
 
 public partial class HomeDashboard : IDisposable
 {
+    [Inject] private DeviceRouterActions RouterActions { get; set; } = default!;
     [Inject] private IQuotaStore Quotas { get; set; } = default!;
     [Inject] private IQuotaStateStore QuotaStates { get; set; } = default!;
     [Inject] private IProtectedDeviceStore Protected { get; set; } = default!;
@@ -27,7 +28,8 @@ public partial class HomeDashboard : IDisposable
     private IReadOnlyList<DashboardNotice> _attention = [], _restrictions = [];
     private string? _error;
     private string _quotaMode = "Unknown", _rulesMode = "Unknown", _temporaryMode = "Unknown";
-    private bool _configured, _quickActions;
+    private bool _configured, _quickActions, _refreshingRouter, _routerRefreshFailed;
+    private string? _routerRefreshMessage;
     private AgentHealthStatus Health => AgentHealth.EvaluateOperational(_overview?.Heartbeat, Clock.GetUtcNow());
     private string RouterStatus => !_configured ? "Not configured"
         : _overview?.Heartbeat is { } heartbeat && (heartbeat.ConsecutiveFailedTicks > 0 || heartbeat.LastErrorSummary is not null) ? "Read or tick failed"
@@ -66,6 +68,27 @@ public partial class HomeDashboard : IDisposable
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
         catch (Exception ex) { Logger.LogWarning(ex, "Cannot load home summary"); _error = "Could not load home summary. Retry. Previously loaded totals may be stale."; }
     }
+    private async Task RefreshRouterAsync()
+    {
+        if (_refreshingRouter || !_configured) return;
+        _refreshingRouter = true;
+        _routerRefreshMessage = null;
+        _routerRefreshFailed = false;
+        try
+        {
+            await RouterActions.RefreshAsync();
+            await LoadAsync();
+            _routerRefreshMessage = "Router refresh completed. Saved speed policies were reconciled; check Activity for any per-device errors.";
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Logger.LogWarning(ex, "Dashboard router refresh failed");
+            _routerRefreshFailed = true;
+            _routerRefreshMessage = "Router refresh failed. Check the connection and try again. Some policy changes may have been applied; check Activity.";
+        }
+        finally { _refreshingRouter = false; }
+    }
+
     private static string Mode(IEnumerable<bool> dryRuns)
     {
         var modes = dryRuns.Distinct().ToArray();

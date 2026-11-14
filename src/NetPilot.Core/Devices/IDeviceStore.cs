@@ -1,3 +1,5 @@
+using NetPilot.Abstractions;
+
 namespace NetPilot.Core.Devices;
 
 public interface IDeviceStore
@@ -5,6 +7,13 @@ public interface IDeviceStore
     Task<Device?> FindByMacAsync(MacAddress mac, CancellationToken ct);
     Task<IReadOnlyList<Device>> GetAllAsync(CancellationToken ct);
     Task UpsertAsync(Device device, CancellationToken ct);
+    async Task UpdateRouterLimitAsync(MacAddress mac, SpeedLimitState? limit, CancellationToken ct)
+    {
+        var device = await FindByMacAsync(mac, ct);
+        if (device is null) return;
+        device.RouterReportedLimit = limit;
+        await UpsertAsync(device, ct);
+    }
     async Task UpdateIdentityAsync(MacAddress mac, DeviceIdentity identity, CancellationToken ct)
     {
         var device = await FindByMacAsync(mac, ct) ?? throw new InvalidOperationException("Device no longer exists.");
